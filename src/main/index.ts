@@ -5,7 +5,7 @@ import { Workspace } from './workspace'
 import { sendMessage } from './conversation'
 import { credentialStatus, saveCredential } from './credentials'
 import { semanticSearch } from './semantic'
-import { buildSemanticIndex } from './semantic-index'
+import { buildSemanticIndex, rankSemanticIndex } from './semantic-index'
 import { askProvider } from './providers'
 import { analyzeChangedDocument } from './document-analysis'
 import { basename, dirname } from 'node:path'
@@ -142,6 +142,7 @@ app.whenReady().then(() => {
   })
   ipcMain.handle('workspace:search', (_event, query: string) => currentWorkspace().search(query))
   ipcMain.handle('workspace:semantic-search', (_event, query: string, provider: Provider) => withActiveRequest(() => semanticSearch(currentWorkspace(), query, provider)))
+  ipcMain.handle('workspace:cached-semantic-search', (_event, query: string) => rankSemanticIndex(currentWorkspace(), query))
   ipcMain.handle('conversation:send', (_event, input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean }) => withActiveRequest(() => sendMessage(currentWorkspace(), input)))
   ipcMain.handle('proposal:resolve', (_event, id: string, accept: boolean) => currentWorkspace().resolveProposal(id, accept))
   ipcMain.handle('conversation:delete', (_event, id: string) => currentWorkspace().deleteConversation(id))

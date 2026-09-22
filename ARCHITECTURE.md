@@ -11,7 +11,7 @@ Agent SDK tools are disabled or read-only. Providers return proposed knowledge; 
 
 ## Source of truth
 
-The chosen directory contains Markdown entity files, YAML claims and conversations, imported documents, and YAML data for the optional calendar and task modules. `.serenity/index.sqlite` is a rebuildable text index. `.serenity/semantic-index.yaml` is a rebuildable AI-generated summary index, enabled only by an explicit module setting. An archived merge preserves the duplicate's Markdown under `archive/entities/` and records its redirect under `archive/merges/`; claims remain in their original files and resolve through that redirect on read.
+The chosen directory contains Markdown entity files, YAML claims and conversations, imported documents, and YAML data for the optional calendar and task modules. `.serenity/index.sqlite` is a rebuildable text index. `.serenity/semantic-index.yaml` is a rebuildable AI-generated summary and topic-term index, enabled only by an explicit module setting; sparse topic-vector similarity can be computed locally from it. An archived merge preserves the duplicate's Markdown under `archive/entities/` and records its redirect under `archive/merges/`; claims remain in their original files and resolve through that redirect on read.
 
 Record IDs are stable UUIDs. Types and relationship names are ordinary user-chosen strings, not a fixed ontology. Sourced claims keep confirmations, conflicts, and retractions distinct. A stale editor save fails rather than silently replacing an entity, event, task, or conversation changed on disk.
 

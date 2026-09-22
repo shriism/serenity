@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import YAML from 'yaml'
 import { Workspace } from '../src/main/workspace'
-import { buildSemanticIndex, readSemanticIndex } from '../src/main/semantic-index'
+import { buildSemanticIndex, rankSemanticIndex, readSemanticIndex } from '../src/main/semantic-index'
 import { analyzeChangedDocument } from '../src/main/document-analysis'
 
 test('workspace preserves file edits and prevents stale saves', async () => {
@@ -168,6 +168,7 @@ test('opt-in semantic indexing sends changed records only and retains a rebuilda
     await buildSemanticIndex(workspace, ask)
     assert.equal(sent, 1)
     assert.equal((await readSemanticIndex(workspace))?.entries.length, 1)
+    assert.equal((await rankSemanticIndex(workspace, 'engineering'))[0].title, 'Robotics')
     await buildSemanticIndex(workspace, ask)
     assert.equal(sent, 1)
     const entity = (await workspace.snapshot()).entities[0]
@@ -175,6 +176,8 @@ test('opt-in semantic indexing sends changed records only and retains a rebuilda
     await buildSemanticIndex(workspace, ask)
     assert.equal(sent, 2)
     assert.equal((await workspace.snapshot()).semanticIndex?.count, 1)
+    await workspace.setModule('semanticIndex', false)
+    assert.deepEqual(await rankSemanticIndex(workspace, 'engineering'), [])
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

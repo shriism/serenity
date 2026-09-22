@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import YAML from 'yaml'
-import type { Provider } from '../shared/types'
+import type { Provider, SearchResult } from '../shared/types'
 import { Workspace } from './workspace'
 import { extractDocument } from './documents'
 type Ask = (provider: Provider, workspace: string, prompt: string) => Promise<string>
@@ -83,4 +83,61 @@ export async function buildSemanticIndex(workspace: Workspace, ask: Ask): Promis
     await store(workspace, { generatedAt: new Date().toISOString(), provider, entries: [...entries, ...(previous?.entries.filter((entry) => !entries.some((item) => item.key === entry.key)) ?? [])] })
   }
   await store(workspace, { generatedAt: new Date().toISOString(), provider, entries })
+}
+
+function terms(text: string): string[] {
+  const ignored = new Set(['the', 'and', 'for', 'with', 'from', 'this', 'that', 'are', 'what', 'about'])
+  return text.toLowerCase().match(/[\p{L}\p{N}]+/gu)?.filter((word) => word.length > 2 && !ignored.has(word)) ?? []
+}
+
+export async function rankSemanticIndex(workspace: Workspace, question: string): Promise<SearchResult[]> {
+  const snapshot = await workspace.snapshot()
+  if (!snapshot.modules.semanticIndex || !question.trim()) return []
+  const index = await readSemanticIndex(workspace)
+  if (!index) return []
+  const query = terms(question)
+  if (!query.length) return []
+  const frequencies = index.entries.map((entry) => {
+    const frequency = new Map<string, number>()
+    for (const word of [...terms(entry.summary), ...entry.terms.flatMap((term) => terms(term)), ...entry.terms.flatMap((term) => terms(term))]) {
+      frequency.set(word, (frequency.get(word) ?? 0) + 1)
+    }
+    return frequency
+  })
+  const documentFrequency = new Map<string, number>()
+  for (const frequency of frequencies) for (const word of frequency.keys()) documentFrequency.set(word, (documentFrequency.get(word) ?? 0) + 1)
+  const idf = (word: string): number => Math.log((index.entries.length + 1) / ((documentFrequency.get(word) ?? 0) + 1)) + 1
+  const queryFrequency = new Map<string, number>()
+  for (const word of query) queryFrequency.set(word, (queryFrequency.get(word) ?? 0) + 1)
+  const queryNorm = Math.sqrt([...queryFrequency].reduce((sum, [word, count]) => sum + (count * idf(word)) ** 2, 0))
+  const matches: { entry: SemanticEntry; score: number }[] = []
+  index.entries.forEach((entry, position) => {
+    const frequency = frequencies[position]
+    const documentNorm = Math.sqrt([...frequency].reduce((sum, [word, count]) => sum + (count * idf(word)) ** 2, 0))
+    const similarity = [...queryFrequency].reduce((sum, [word, count]) => sum + count * (frequency.get(word) ?? 0) * idf(word) ** 2, 0) / (queryNorm * documentNorm || 1)
+    if (similarity > 0) matches.push({ entry, score: similarity })
+  })
+  return matches.sort((a, b) => b.score - a.score).slice(0, 50).flatMap(({ entry }): SearchResult[] => {
+    const separator = entry.key.indexOf(':')
+    const kind = entry.key.slice(0, separator)
+    const identifier = entry.key.slice(separator + 1)
+    if (kind === 'entity') {
+      const entity = snapshot.entities.find((item) => item.id === identifier)
+      return entity ? [{ kind, id: identifier, title: entity.title, detail: `AI-indexed concept · ${entity.type}` }] : []
+    }
+    if (kind === 'claim') {
+      const claim = snapshot.claims.find((item) => item.id === identifier && item.status !== 'retracted')
+      return claim ? [{ kind, id: claim.subject, title: `${claim.key}: ${claim.value}`, detail: `AI-indexed concept · ${claim.source}` }] : []
+    }
+    if (kind === 'document') return snapshot.documents.some((item) => item.name === identifier) ? [{ kind, id: identifier, title: identifier, detail: 'AI-indexed document' }] : []
+    if (kind === 'task' && snapshot.modules.tasks) {
+      const task = snapshot.tasks.find((item) => item.id === identifier)
+      return task ? [{ kind, id: identifier, title: task.title, detail: 'AI-indexed task' }] : []
+    }
+    if (kind === 'event' && snapshot.modules.calendar) {
+      const event = snapshot.events.find((item) => item.id === identifier)
+      return event ? [{ kind, id: identifier, title: event.title, detail: 'AI-indexed event' }] : []
+    }
+    return []
+  })
 }

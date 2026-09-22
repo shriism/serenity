@@ -138,6 +138,16 @@ function App() {
     finally { setSearching(false) }
   }
 
+  async function searchSavedConcepts() {
+    if (!query.trim()) return
+    try {
+      const [indexed, lexical] = await Promise.all([window.serenity.searchSemanticIndex(query), window.serenity.search(query)])
+      setResults([...indexed, ...lexical.filter((entry) => !indexed.some((match) =>
+        match.kind === entry.kind && match.id === entry.id && match.title === entry.title))])
+      setError('')
+    } catch (cause) { setError(String(cause)) }
+  }
+
   async function importDocuments() {
     try {
       const next = await window.serenity.importDocuments()
@@ -262,6 +272,7 @@ function App() {
         {view === 'knowledge' && <>
         <form className="sidebar-search" onSubmit={(event) => void search(event)}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search workspace..." aria-label="Search workspace"/><button type="submit" aria-label="Search">⌕</button></form>
         <button className="semantic-button" disabled={!query.trim() || searching} onClick={() => void searchSemantically()}>{searching ? 'Searching with AI…' : `Search meaning with ${provider} ✳`}</button>
+        {workspace.modules.semanticIndex && <button className="semantic-button" disabled={!query.trim()} onClick={() => void searchSavedConcepts()}>Search saved concepts · offline</button>}
         {results && <div className="search-results"><span className="eyebrow">RESULTS · {results.length}</span>{results.map((result, index) => <button key={`${result.kind}-${result.id}-${index}`} onClick={() => {
           const entity = workspace.entities.find((item) => item.id === result.id)
           if (entity) selectEntity(entity)

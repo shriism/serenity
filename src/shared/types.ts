@@ -23,12 +23,23 @@ export interface Claim {
   retractedAt?: string
   retractionReason?: string
   confidence?: number
+  isCurrent?: boolean
+}
+
+export interface ClaimResolution {
+  id: string
+  subject: string
+  key: string
+  currentClaimId: string | null
+  recordedAt: string
+  reason: string
 }
 
 export interface WorkspaceSnapshot {
   path: string
   entities: Entity[]
   claims: Claim[]
+  resolutions: ClaimResolution[]
   conversations: Conversation[]
   proposals: Proposal[]
   documents: DocumentInfo[]
@@ -84,6 +95,15 @@ export interface Message {
   text: string
   provider?: Provider
   recordedAt: string
+  sharedContext?: SharedContext[]
+}
+
+export interface SharedContext {
+  mode: 'full' | 'retrieved'
+  records: { ref: string; title: string; startCharacter: number; sentCharacters: number; totalCharacters: number; checksum: string }[]
+  availableCount: number
+  catalogShown: number
+  sentCharacters: number
 }
 
 export interface Conversation {
@@ -128,6 +148,8 @@ export interface SerenityAPI {
   saveEntity(entity: Entity): Promise<WorkspaceSnapshot>
   addClaim(claim: Pick<Claim, 'subject' | 'key' | 'value' | 'source'>): Promise<WorkspaceSnapshot>
   retractClaim(id: string, reason: string): Promise<WorkspaceSnapshot>
+  setCurrentClaim(id: string, reason: string): Promise<WorkspaceSnapshot>
+  clearCurrentClaim(subject: string, key: string): Promise<WorkspaceSnapshot>
   importDocuments(): Promise<WorkspaceSnapshot | null>
   search(query: string): Promise<SearchResult[]>
   semanticSearch(query: string, provider: Provider): Promise<SearchResult[]>

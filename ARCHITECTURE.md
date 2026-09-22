@@ -9,11 +9,13 @@
 
 Agent SDK tools are disabled or read-only. Providers return proposed knowledge; Serenity performs writes after the selected workflow's review or autonomy rule. Conversations, proposal decisions, claim sources, and merge history are independent of provider-private sessions.
 
+When a workspace does not fit a provider request, the knowledge engine retrieves from its full local index, sends an explicit catalog and relevant excerpts, and can supply a requested second excerpt. Each conversation message records the references, byte counts, excerpt offsets, and checksums sent to the provider. Retrieval selects context for transmission; it does not change which workspace files are available to the human or to later AI retrieval.
+
 ## Source of truth
 
 The chosen directory contains Markdown entity files, YAML claims and conversations, imported documents, and YAML data for the optional calendar and task modules. `.serenity/index.sqlite` is a rebuildable text index. `.serenity/semantic-index.yaml` is a rebuildable AI-generated summary and topic-term index, enabled only by an explicit module setting; sparse topic-vector similarity can be computed locally from it. An archived merge preserves the duplicate's Markdown under `archive/entities/` and records its redirect under `archive/merges/`; claims remain in their original files and resolve through that redirect on read.
 
-Record IDs are stable UUIDs. Types and relationship names are ordinary user-chosen strings, not a fixed ontology. Sourced claims keep confirmations, conflicts, and retractions distinct. A stale editor save fails rather than silently replacing an entity, event, task, or conversation changed on disk.
+Record IDs are stable UUIDs. Types and relationship names are ordinary user-chosen strings, not a fixed ontology. Sourced claims keep confirmations, conflicts, and retractions distinct. Current-answer choices are append-only records under `resolutions/`, so selecting or undoing a correction does not rewrite its original claims. A stale editor save fails rather than silently replacing an entity, event, task, or conversation changed on disk.
 
 ## Modules
 

@@ -781,3 +781,17 @@ and remain visible and accountable.
 - Use AI-backed semantic search on demand by default. A person may opt
   into background semantic indexing, which may send workspace content
   to their selected provider and incur usage. Keep this choice visible.
+
+## Further Product Decisions
+
+- Support Obsidian-like enabling and disabling of Serenity's built-in
+  modules. Adding a module currently requires a Serenity code change;
+  third-party plugin installation is not a current requirement.
+- For workspaces larger than a provider request, keep every workspace
+  record eligible for AI retrieval. Select relevant records using local
+  search and make the transmitted records visible. Retrieve again when
+  needed rather than imposing a hidden, permanent read restriction.
+- Preserve all sourced claims when a fact is corrected. After human
+  confirmation, mark the applicable claim as the current answer so an
+  old mistake does not remain an unresolved conflict. Keep the previous
+  claims and the resolution visible and reversible.

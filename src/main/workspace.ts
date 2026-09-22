@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } f
 import { basename, extname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import YAML from 'yaml'
-import type { CalendarEvent, Claim, Conversation, DocumentInfo, Entity, MergeRecord, Proposal, Provider, SearchResult, TaskItem, WorkspaceSnapshot } from '../shared/types'
+import type { CalendarEvent, Claim, ClaimResolution, Conversation, DocumentInfo, Entity, MergeRecord, Proposal, Provider, SearchResult, TaskItem, WorkspaceSnapshot } from '../shared/types'
 import { modules, type ModuleId } from '../shared/modules'
 import { extractDocument } from './documents'
 
@@ -122,7 +122,7 @@ export class Workspace {
   constructor(readonly path: string) {}
 
   get directories(): string[] {
-    return ['entities', 'claims', 'documents', 'conversations', 'proposals', 'calendar', 'tasks'].map((name) => join(this.path, name))
+    return ['entities', 'claims', 'documents', 'conversations', 'proposals', 'calendar', 'tasks', 'resolutions'].map((name) => join(this.path, name))
   }
 
   async initialize(): Promise<void> {
@@ -138,6 +138,7 @@ export class Workspace {
   async snapshot(): Promise<WorkspaceSnapshot> {
     const entities: Entity[] = []
     const claims: Claim[] = []
+    const resolutions: ClaimResolution[] = []
     const conversations: Conversation[] = []
     const proposals: Proposal[] = []
     const documents: DocumentInfo[] = []
@@ -196,6 +197,15 @@ export class Workspace {
         current = merges.find((item) => item.id === current)!.target
       }
       return current
+    }
+    for (const name of (await readdir(this.directories[7])).filter((entry) => entry.endsWith('.yaml')).sort()) {
+      try {
+        const data: unknown = YAML.parse(await readFile(join(this.directories[7], name), 'utf8'))
+        if (!record(data) || id(data.id) !== name.slice(0, -5)) throw new Error('Invalid resolution record')
+        resolutions.push({ id: id(data.id), subject: resolve(id(data.subject)), key: requiredText(data.key, 'Key'),
+          currentClaimId: data.currentClaimId === null ? null : id(data.currentClaimId),
+          recordedAt: requiredText(data.recordedAt, 'Recorded at'), reason: requiredText(data.reason, 'Reason') })
+      } catch (error) { errors.push(`resolutions/${name}: ${String(error)}`) }
     }
     for (const [directory, extension, parse] of [
       [this.directories[0], '.md', parseEntity],
@@ -262,13 +272,21 @@ export class Workspace {
       claim.value = resolve(claim.value)
       if (claim.subject !== originalSubject) claim.mergedFrom = originalSubject
     }
+    const current = new Map<string, string | null>()
+    for (const item of resolutions.sort((a, b) => a.recordedAt.localeCompare(b.recordedAt) || a.id.localeCompare(b.id))) {
+      current.set(`${item.subject}\u0000${item.key}`, item.currentClaimId)
+    }
+    for (const claim of claims) {
+      const chosen = current.get(`${claim.subject}\u0000${claim.key}`)
+      if (chosen && claim.status === 'confirmed') claim.isCurrent = chosen === claim.id
+    }
     for (const proposal of proposals) {
       if (proposal.kind === 'claim') proposal.subject = resolve(proposal.subject)
       if (proposal.kind === 'task' || proposal.kind === 'event') proposal.relatedEntityIds = proposal.relatedEntityIds.map(resolve)
     }
     for (const event of events) event.relatedEntityIds = event.relatedEntityIds.map(resolve)
     for (const task of tasks) task.relatedEntityIds = task.relatedEntityIds.map(resolve)
-    return { path: this.path, entities, archivedEntities, claims, conversations, proposals, documents, events, tasks, merges, modules: enabled, semanticProvider, semanticIndex, errors }
+    return { path: this.path, entities, archivedEntities, claims, resolutions, conversations, proposals, documents, events, tasks, merges, modules: enabled, semanticProvider, semanticIndex, errors }
   }
 
   async saveEntity(input: Entity): Promise<WorkspaceSnapshot> {
@@ -310,6 +328,7 @@ export class Workspace {
   }
 
   async retractClaim(claimId: string, reason: string): Promise<WorkspaceSnapshot> {
+    const selected = (await this.snapshot()).claims.find((item) => item.id === claimId)
     const path = join(this.directories[1], `${id(claimId)}.yaml`)
     const original = await readFile(path, 'utf8')
     const claim = parseClaim(original)
@@ -320,7 +339,34 @@ export class Workspace {
     if (checksum(await readFile(path, 'utf8')) !== checksum(original)) throw new Error('Claim changed on disk. Refresh before retracting it.')
     await atomicWrite(path, YAML.stringify(claim))
     this.markDirty()
+    if (selected?.isCurrent) await this.recordResolution({ subject: selected.subject, key: selected.key,
+      currentClaimId: null, reason: 'Selected claim was retracted' })
     return this.snapshot()
+  }
+
+  async setCurrentClaim(claimId: string, reason: string): Promise<WorkspaceSnapshot> {
+    const snapshot = await this.snapshot()
+    const claim = snapshot.claims.find((item) => item.id === id(claimId) && item.status === 'confirmed')
+    if (!claim) throw new Error('Choose a confirmed claim')
+    await this.recordResolution({ subject: claim.subject, key: claim.key, currentClaimId: claim.id, reason })
+    return this.snapshot()
+  }
+
+  async clearCurrentClaim(subject: string, key: string): Promise<WorkspaceSnapshot> {
+    const snapshot = await this.snapshot()
+    const selected = snapshot.claims.find((item) => item.subject === id(subject) && item.key === key && item.isCurrent)
+    if (!selected) throw new Error('No current claim to clear')
+    await this.recordResolution({ subject, key, currentClaimId: null, reason: 'Current designation cleared by user' })
+    return this.snapshot()
+  }
+
+  private async recordResolution(input: Pick<ClaimResolution, 'subject' | 'key' | 'currentClaimId' | 'reason'>): Promise<void> {
+    const resolution: ClaimResolution = {
+      id: randomUUID(), subject: id(input.subject), key: requiredText(input.key, 'Key'), currentClaimId: input.currentClaimId,
+      reason: requiredText(input.reason, 'Reason'), recordedAt: new Date().toISOString()
+    }
+    await writeFile(join(this.directories[7], `${resolution.id}.yaml`), YAML.stringify(resolution), { flag: 'wx' })
+    this.markDirty()
   }
 
   async mergeEntities(sourceId: string, targetId: string): Promise<WorkspaceSnapshot> {
@@ -374,7 +420,8 @@ export class Workspace {
         for (const entity of snapshot.entities) insert.run(entity.id, 'entity', entity.title, entity.type, entity.body)
         for (const claim of snapshot.claims.filter((item) => item.status !== 'retracted')) {
           const targetName = snapshot.entities.find((entity) => entity.id === claim.value)?.title ?? claim.value
-          insert.run(claim.subject, 'claim', `${claim.key}: ${targetName}`, claim.source, `${targetName} ${claim.value}`)
+          const context = claim.isCurrent ? 'Current' : claim.isCurrent === false ? 'Historical alternative' : 'Sourced claim'
+          insert.run(claim.subject, 'claim', `${claim.key}: ${targetName}`, `${context} · ${claim.source}`, `${targetName} ${claim.value}`)
         }
         if (snapshot.modules.tasks) {
           for (const task of snapshot.tasks) insert.run(task.id, 'task', task.title, task.due ?? 'Undated task', `${task.notes} ${task.relatedEntityIds.map((id) => snapshot.entities.find((entity) => entity.id === id)?.title ?? id).join(' ')}`)
@@ -394,8 +441,10 @@ export class Workspace {
         throw error
       }
     }
-    const phrase = `"${query.replaceAll('"', '""')}"`
-    return this.index.prepare('SELECT kind, id, title, detail FROM records WHERE records MATCH ? ORDER BY rank LIMIT 100').all(phrase) as unknown as SearchResult[]
+    const words = query.toLowerCase().match(/[\p{L}\p{N}]+/gu)?.filter((word) => word.length > 1 && !new Set(['what', 'where', 'when', 'which', 'with', 'about', 'from', 'should', 'would']).has(word)) ?? []
+    if (!words.length) return []
+    const terms = words.slice(0, 16).map((word) => `"${word.replaceAll('"', '""')}"*`).join(' OR ')
+    return this.index.prepare('SELECT kind, id, title, detail FROM records WHERE records MATCH ? ORDER BY rank LIMIT 100').all(terms) as unknown as SearchResult[]
   }
 
   async saveConversation(conversation: Conversation): Promise<void> {

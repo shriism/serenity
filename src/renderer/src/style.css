@@ -59,6 +59,17 @@ textarea { min-height: 260px; resize: vertical; line-height: 1.65; }
 .claim small { color: #94a496; font-size: 10px; }
 .claim.retracted { opacity: .6; }
 .retract-button { border: 0; background: transparent; color: #ad816b; padding: 9px 0 0; font-size: 10px; }
+.claim-actions { display: flex; gap: 15px; }
+.claim-actions button { border: 0; background: transparent; color: #64886b; padding: 9px 0 0; font-size: 10px; }
+.claim-actions button:last-child { color: #ad816b; }
+.incoming { padding: 18px 0; border-top: 1px solid #dbe8db; margin-top: 18px; }
+.incoming h3 { font-size: 17px; margin: 0 0 10px; }
+.incoming button { display: block; border: 0; background: transparent; color: #5c8465; padding: 5px 0; font-size: 11px; text-align: left; }
+.current-banner { border: 1px solid #b9d3be; background: #e6f2e7; color: #416a4b; border-radius: 8px; padding: 13px; margin: 12px 0; }
+.current-banner strong, .current-banner small { display: block; }
+.current-banner strong { font-size: 12px; }
+.current-banner small { font-size: 10px; padding: 7px 0; }
+.current-banner button { border: 0; background: transparent; padding: 0; color: #4f7855; font-size: 10px; text-decoration: underline; }
 .claim-form { margin-top: 32px; display: flex; flex-direction: column; gap: 8px; }
 .claim-form h3 { font-size: 20px; margin: 0 0 8px; }
 .claim-form label { font-size: 10px; font-weight: 700; color: #829486; }
@@ -119,6 +130,12 @@ textarea { min-height: 260px; resize: vertical; line-height: 1.65; }
 .message.user { background: #e8f0e5; padding: 16px 20px; border-radius: 12px; }
 .message small { text-transform: capitalize; color: #82a18b; font-size: 10px; letter-spacing: 1px; font-weight: 700; }
 .message p { margin: 7px 0 0; overflow-wrap: anywhere; }
+.context-inspector { margin-top: 12px; border-top: 1px solid #d8e5d5; padding-top: 9px; color: #728a78; font-size: 11px; }
+.context-inspector summary { cursor: pointer; }
+.context-inspector > p { color: #849887; font-size: 10px; }
+.context-inspector > div { border-top: 1px solid #dce8d9; padding: 7px 0; }
+.context-inspector strong, .context-inspector small { display: block; }
+.context-inspector small { overflow-wrap: anywhere; font-size: 9px; color: #98a99b; }
 .compose { border-top: 1px solid #e4ebe1; padding: 17px min(8vw, 110px) 25px; }
 .compose-settings { display: flex; align-items: center; gap: 22px; margin-bottom: 12px; flex-wrap: wrap; }
 .compose-settings label { display: flex; align-items: center; gap: 7px; font-size: 10px; color: #87988b; }

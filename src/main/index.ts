@@ -134,6 +134,8 @@ app.whenReady().then(() => {
   ipcMain.handle('entity:save', (_event, entity: Entity) => currentWorkspace().saveEntity(entity))
   ipcMain.handle('claim:add', (_event, claim: Pick<Claim, 'subject' | 'key' | 'value' | 'source'>) => currentWorkspace().addClaim(claim))
   ipcMain.handle('claim:retract', (_event, id: string, reason: string) => currentWorkspace().retractClaim(id, reason))
+  ipcMain.handle('claim:current', (_event, id: string, reason: string) => currentWorkspace().setCurrentClaim(id, reason))
+  ipcMain.handle('claim:current-clear', (_event, subject: string, key: string) => currentWorkspace().clearCurrentClaim(subject, key))
   ipcMain.handle('document:import', async () => {
     const files = await dialog.showOpenDialog(window!, { title: 'Import documents', properties: ['openFile', 'multiSelections'] })
     if (files.canceled) return null

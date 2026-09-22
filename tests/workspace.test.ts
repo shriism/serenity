@@ -7,6 +7,7 @@ import YAML from 'yaml'
 import { Workspace } from '../src/main/workspace'
 import { buildSemanticIndex, rankSemanticIndex, readSemanticIndex } from '../src/main/semantic-index'
 import { analyzeChangedDocument } from '../src/main/document-analysis'
+import { contextRecords, prepareContext } from '../src/main/context'
 
 test('workspace preserves file edits and prevents stale saves', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
@@ -240,6 +241,45 @@ test('automatic document analysis is opt-in and runs once per document version',
     await writeFile(document, 'Meeting on Wednesday')
     await analyzeChangedDocument(workspace, 'notes.txt', send)
     assert.equal(analyzed, 2)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('a human can select and undo a current claim without erasing conflicting sources', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const { entities: [entity] } = await workspace.saveEntity({ id: '', title: 'Alex', type: 'person', body: '' })
+    const first = (await workspace.addClaim({ subject: entity.id, key: 'birthday', value: 'September 7', source: 'Alex' })).claims[0]
+    await workspace.addClaim({ subject: entity.id, key: 'birthday', value: 'September 8', source: 'Old note' })
+    const selected = await workspace.setCurrentClaim(first.id, 'Alex confirmed the date')
+    assert.equal(selected.claims.find((item) => item.id === first.id)?.isCurrent, true)
+    assert.equal(selected.claims.find((item) => item.id !== first.id)?.isCurrent, false)
+    assert.match((await workspace.search('birthday')).find((item) => item.title.includes('September 7'))?.detail ?? '', /Current/)
+    const undone = await workspace.clearCurrentClaim(entity.id, 'birthday')
+    assert.equal(undone.claims.some((item) => item.isCurrent), false)
+    assert.equal(undone.claims.length, 2)
+    assert.equal(undone.resolutions.length, 2)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('oversized workspaces retain an inspectable catalog and retrieve further excerpts', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const { entities: [entity] } = await workspace.saveEntity({ id: '', title: 'Research archive', type: 'document', body: 'x'.repeat(210000) + ' rare-quasar observation ' + 'z'.repeat(12000) })
+    const records = contextRecords(await workspace.snapshot(), [])
+    const first = prepareContext(records, 'quasar observation', [{ kind: 'entity', id: entity.id, title: entity.title, detail: entity.type }])
+    assert.equal(first.shared.mode, 'retrieved')
+    assert.equal(first.shared.records[0].ref, `entity:${entity.id}`)
+    assert.ok(first.shared.records[0].sentCharacters < first.shared.records[0].totalCharacters)
+    assert.equal(first.shared.availableCount, 1)
+    const second = prepareContext(records, 'quasar observation', [], [`entity:${entity.id}`], { [`entity:${entity.id}`]: first.shared.records[0].startCharacter + 9000 })
+    assert.ok(second.shared.records[0].startCharacter > first.shared.records[0].startCharacter)
+    assert.notEqual(second.shared.records[0].checksum, first.shared.records[0].checksum)
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

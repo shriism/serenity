@@ -82,13 +82,18 @@ test('conversation retention and accepting a proposal preserve claim provenance'
       id: '123e4567-e89b-42d3-a456-426614174003', role: 'user', text: 'Alex likes robots', recordedAt: new Date().toISOString()
     }] })
     assert.equal((await workspace.snapshot()).conversations.length, 1)
+    const stale = (await workspace.snapshot()).conversations[0]
+    const conversationPath = join(directory, 'conversations', `${conversationId}.yaml`)
+    await writeFile(conversationPath, (await readFile(conversationPath, 'utf8')).replace('title: Alex', 'title: Alex Chen'))
+    await assert.rejects(workspace.saveConversation(stale), /changed on disk/)
     const proposalId = '123e4567-e89b-42d3-a456-426614174004'
     await workspace.addProposal({
       id: proposalId, kind: 'claim', subject: entity.id, key: 'interest', value: 'Robots', source: 'Conversation with me',
-      origin: 'ai-inference', provider: 'copilot', conversationId, status: 'pending', recordedAt: new Date().toISOString()
+      origin: 'ai-inference', confidence: 0.65, provider: 'copilot', conversationId, status: 'pending', recordedAt: new Date().toISOString()
     })
     const accepted = await workspace.resolveProposal(proposalId, true)
     assert.equal(accepted.claims[0].origin, 'ai-inference')
+    assert.equal(accepted.claims[0].confidence, 0.65)
     assert.equal(accepted.claims[0].source, 'Conversation with me')
     assert.equal(accepted.proposals[0].status, 'accepted')
     await workspace.deleteConversation(conversationId)
@@ -142,6 +147,7 @@ test('merge archives duplicate and resolves knowledge and module links without e
     assert.equal(merged.claims.find((item) => item.key === 'friend of')?.value, target.id)
     assert.equal(merged.tasks[0].relatedEntityIds[0], target.id)
     assert.equal(merged.merges[0].title, 'Alex from club')
+    assert.equal(merged.archivedEntities[0].body, 'Old context.')
     assert.match(await readFile(join(directory, 'archive', 'entities', `${duplicate.id}.md`), 'utf8'), /Old context/)
     assert.equal((await workspace.snapshot()).claims.length, 2)
     workspace.close()

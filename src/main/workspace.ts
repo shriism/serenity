@@ -51,7 +51,8 @@ function parseEvent(data: unknown): CalendarEvent {
     end: date(data.end, 'end date', true), notes: typeof data.notes === 'string' ? data.notes : '',
     relatedEntityIds: related(data.relatedEntityIds ?? []),
     source: typeof data.source === 'string' ? data.source : undefined,
-    origin: typeof data.origin === 'string' ? data.origin as CalendarEvent['origin'] : undefined }
+    origin: typeof data.origin === 'string' ? data.origin as CalendarEvent['origin'] : undefined,
+    recordedAt: typeof data.recordedAt === 'string' ? data.recordedAt : undefined }
 }
 
 function parseTask(data: unknown): TaskItem {
@@ -60,7 +61,8 @@ function parseTask(data: unknown): TaskItem {
     completed: data.completed === true, notes: typeof data.notes === 'string' ? data.notes : '',
     relatedEntityIds: related(data.relatedEntityIds ?? []),
     source: typeof data.source === 'string' ? data.source : undefined,
-    origin: typeof data.origin === 'string' ? data.origin as TaskItem['origin'] : undefined }
+    origin: typeof data.origin === 'string' ? data.origin as TaskItem['origin'] : undefined,
+    recordedAt: typeof data.recordedAt === 'string' ? data.recordedAt : undefined }
 }
 
 function parseEntity(text: string): Entity {
@@ -96,7 +98,8 @@ function parseClaim(text: string): Claim {
     status: status as Claim['status'],
     recordedAt: requiredText(data.recordedAt, 'Recorded at'),
     retractedAt: typeof data.retractedAt === 'string' ? data.retractedAt : undefined,
-    retractionReason: typeof data.retractionReason === 'string' ? data.retractionReason : undefined
+    retractionReason: typeof data.retractionReason === 'string' ? data.retractionReason : undefined,
+    confidence: typeof data.confidence === 'number' && data.confidence >= 0 && data.confidence <= 1 ? data.confidence : undefined
   }
 }
 
@@ -141,6 +144,7 @@ export class Workspace {
     const events: CalendarEvent[] = []
     const tasks: TaskItem[] = []
     const merges: MergeRecord[] = []
+    const archivedEntities: Entity[] = []
     const errors: string[] = []
     const enabled: Record<ModuleId, boolean> = { calendar: true, tasks: true, semanticIndex: false, documentAnalysis: false }
     let semanticProvider: Provider = 'copilot'
@@ -169,6 +173,14 @@ export class Workspace {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') errors.push(`.serenity/semantic-index.yaml: ${String(error)}`)
     }
     const mergesDirectory = join(this.path, 'archive', 'merges')
+    const archivedDirectory = join(this.path, 'archive', 'entities')
+    for (const name of (await readdir(archivedDirectory)).filter((entry) => entry.endsWith('.md'))) {
+      try {
+        const archived = parseEntity(await readFile(join(archivedDirectory, name), 'utf8'))
+        if (`${archived.id}.md` !== name) throw new Error('Filename does not match archived entity ID')
+        archivedEntities.push(archived)
+      } catch (error) { errors.push(`archive/entities/${name}: ${String(error)}`) }
+    }
     for (const name of (await readdir(mergesDirectory)).filter((entry) => entry.endsWith('.yaml'))) {
       try {
         const data: unknown = YAML.parse(await readFile(join(mergesDirectory, name), 'utf8'))
@@ -205,11 +217,12 @@ export class Workspace {
     for (const [directory, target] of [[this.directories[3], conversations], [this.directories[4], proposals]] as const) {
       for (const name of (await readdir(directory)).filter((entry) => entry.endsWith('.yaml')).sort()) {
         try {
-          const data: unknown = YAML.parse(await readFile(join(directory, name), 'utf8'))
+          const text = await readFile(join(directory, name), 'utf8')
+          const data: unknown = YAML.parse(text)
           if (!record(data) || id(data.id) !== name.slice(0, -5)) throw new Error('Invalid record or mismatched filename')
           if (directory === this.directories[3]) {
             if (!Array.isArray(data.messages) || typeof data.title !== 'string') throw new Error('Invalid conversation')
-            conversations.push(data as unknown as Conversation)
+            conversations.push({ ...data, revision: checksum(text) } as unknown as Conversation)
           } else {
             requiredText(data.status, 'Status')
             const kind = typeof data.kind === 'string' ? data.kind : 'claim'
@@ -255,7 +268,7 @@ export class Workspace {
     }
     for (const event of events) event.relatedEntityIds = event.relatedEntityIds.map(resolve)
     for (const task of tasks) task.relatedEntityIds = task.relatedEntityIds.map(resolve)
-    return { path: this.path, entities, claims, conversations, proposals, documents, events, tasks, merges, modules: enabled, semanticProvider, semanticIndex, errors }
+    return { path: this.path, entities, archivedEntities, claims, conversations, proposals, documents, events, tasks, merges, modules: enabled, semanticProvider, semanticIndex, errors }
   }
 
   async saveEntity(input: Entity): Promise<WorkspaceSnapshot> {
@@ -304,6 +317,7 @@ export class Workspace {
     claim.status = 'retracted'
     claim.retractedAt = new Date().toISOString()
     claim.retractionReason = requiredText(reason, 'Reason')
+    if (checksum(await readFile(path, 'utf8')) !== checksum(original)) throw new Error('Claim changed on disk. Refresh before retracting it.')
     await atomicWrite(path, YAML.stringify(claim))
     this.markDirty()
     return this.snapshot()
@@ -387,11 +401,20 @@ export class Workspace {
   async saveConversation(conversation: Conversation): Promise<void> {
     const path = join(this.directories[3], `${id(conversation.id)}.yaml`)
     if (conversation.retained) {
+      const previous = await readFile(path, 'utf8').catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return null
+        throw error
+      })
+      if (previous && checksum(previous) !== conversation.revision) throw new Error('Conversation changed on disk. Refresh before continuing it.')
+      if (!previous && conversation.revision) throw new Error('Conversation was removed on disk. Refresh before continuing it.')
       this.ephemeral.delete(conversation.id)
-      await atomicWrite(path, YAML.stringify(conversation))
+      const text = YAML.stringify({ ...conversation, revision: undefined })
+      await atomicWrite(path, text)
+      conversation.revision = checksum(text)
     } else {
       this.ephemeral.set(conversation.id, conversation)
       await unlink(path).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error })
+      conversation.revision = undefined
     }
   }
 
@@ -420,7 +443,7 @@ export class Workspace {
         const claim: Claim = {
           id: randomUUID(), subject: entity.id, key: requiredText(proposal.key, 'Key'),
           value: requiredText(proposal.value, 'Value'), source: requiredText(proposal.source, 'Source'),
-          origin: proposal.origin, status: 'confirmed', recordedAt: new Date().toISOString()
+          origin: proposal.origin, confidence: proposal.confidence, status: 'confirmed', recordedAt: new Date().toISOString()
         }
         await writeFile(join(this.directories[1], `${claim.id}.yaml`), YAML.stringify(claim), { flag: 'wx' })
         this.markDirty()
@@ -472,14 +495,14 @@ export class Workspace {
 
   async saveEvent(value: CalendarEvent): Promise<WorkspaceSnapshot> {
     if (!(await this.snapshot()).modules.calendar) throw new Error('Calendar module is disabled')
-    const event = parseEvent({ ...value, id: value.id || randomUUID() })
+    const event = parseEvent({ ...value, id: value.id || randomUUID(), recordedAt: value.recordedAt ?? new Date().toISOString() })
     if (event.end && event.end < event.start) throw new Error('End date must follow start date')
     return this.saveModuleRecord(this.directories[5], { ...event, revision: value.revision })
   }
 
   async saveTask(value: TaskItem): Promise<WorkspaceSnapshot> {
     if (!(await this.snapshot()).modules.tasks) throw new Error('Tasks module is disabled')
-    const task = parseTask({ ...value, id: value.id || randomUUID() })
+    const task = parseTask({ ...value, id: value.id || randomUUID(), recordedAt: value.recordedAt ?? new Date().toISOString() })
     return this.saveModuleRecord(this.directories[6], { ...task, revision: value.revision })
   }
 }

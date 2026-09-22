@@ -2,6 +2,8 @@ import type { Provider } from '../shared/types'
 import { getCredential } from './credentials'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { spawn } from 'node:child_process'
+import { app } from 'electron'
 
 export async function askProvider(provider: Provider, workspace: string, prompt: string): Promise<string> {
   if (provider === 'copilot') {
@@ -50,6 +52,11 @@ export async function askProvider(provider: Provider, workspace: string, prompt:
       tools: [],
       settingSources: [],
       maxTurns: 2,
+      ...(app.isPackaged ? {
+        spawnClaudeCodeProcess: ({ args, cwd, env, signal }) => spawn(process.execPath, args, {
+          cwd, env: { ...env, ELECTRON_RUN_AS_NODE: '1' }, signal, stdio: ['pipe', 'pipe', 'pipe']
+        })
+      } : {}),
       canUseTool: async () => ({ behavior: 'deny', message: 'Serenity handles knowledge changes through reviewed proposals.' })
     }
   })

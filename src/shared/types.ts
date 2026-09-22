@@ -22,6 +22,7 @@ export interface Claim {
   mergedFrom?: string
   retractedAt?: string
   retractionReason?: string
+  confidence?: number
 }
 
 export interface WorkspaceSnapshot {
@@ -35,6 +36,7 @@ export interface WorkspaceSnapshot {
   events: CalendarEvent[]
   tasks: TaskItem[]
   merges: MergeRecord[]
+  archivedEntities: Entity[]
   semanticProvider: Provider
   semanticIndex: { generatedAt: string; count: number } | null
   errors: string[]
@@ -57,6 +59,7 @@ export interface CalendarEvent {
   revision?: string
   source?: string
   origin?: 'human' | 'ai-statement' | 'ai-inference'
+  recordedAt?: string
 }
 
 export interface TaskItem {
@@ -69,6 +72,7 @@ export interface TaskItem {
   revision?: string
   source?: string
   origin?: 'human' | 'ai-statement' | 'ai-inference'
+  recordedAt?: string
 }
 
 export type Provider = 'copilot' | 'codex' | 'claude'
@@ -88,6 +92,7 @@ export interface Conversation {
   messages: Message[]
   retained: boolean
   autonomy?: Autonomy
+  revision?: string
 }
 
 export interface ProposalBase {
@@ -99,7 +104,7 @@ export interface ProposalBase {
 }
 
 export type Proposal = ProposalBase & (
-  | { kind: 'claim'; subject: string; key: string; value: string; source: string; origin: 'ai-statement' | 'ai-inference' }
+  | { kind: 'claim'; subject: string; key: string; value: string; source: string; origin: 'ai-statement' | 'ai-inference'; confidence?: number }
   | { kind: 'entity'; title: string; type: string; body: string; source: string; origin: 'ai-statement' | 'ai-inference' }
   | { kind: 'task'; title: string; due?: string; notes: string; relatedEntityIds: string[]; source: string; origin: 'ai-statement' | 'ai-inference' }
   | { kind: 'event'; title: string; start: string; end?: string; notes: string; relatedEntityIds: string[]; source: string; origin: 'ai-statement' | 'ai-inference' }

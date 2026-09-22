@@ -1,6 +1,6 @@
 # Serenity
 
-Serenity is a cross-platform Electron application for building a personal knowledge workspace with AI assistance. Product principles and agreed decisions are in [SERENITY.md](SERENITY.md).
+Serenity is a cross-platform Electron application for building a personal knowledge workspace with AI assistance. Product principles and agreed decisions are in [SERENITY.md](SERENITY.md); implementation boundaries and module extension guidance are in [ARCHITECTURE.md](ARCHITECTURE.md).
 
 ## Run locally
 
@@ -34,4 +34,4 @@ The desktop app also lets you browse and edit entities, link them through source
 
 ## Current limitations
 
-This is an actively developed application, not yet the complete product described in SERENITY.md. True vector retrieval, fully automated entity resolution, more granular autonomy controls, cloud sync, local models, and mobile apps are not implemented. Calendar and tasks are internal only; no external calendar sync is planned. A live Copilot SDK smoke test succeeded on macOS; Codex, Claude, and packaged SDK operation still require live end-to-end tests on all target operating systems. Large workspaces currently fail with an explicit context-limit error instead of silently omitting files from AI requests.
+This is an actively developed application, not yet the complete product described in SERENITY.md. True vector retrieval, fully automated entity resolution, more granular autonomy controls, cloud sync, local models, and mobile apps are not implemented. Calendar and tasks are internal only; no external calendar sync is planned. Live Copilot and Codex SDK smoke tests succeeded on macOS; Claude needs an Anthropic API key for a live test, and packaged SDK operation still requires end-to-end testing on all target operating systems. Large workspaces currently fail with an explicit context-limit error instead of silently omitting files from AI requests.

@@ -1,0 +1,245 @@
+import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { createRoot } from 'react-dom/client'
+import type { Autonomy, Entity, Provider, SearchResult, WorkspaceSnapshot } from '../../shared/types'
+import './style.css'
+
+function App() {
+  const [workspace, setWorkspace] = useState<WorkspaceSnapshot | null>(null)
+  const [selected, setSelected] = useState<string | null>(null)
+  const [draft, setDraft] = useState<Entity | null>(null)
+  const [dirty, setDirty] = useState(false)
+  const [error, setError] = useState('')
+  const [claim, setClaim] = useState({ key: '', value: '', source: 'Me' })
+  const [claimTarget, setClaimTarget] = useState('')
+  const [view, setView] = useState<'knowledge' | 'conversation' | 'review' | 'documents' | 'settings'>('knowledge')
+  const [conversationId, setConversationId] = useState<string | null>(null)
+  const [provider, setProvider] = useState<Provider>('copilot')
+  const [autonomy, setAutonomy] = useState<Autonomy>('propose')
+  const [retained, setRetained] = useState(true)
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [query, setQuery] = useState('')
+  const [results, setResults] = useState<SearchResult[] | null>(null)
+  const [credentials, setCredentials] = useState<Record<Provider, boolean> | null>(null)
+  const [keyProvider, setKeyProvider] = useState<Provider>('copilot')
+  const [key, setKey] = useState('')
+
+  const refresh = useCallback(async () => {
+    try {
+      const next = await window.serenity.refresh()
+      setWorkspace(next)
+      setError('')
+      if (!dirty && selected && next) {
+        setDraft(next.entities.find((entity) => entity.id === selected) ?? null)
+      }
+    } catch (cause) {
+      setError(String(cause))
+    }
+  }, [dirty, selected])
+
+  useEffect(() => window.serenity.onWorkspaceChange(() => { void refresh() }), [refresh])
+
+  async function chooseWorkspace() {
+    try {
+      const next = await window.serenity.chooseWorkspace()
+      if (!next) return
+      setWorkspace(next)
+      setSelected(null)
+      setDraft(null)
+      setDirty(false)
+      setError('')
+      setView('knowledge')
+      setConversationId(null)
+      setResults(null)
+    } catch (cause) {
+      setError(String(cause))
+    }
+  }
+
+  function selectEntity(entity: Entity) {
+    if (dirty && !window.confirm('Discard your unsaved changes?')) return
+    setSelected(entity.id)
+    setDraft({ ...entity })
+    setDirty(false)
+    setError('')
+    setView('knowledge')
+  }
+
+  function newEntity() {
+    if (dirty && !window.confirm('Discard your unsaved changes?')) return
+    setSelected(null)
+    setDraft({ id: '', title: '', type: '', body: '' })
+    setDirty(false)
+    setError('')
+    setView('knowledge')
+  }
+
+  async function saveEntity(event: FormEvent) {
+    event.preventDefault()
+    if (!draft) return
+    try {
+      const next = await window.serenity.saveEntity(draft)
+      setWorkspace(next)
+      const saved = draft.id ? next.entities.find((entity) => entity.id === draft.id) :
+        next.entities.find((entity) => !workspace?.entities.some((existing) => existing.id === entity.id))
+      setSelected(saved?.id ?? null)
+      setDraft(saved ?? null)
+      setDirty(false)
+      setError('')
+    } catch (cause) {
+      setError(String(cause))
+    }
+  }
+
+  async function addClaim(event: FormEvent) {
+    event.preventDefault()
+    if (!selected) return
+    try {
+      setWorkspace(await window.serenity.addClaim({ ...claim, value: claimTarget || claim.value, subject: selected }))
+      setClaim({ key: '', value: '', source: 'Me' })
+      setClaimTarget('')
+      setError('')
+    } catch (cause) {
+      setError(String(cause))
+    }
+  }
+
+  async function search(event: FormEvent) {
+    event.preventDefault()
+    if (!query.trim()) { setResults(null); return }
+    try { setResults(await window.serenity.search(query)); setError('') }
+    catch (cause) { setError(String(cause)) }
+  }
+
+  async function importDocuments() {
+    try {
+      const next = await window.serenity.importDocuments()
+      if (next) setWorkspace(next)
+      setError('')
+    } catch (cause) { setError(String(cause)) }
+  }
+
+  async function sendMessage(event: FormEvent) {
+    event.preventDefault()
+    if (!message.trim() || busy) return
+    if (autonomy === 'ask' && !window.confirm(`Allow ${provider} to read this workspace for this request? No knowledge changes will be saved without separate approval.`)) return
+    setBusy(true)
+    try {
+      const next = await window.serenity.sendMessage({ conversationId: conversationId ?? undefined, text: message, provider, autonomy, retained })
+      if (!conversationId) {
+        const created = next.conversations.find((item) => !workspace?.conversations.some((old) => old.id === item.id))
+        setConversationId(created?.id ?? null)
+      }
+      setWorkspace(next)
+      setMessage('')
+      setError('')
+    } catch (cause) {
+      await refresh()
+      setError(String(cause))
+    } finally { setBusy(false) }
+  }
+
+  async function resolveProposal(id: string, accept: boolean) {
+    try { setWorkspace(await window.serenity.resolveProposal(id, accept)); setError('') }
+    catch (cause) { setError(String(cause)) }
+  }
+
+  async function deleteConversation() {
+    if (!conversationId || !window.confirm('Delete this conversation? Confirmed knowledge remains in your workspace.')) return
+    try {
+      setWorkspace(await window.serenity.deleteConversation(conversationId))
+      setConversationId(null)
+      setError('')
+    } catch (cause) { setError(String(cause)) }
+  }
+
+  async function openSettings() {
+    setView('settings')
+    try { setCredentials(await window.serenity.credentialStatus()); setError('') }
+    catch (cause) { setError(String(cause)) }
+  }
+
+  async function saveKey(event: FormEvent) {
+    event.preventDefault()
+    try {
+      setCredentials(await window.serenity.saveCredential(keyProvider, key))
+      setKey('')
+      setError('')
+    } catch (cause) { setError(String(cause)) }
+  }
+
+  const claims = workspace?.claims.filter((item) => item.subject === selected) ?? []
+  const conflicts = [...new Set(claims.map((item) => item.key))].filter((key) => new Set(claims.filter((item) => item.key === key).map((item) => item.value)).size > 1)
+  const conversation = workspace?.conversations.find((item) => item.id === conversationId)
+  const pending = workspace?.proposals.filter((proposal) => proposal.status === 'pending') ?? []
+
+  return <div className="app">
+    <aside className="sidebar">
+      <div className="brand"><span className="brand-mark">✳</span><div><strong>serenity</strong><small>your knowledge, connected</small></div></div>
+      <div className="workspace-control">
+        <span className="eyebrow">WORKSPACE</span>
+        <button className="workspace-button" onClick={() => void chooseWorkspace()} title={workspace?.path ?? 'Choose a workspace'}>
+          <span className="workspace-name">{workspace ? workspace.path.split(/[\\/]/).filter(Boolean).at(-1) : 'Choose a folder'}</span><span>↗</span>
+        </button>
+        {workspace && <small className="path" title={workspace.path}>{workspace.path}</small>}
+      </div>
+      {workspace && <>
+        <div className="navigation">
+          <button className={view === 'knowledge' ? 'active' : ''} onClick={() => setView('knowledge')}>◇ <span>Knowledge</span></button>
+          <button className={view === 'conversation' ? 'active' : ''} onClick={() => setView('conversation')}>✳ <span>Conversations</span></button>
+          <button className={view === 'review' ? 'active' : ''} onClick={() => setView('review')}>◉ <span>Review {pending.length ? `(${pending.length})` : ''}</span></button>
+          <button className={view === 'documents' ? 'active' : ''} onClick={() => setView('documents')}>▤ <span>Documents</span></button>
+          <button className={view === 'settings' ? 'active' : ''} onClick={() => void openSettings()}>⚙ <span>Connections</span></button>
+        </div>
+        {view === 'knowledge' && <>
+        <form className="sidebar-search" onSubmit={(event) => void search(event)}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search workspace..." aria-label="Search workspace"/><button type="submit" aria-label="Search">⌕</button></form>
+        {results && <div className="search-results"><span className="eyebrow">RESULTS · {results.length}</span>{results.map((result, index) => <button key={`${result.kind}-${result.id}-${index}`} onClick={() => {
+          const entity = workspace.entities.find((item) => item.id === result.id)
+          if (entity) selectEntity(entity)
+          else if (result.kind === 'document') setView('documents')
+        }}><strong>{result.title}</strong><small>{result.detail}</small></button>)}<button className="clear-results" onClick={() => setResults(null)}>Clear results</button></div>}
+        <div className="list-heading"><span className="eyebrow">KNOWLEDGE <span className="count">{workspace.entities.length}</span></span><button className="icon-button" onClick={newEntity} title="New entity" aria-label="New entity">+</button></div>
+        <nav className="entity-list" aria-label="Entities">
+          {workspace.entities.map((entity) => <button key={entity.id} className={`entity-link ${selected === entity.id ? 'active' : ''}`} onClick={() => selectEntity(entity)}><span className="entity-icon">◇</span><span><strong>{entity.title}</strong><small>{entity.type}</small></span></button>)}
+          {workspace.entities.length === 0 && <p className="hint">Your workspace is ready. Create an entity to begin.</p>}
+        </nav>
+        </>}
+        {view === 'conversation' && <nav className="entity-list" aria-label="Conversations"><button className="entity-link" onClick={() => { setConversationId(null); setRetained(true); setAutonomy('propose') }}>+ New conversation</button>{workspace.conversations.map((item) => <button key={item.id} className={`entity-link ${conversationId === item.id ? 'active' : ''}`} onClick={() => { setConversationId(item.id); setRetained(item.retained); setAutonomy(item.autonomy ?? 'propose') }}><span><strong>{item.title}</strong><small>{item.messages.length} messages {item.retained ? '' : '· not retained'}</small></span></button>)}</nav>}
+      </>}
+      <div className="sidebar-footer">On-device workspace · AI connections coming next</div>
+    </aside>
+    <main className="main">
+      <header className="topbar"><span>{workspace ? 'Knowledge workspace' : 'Welcome to Serenity'}</span>{workspace && <button className="text-button" onClick={() => void refresh()}>Refresh files ↻</button>}</header>
+      {error && <div className="notice error" role="alert">{error}</div>}
+      {workspace?.errors.map((item) => <div key={item} className="notice warning" role="alert">Could not read {item}</div>)}
+      {!workspace ? <section className="welcome"><div className="welcome-symbol">✳</div><span className="eyebrow">A PLACE TO CONNECT WHAT MATTERS</span><h1>Your world,<br/><em>within reach.</em></h1><p>Choose a folder on your device for Serenity's knowledge files. You can read and edit them with any text editor.</p><button className="primary" onClick={() => void chooseWorkspace()}>Choose a workspace <span>↗</span></button></section>
+        : view === 'conversation' ? <section className="conversation-panel"><div className="conversation-header"><div><span className="eyebrow">HUMAN + AI</span><h2>{conversation?.title ?? 'New conversation'}</h2></div>{conversation && <button className="text-button" onClick={() => void deleteConversation()}>Delete conversation</button>}</div><div className="messages">{!conversation && <div className="conversation-intro"><span className="welcome-symbol">✳</span><h1>Think together.</h1><p>Ask about anything in your workspace. Changes to your knowledge arrive as proposals for review.</p></div>}{conversation?.messages.map((item) => <article key={item.id} className={`message ${item.role}`}><small>{item.role === 'assistant' ? item.provider : 'You'}</small><p>{item.text}</p></article>)}{busy && <p className="hint">{provider} is thinking…</p>}</div><form className="compose" onSubmit={(event) => void sendMessage(event)}><div className="compose-settings"><label>Provider <select value={provider} onChange={(event) => setProvider(event.target.value as Provider)}><option value="copilot">GitHub Copilot</option><option value="codex">OpenAI Codex</option><option value="claude">Claude</option></select></label><label>Autonomy <select value={autonomy} onChange={(event) => setAutonomy(event.target.value as Autonomy)}><option value="ask">Ask first</option><option value="propose">Read & propose</option><option value="autonomous">Auto-save claims</option></select></label><label className="retention"><input type="checkbox" checked={retained} onChange={(event) => setRetained(event.target.checked)}/> Save history</label></div><div className="compose-input"><input value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Ask a question or share something to remember..." disabled={busy} aria-label="Message"/><button type="submit" className="primary" disabled={busy || !message.trim()}>Send ↗</button></div></form></section>
+        : view === 'review' ? <section className="page"><span className="eyebrow">KNOWLEDGE REVIEW</span><h1>Proposals & activity</h1><p>Decide which suggested claims belong in your knowledge. Previous decisions remain visible.</p>{workspace.proposals.length === 0 && <p className="hint">Nothing to review yet. Conversations can suggest claims about existing entities.</p>}{workspace.proposals.map((item) => <article key={item.id} className="review-card"><span className="eyebrow">{item.status} · {item.provider} · {item.origin}</span><h2>{workspace.entities.find((entity) => entity.id === item.subject)?.title ?? 'Unknown entity'} · {item.key}</h2><strong>{item.value}</strong><p>Source: {item.source}</p>{item.status === 'pending' && <div className="review-actions"><button className="primary" onClick={() => void resolveProposal(item.id, true)}>Accept</button><button className="secondary" onClick={() => void resolveProposal(item.id, false)}>Dismiss</button></div>}</article>)}</section>
+        : view === 'documents' ? <section className="page"><span className="eyebrow">SOURCES</span><h1>Documents</h1><p>Imported documents are copied into the workspace. Text, PDF, and DOCX contents can be searched and included in AI conversations.</p><button className="primary" onClick={() => void importDocuments()}>Import documents +</button><div className="document-list">{workspace.documents.map((item) => <div key={item.name} className="document-row"><span>▤</span><strong>{item.name}</strong><small>{Math.round(item.size / 1024)} KB</small><button className="text-button" onClick={() => { setConversationId(null); setMessage(`Analyze the imported document ${item.name}. Summarize it, identify useful knowledge about existing entities, and suggest claims with precise sources. Ask me to clarify any ambiguous identities.`); setView('conversation') }}>Analyze ↗</button></div>)}</div></section>
+        : view === 'settings' ? <section className="page"><span className="eyebrow">AI CONNECTIONS</span><h1>Connect providers</h1><p>Use an existing provider sign-in where supported, or set an API key. Saved keys stay outside the knowledge workspace and are protected by your operating system.</p><div className="document-list">{(['copilot', 'codex', 'claude'] as const).map((name) => <div key={name} className="document-row"><span>✳</span><strong>{name === 'copilot' ? 'GitHub Copilot' : name === 'codex' ? 'OpenAI Codex' : 'Claude Agent SDK'}</strong><small>{credentials?.[name] ? 'Key saved' : 'Use provider sign-in or add a key'}</small></div>)}</div><form className="connection-form" onSubmit={(event) => void saveKey(event)}><h2>Set an API key or token</h2><label htmlFor="key-provider">Provider</label><select id="key-provider" value={keyProvider} onChange={(event) => setKeyProvider(event.target.value as Provider)}><option value="copilot">GitHub token</option><option value="codex">Codex API key</option><option value="claude">Anthropic API key</option></select><label htmlFor="provider-key">Credential</label><input id="provider-key" type="password" autoComplete="off" value={key} onChange={(event) => setKey(event.target.value)} placeholder="Paste a key or token"/><div className="review-actions"><button className="primary" type="submit" disabled={!key.trim()}>Save securely</button>{credentials?.[keyProvider] && <button className="secondary" type="button" onClick={() => void window.serenity.saveCredential(keyProvider, '').then(setCredentials).catch((cause) => setError(String(cause)))}>Remove saved key</button>}</div></form></section>
+        : !draft ? <section className="empty"><span className="empty-symbol">◇</span><h1>Start with what you know.</h1><p>Create a person, project, idea, place, or anything else meaningful to you. Categories are yours to define.</p><button className="primary" onClick={newEntity}>Create an entity <span>+</span></button></section>
+          : <div className="content">
+              <section className="editor">
+                <span className="eyebrow">{draft.id ? 'ENTITY' : 'NEW ENTITY'}</span>
+                <form onSubmit={(event) => void saveEntity(event)}>
+                  <label className="field-label" htmlFor="title">Name</label>
+                  <input id="title" className="title-input" placeholder="What is it called?" value={draft.title} required onChange={(event) => { setDraft({ ...draft, title: event.target.value }); setDirty(true) }} />
+                  <label className="field-label" htmlFor="type">Type · your own words</label>
+                  <input id="type" placeholder="Person, project, concept..." value={draft.type} required onChange={(event) => { setDraft({ ...draft, type: event.target.value }); setDirty(true) }} />
+                  <label className="field-label" htmlFor="body">Context · Markdown</label>
+                  <textarea id="body" placeholder="Tell the story in your own words..." value={draft.body} onChange={(event) => { setDraft({ ...draft, body: event.target.value }); setDirty(true) }} />
+                  <div className="form-actions"><span>{dirty ? 'Unsaved changes' : draft.id ? 'Saved to your workspace' : 'Ready to create'}</span><button className="primary" type="submit">{draft.id ? 'Save changes' : 'Create entity'}</button></div>
+                </form>
+              </section>
+              <aside className="details"><span className="eyebrow">CLAIMS & SOURCES</span><h2>What we know</h2><p className="detail-intro">Individual facts stay connected to their source. Conflicting claims remain visible.</p>
+                {conflicts.map((key) => { const possible = claims.filter((item) => item.key === key); const humanClaims = possible.filter((item) => item.origin === 'human'); const likely = humanClaims.length === 1 ? humanClaims[0] : null; return <div className="conflict" key={key}><strong>Conflicting {key}</strong><small>{likely ? `A direct statement suggests ${workspace.entities.find((entity) => entity.id === likely.value)?.title ?? likely.value}. This is not resolved.` : 'No clear answer from the available sources. Please clarify.'}</small><button onClick={() => { setConversationId(null); setMessage(`I have conflicting information about ${draft.title}'s ${key}. What do the sources say, and what should I clarify?`); setView('conversation') }}>Discuss this ↗</button></div> })}
+                {claims.map((item) => { const target = workspace.entities.find((entity) => entity.id === item.value); return <div className="claim" key={item.id}><span className="eyebrow">{item.key} {conflicts.includes(item.key) ? '· CONFLICT' : ''}</span>{target ? <button className="claim-link" onClick={() => selectEntity(target)}>{target.title} ↗</button> : <strong>{item.value}</strong>}<small>From {item.source} · {item.origin === 'human' ? 'direct statement' : item.origin === 'ai-inference' ? 'AI inference' : 'AI extraction'} · {item.status}</small></div> })}
+                {claims.length === 0 && <p className="hint">No claims recorded yet.</p>}
+                {selected && <form className="claim-form" onSubmit={(event) => void addClaim(event)}><h3>Add a claim</h3><label htmlFor="claim-key">About or relationship</label><input id="claim-key" placeholder="e.g. birthday, friend of" required value={claim.key} onChange={(event) => setClaim({ ...claim, key: event.target.value })}/><label htmlFor="claim-value">Value</label><input id="claim-value" placeholder="e.g. September 7" required={!claimTarget} value={claim.value} onChange={(event) => setClaim({ ...claim, value: event.target.value })} disabled={Boolean(claimTarget)}/><label htmlFor="claim-target">Or link another entity</label><select id="claim-target" value={claimTarget} onChange={(event) => setClaimTarget(event.target.value)}><option value="">No entity linked</option>{workspace.entities.filter((entity) => entity.id !== selected).map((entity) => <option key={entity.id} value={entity.id}>{entity.title}</option>)}</select><label htmlFor="claim-source">Source</label><input id="claim-source" required value={claim.source} onChange={(event) => setClaim({ ...claim, source: event.target.value })}/><button type="submit" className="secondary">Add claim +</button></form>}
+              </aside>
+            </div>}
+    </main>
+  </div>
+}
+
+createRoot(document.getElementById('root')!).render(<App />)

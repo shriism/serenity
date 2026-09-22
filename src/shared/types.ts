@@ -1,3 +1,5 @@
+import type { ModuleId } from './modules'
+
 export interface Entity {
   id: string
   title: string
@@ -15,6 +17,7 @@ export interface Claim {
   origin: 'human' | 'ai-statement' | 'ai-inference'
   status: 'confirmed' | 'proposed'
   recordedAt: string
+  mergedFrom?: string
 }
 
 export interface WorkspaceSnapshot {
@@ -24,7 +27,38 @@ export interface WorkspaceSnapshot {
   conversations: Conversation[]
   proposals: Proposal[]
   documents: DocumentInfo[]
+  modules: Record<ModuleId, boolean>
+  events: CalendarEvent[]
+  tasks: TaskItem[]
+  merges: MergeRecord[]
   errors: string[]
+}
+
+export interface MergeRecord {
+  id: string
+  target: string
+  title: string
+  recordedAt: string
+}
+
+export interface CalendarEvent {
+  id: string
+  title: string
+  start: string
+  end?: string
+  notes: string
+  relatedEntityIds: string[]
+  revision?: string
+}
+
+export interface TaskItem {
+  id: string
+  title: string
+  due?: string
+  completed: boolean
+  notes: string
+  relatedEntityIds: string[]
+  revision?: string
 }
 
 export type Provider = 'copilot' | 'codex' | 'claude'
@@ -78,10 +112,15 @@ export interface SerenityAPI {
   addClaim(claim: Pick<Claim, 'subject' | 'key' | 'value' | 'source'>): Promise<WorkspaceSnapshot>
   importDocuments(): Promise<WorkspaceSnapshot | null>
   search(query: string): Promise<SearchResult[]>
+  semanticSearch(query: string, provider: Provider): Promise<SearchResult[]>
   sendMessage(input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean }): Promise<WorkspaceSnapshot>
   resolveProposal(id: string, accept: boolean): Promise<WorkspaceSnapshot>
   deleteConversation(id: string): Promise<WorkspaceSnapshot>
   credentialStatus(): Promise<Record<Provider, boolean>>
   saveCredential(provider: Provider, key: string): Promise<Record<Provider, boolean>>
+  setModule(id: ModuleId, enabled: boolean): Promise<WorkspaceSnapshot>
+  saveEvent(event: CalendarEvent): Promise<WorkspaceSnapshot>
+  saveTask(task: TaskItem): Promise<WorkspaceSnapshot>
+  mergeEntities(source: string, target: string): Promise<WorkspaceSnapshot>
   onWorkspaceChange(callback: () => void): () => void
 }

@@ -39,6 +39,7 @@ export async function askProvider(provider: Provider, workspace: string, prompt:
 
   const { query } = await import('@anthropic-ai/claude-agent-sdk')
   const key = await getCredential('claude')
+  if (!key && !process.env.ANTHROPIC_API_KEY) throw new Error('Claude Agent SDK requires an Anthropic API key in Serenity. Add one under Connections.')
   const run = query({
     prompt,
     options: {

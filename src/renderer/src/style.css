@@ -68,6 +68,11 @@ textarea { min-height: 260px; resize: vertical; line-height: 1.65; }
 .conflict strong { font-size: 12px; }
 .conflict small { font-size: 10px; line-height: 1.5; margin: 8px 0; }
 .conflict button { background: transparent; border: 0; color: #765a26; padding: 0; font-size: 11px; text-decoration: underline; }
+.merge-form { margin-top: 40px; border-top: 1px solid #dce5d9; padding-top: 18px; display: grid; gap: 10px; }
+.merge-form h3 { font-size: 19px; margin: 0; }
+.merge-form p { color: #93a094; line-height: 1.5; font-size: 11px; margin: 0; }
+.merge-form select { padding: 9px; border: 1px solid #dce5d9; border-radius: 6px; color: #51685a; background: white; width: 100%; }
+.merge-form .secondary { margin: 0; }
 .secondary { border: 1px solid #bad0bd; border-radius: 7px; padding: 10px; background: #fff; color: #4f7b5a; margin-top: 8px; font-weight: 600; font-size: 11px; }
 .navigation { display: grid; gap: 3px; margin: -12px 0 28px; }
 .navigation button { border: 0; background: transparent; border-radius: 8px; padding: 11px 13px; text-align: left; font-size: 17px; color: #7b9b84; display: flex; align-items: center; gap: 12px; }
@@ -76,6 +81,8 @@ textarea { min-height: 260px; resize: vertical; line-height: 1.65; }
 .sidebar-search { display: flex; margin: 0 8px 20px; }
 .sidebar-search input { min-width: 0; font-size: 11px; border-radius: 7px 0 0 7px; }
 .sidebar-search button { border: 1px solid #dce6db; border-left: 0; border-radius: 0 7px 7px 0; color: #578267; background: #fff; font-size: 20px; }
+.semantic-button { border: 0; background: transparent; padding: 0 10px 18px; text-align: left; color: #568269; font-size: 10px; font-weight: 700; }
+.semantic-button:disabled { opacity: .5; }
 .search-results { max-height: 260px; overflow: auto; padding: 0 10px 15px; }
 .search-results button { width: 100%; display: block; border: 0; background: transparent; text-align: left; padding: 8px 0; color: #415747; }
 .search-results strong, .search-results small { display: block; font-size: 11px; }
@@ -119,3 +126,40 @@ textarea { min-height: 260px; resize: vertical; line-height: 1.65; }
 .connection-form h2 { font-size: 26px; }
 .connection-form label { font-size: 11px; font-weight: 700; color: #708576; }
 .connection-form select { border: 1px solid #dde5da; background: white; border-radius: 7px; padding: 12px; color: #3b6045; }
+.activity-row { display: flex; gap: 22px; padding: 17px 0; border-bottom: 1px solid #e4ebe1; }
+.activity-row time { width: 140px; flex: none; color: #8d9f91; font-size: 11px; }
+.activity-row strong { font-size: 13px; }
+.activity-row p { color: #8d9c91; font-size: 12px; margin: 5px 0; overflow-wrap: anywhere; }
+.module-toggle { display: flex; align-items: center; justify-content: space-between; padding: 17px 0; border-bottom: 1px solid #e4ebe1; }
+.module-toggle strong, .module-toggle small { display: block; }
+.module-toggle strong { font-size: 13px; }
+.module-toggle small { color: #92a095; font-size: 11px; padding-top: 4px; }
+.module-toggle input { width: auto; }
+.module-page { max-width: 1400px; width: 100%; }
+.calendar-layout, .tasks-layout { display: grid; grid-template-columns: minmax(390px, 1fr) 290px; gap: 35px; }
+.calendar-toolbar { display: flex; align-items: center; justify-content: space-between; }
+.calendar-toolbar h2 { font-size: 26px; }
+.calendar-toolbar button { color: #598366; background: transparent; border: 0; font-size: 22px; }
+.calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); border-top: 1px solid #dce5d9; border-left: 1px solid #dce5d9; }
+.calendar-grid .weekday { padding: 9px; text-align: center; color: #94a497; font-size: 10px; font-weight: 700; border-bottom: 1px solid #dce5d9; border-right: 1px solid #dce5d9; }
+.calendar-grid > button, .calendar-grid > span:not(.weekday) { border: 0; border-bottom: 1px solid #dce5d9; border-right: 1px solid #dce5d9; background: white; height: 80px; min-width: 0; text-align: left; padding: 8px; color: #425a49; overflow: hidden; }
+.calendar-grid > button.selected { background: #e5f0e3; }
+.calendar-grid button strong { display: block; font-size: 11px; }
+.calendar-grid button small { display: block; background: #dcead8; color: #416948; border-radius: 3px; padding: 3px; margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 9px; }
+.module-aside { border-left: 1px solid #e3eae1; padding-left: 22px; }
+.module-aside h2 { font-size: 21px; margin: 8px 0 20px; }
+.module-record { text-align: left; display: block; width: 100%; background: #fff; border: 1px solid #e0e9dd; border-radius: 8px; padding: 12px; margin-bottom: 7px; }
+.module-record strong, .module-record small { display: block; }
+.module-record small { margin-top: 5px; color: #8c9a8d; font-size: 10px; }
+.module-form { display: grid; gap: 11px; margin-top: 28px; }
+.module-form h3 { font-size: 21px; margin: 0; }
+.module-form label { display: grid; gap: 5px; font-size: 11px; color: #788b7d; font-weight: 600; }
+.module-form input, .module-form select, .module-form textarea { border: 1px solid #dce5da; background: white; border-radius: 6px; padding: 9px; color: #35523f; font-size: 12px; width: 100%; }
+.module-form textarea { min-height: 80px; }
+.task-row { display: flex; gap: 12px; align-items: center; border-bottom: 1px solid #e3eae1; padding: 15px 0; }
+.task-row button:first-child { border: 0; background: transparent; color: #619373; font-size: 20px; }
+.task-row div { flex: 1; }
+.task-row strong, .task-row small { display: block; }
+.task-row strong { font-size: 13px; }
+.task-row small { font-size: 10px; color: #8a9d8e; padding-top: 4px; }
+.task-row.complete { color: #a4afa5; text-decoration: line-through; }

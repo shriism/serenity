@@ -763,3 +763,21 @@ and remain visible and accountable.
   default. Let them enable automatic analysis for chosen workflows or
   folders, subject to that workflow's autonomy settings. Copy imported
   documents into the workspace as decided above.
+
+## Modular Features, Calendar, and Merges
+
+- Serenity has its own on-device calendar and task capabilities. Calendar
+  and tasks are internal modules, not external calendar accounts or
+  third-party sync. Earlier roadmap references to calendar integration
+  mean integration with Serenity's own knowledge environment here.
+- Keep features modular so people can enable or disable modules such as
+  calendar or tasks without destroying their data. Do not force every
+  person's world into one fixed ontology. Modules connect naturally to
+  the shared knowledge model through stable entity identifiers and
+  relationships rather than isolated copies of people or projects.
+- When merging duplicate entities, archive the duplicate's file and
+  preserve its history and sources. Update references so existing links
+  lead to the surviving entity. Make merge actions reviewable.
+- Use AI-backed semantic search on demand by default. A person may opt
+  into background semantic indexing, which may send workspace content
+  to their selected provider and incur usage. Keep this choice visible.

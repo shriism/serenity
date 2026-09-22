@@ -95,3 +95,49 @@ test('conversation retention and accepting a proposal preserve claim provenance'
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
+
+test('calendar and tasks remain on disk when their modules are disabled', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const { entities: [entity] } = await workspace.saveEntity({ id: '', title: 'Project', type: 'project', body: '' })
+    const withEvent = await workspace.saveEvent({ id: '', title: 'Meet', start: '2026-10-04T10:00', notes: '', relatedEntityIds: [entity.id] })
+    assert.equal(withEvent.events[0].relatedEntityIds[0], entity.id)
+    const withTask = await workspace.saveTask({ id: '', title: 'Prepare', due: '2026-10-03', completed: false, notes: '', relatedEntityIds: [entity.id] })
+    assert.equal(withTask.tasks.length, 1)
+    const disabled = await workspace.setModule('calendar', false)
+    assert.equal(disabled.modules.calendar, false)
+    assert.equal(disabled.events.length, 1)
+    await assert.rejects(workspace.saveEvent({ id: '', title: 'Blocked', start: '2026-10-05', notes: '', relatedEntityIds: [] }), /disabled/)
+    const secondInstance = new Workspace(directory)
+    await secondInstance.initialize()
+    assert.equal((await secondInstance.snapshot()).modules.calendar, false)
+    assert.equal((await secondInstance.snapshot()).events.length, 1)
+    workspace.close()
+    secondInstance.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('merge archives duplicate and resolves knowledge and module links without erasing claim files', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const { entities: [duplicate] } = await workspace.saveEntity({ id: '', title: 'Alex from club', type: 'person', body: 'Old context.' })
+    const { entities } = await workspace.saveEntity({ id: '', title: 'Alex Chen', type: 'person', body: 'Updated context.' })
+    const target = entities.find((item) => item.id !== duplicate.id)!
+    await workspace.addClaim({ subject: duplicate.id, key: 'interest', value: 'Robotics', source: 'Chat' })
+    await workspace.addClaim({ subject: target.id, key: 'friend of', value: duplicate.id, source: 'Me' })
+    await workspace.saveTask({ id: '', title: 'Meet Alex', completed: false, notes: '', relatedEntityIds: [duplicate.id] })
+    const merged = await workspace.mergeEntities(duplicate.id, target.id)
+    assert.equal(merged.entities.length, 1)
+    assert.equal(merged.claims.find((item) => item.key === 'interest')?.subject, target.id)
+    assert.equal(merged.claims.find((item) => item.key === 'friend of')?.value, target.id)
+    assert.equal(merged.tasks[0].relatedEntityIds[0], target.id)
+    assert.equal(merged.merges[0].title, 'Alex from club')
+    assert.match(await readFile(join(directory, 'archive', 'entities', `${duplicate.id}.md`), 'utf8'), /Old context/)
+    assert.equal((await workspace.snapshot()).claims.length, 2)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})

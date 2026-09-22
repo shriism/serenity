@@ -3,7 +3,8 @@ import { copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } f
 import { basename, extname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import YAML from 'yaml'
-import type { Claim, Conversation, DocumentInfo, Entity, Message, Proposal, SearchResult, WorkspaceSnapshot } from '../shared/types'
+import type { CalendarEvent, Claim, Conversation, DocumentInfo, Entity, MergeRecord, Proposal, SearchResult, TaskItem, WorkspaceSnapshot } from '../shared/types'
+import { modules, type ModuleId } from '../shared/modules'
 import { extractDocument } from './documents'
 
 const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/
@@ -25,6 +26,32 @@ function id(value: unknown): string {
 
 function checksum(text: string): string {
   return createHash('sha256').update(text).digest('hex')
+}
+
+function date(value: unknown, name: string, optional = false): string | undefined {
+  if (optional && (value === undefined || value === '')) return undefined
+  const text = requiredText(value, name)
+  if (!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/.test(text) || Number.isNaN(Date.parse(text))) throw new Error(`Invalid ${name}`)
+  return text
+}
+
+function related(value: unknown): string[] {
+  if (!Array.isArray(value)) throw new Error('Related entities must be a list')
+  return value.map(id)
+}
+
+function parseEvent(data: unknown): CalendarEvent {
+  if (!record(data)) throw new Error('Invalid event')
+  return { id: id(data.id), title: requiredText(data.title, 'Title'), start: date(data.start, 'start date')!,
+    end: date(data.end, 'end date', true), notes: typeof data.notes === 'string' ? data.notes : '',
+    relatedEntityIds: related(data.relatedEntityIds ?? []) }
+}
+
+function parseTask(data: unknown): TaskItem {
+  if (!record(data)) throw new Error('Invalid task')
+  return { id: id(data.id), title: requiredText(data.title, 'Title'), due: date(data.due, 'due date', true),
+    completed: data.completed === true, notes: typeof data.notes === 'string' ? data.notes : '',
+    relatedEntityIds: related(data.relatedEntityIds ?? []) }
 }
 
 function parseEntity(text: string): Entity {
@@ -79,12 +106,14 @@ export class Workspace {
   constructor(readonly path: string) {}
 
   get directories(): string[] {
-    return ['entities', 'claims', 'documents', 'conversations', 'proposals'].map((name) => join(this.path, name))
+    return ['entities', 'claims', 'documents', 'conversations', 'proposals', 'calendar', 'tasks'].map((name) => join(this.path, name))
   }
 
   async initialize(): Promise<void> {
     for (const directory of this.directories) await mkdir(directory, { recursive: true })
     await mkdir(join(this.path, '.serenity'), { recursive: true })
+    await mkdir(join(this.path, 'archive', 'entities'), { recursive: true })
+    await mkdir(join(this.path, 'archive', 'merges'), { recursive: true })
   }
 
   markDirty(): void { this.indexDirty = true }
@@ -96,7 +125,37 @@ export class Workspace {
     const conversations: Conversation[] = []
     const proposals: Proposal[] = []
     const documents: DocumentInfo[] = []
+    const events: CalendarEvent[] = []
+    const tasks: TaskItem[] = []
+    const merges: MergeRecord[] = []
     const errors: string[] = []
+    const enabled: Record<ModuleId, boolean> = { calendar: true, tasks: true }
+    try {
+      const raw: unknown = YAML.parse(await readFile(join(this.path, '.serenity', 'modules.yaml'), 'utf8'))
+      if (!record(raw)) throw new Error('Invalid module settings')
+      for (const module of modules) {
+        if (typeof raw[module.id] === 'boolean') enabled[module.id] = raw[module.id] as boolean
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') errors.push(`.serenity/modules.yaml: ${String(error)}`)
+    }
+    const mergesDirectory = join(this.path, 'archive', 'merges')
+    for (const name of (await readdir(mergesDirectory)).filter((entry) => entry.endsWith('.yaml'))) {
+      try {
+        const data: unknown = YAML.parse(await readFile(join(mergesDirectory, name), 'utf8'))
+        if (!record(data) || id(data.id) !== name.slice(0, -5)) throw new Error('Invalid merge record')
+        merges.push({ id: id(data.id), target: id(data.target), title: requiredText(data.title, 'Title'), recordedAt: requiredText(data.recordedAt, 'Recorded at') })
+      } catch (error) { errors.push(`archive/merges/${name}: ${String(error)}`) }
+    }
+    const resolve = (entityId: string): string => {
+      const visited = new Set<string>()
+      let current = entityId
+      while (merges.some((item) => item.id === current) && !visited.has(current)) {
+        visited.add(current)
+        current = merges.find((item) => item.id === current)!.target
+      }
+      return current
+    }
     for (const [directory, extension, parse] of [
       [this.directories[0], '.md', parseEntity],
       [this.directories[1], '.yaml', parseClaim]
@@ -133,13 +192,35 @@ export class Workspace {
       }
     }
     for (const conversation of this.ephemeral.values()) conversations.push(conversation)
+    for (const [directory, parse, target] of [
+      [this.directories[5], parseEvent, events], [this.directories[6], parseTask, tasks]
+    ] as const) {
+      for (const name of (await readdir(directory)).filter((entry) => entry.endsWith('.yaml')).sort()) {
+        try {
+          const text = await readFile(join(directory, name), 'utf8')
+          const parsed = parse(YAML.parse(text))
+          if (`${parsed.id}.yaml` !== name) throw new Error('Filename does not match record ID')
+          if (directory === this.directories[5]) events.push({ ...parsed as CalendarEvent, revision: checksum(text) })
+          else tasks.push({ ...parsed as TaskItem, revision: checksum(text) })
+        } catch (error) { errors.push(`${basename(directory)}/${name}: ${String(error)}`) }
+      }
+    }
     for (const name of await readdir(this.directories[2])) {
       try {
         const info = await stat(join(this.directories[2], name))
         if (info.isFile()) documents.push({ name, size: info.size })
       } catch { /* A document was moved while reading the directory. */ }
     }
-    return { path: this.path, entities, claims, conversations, proposals, documents, errors }
+    for (const claim of claims) {
+      const originalSubject = claim.subject
+      claim.subject = resolve(claim.subject)
+      claim.value = resolve(claim.value)
+      if (claim.subject !== originalSubject) claim.mergedFrom = originalSubject
+    }
+    for (const proposal of proposals) proposal.subject = resolve(proposal.subject)
+    for (const event of events) event.relatedEntityIds = event.relatedEntityIds.map(resolve)
+    for (const task of tasks) task.relatedEntityIds = task.relatedEntityIds.map(resolve)
+    return { path: this.path, entities, claims, conversations, proposals, documents, events, tasks, merges, modules: enabled, errors }
   }
 
   async saveEntity(input: Entity): Promise<WorkspaceSnapshot> {
@@ -176,6 +257,24 @@ export class Workspace {
     }
     const path = join(this.directories[1], `${claim.id}.yaml`)
     await writeFile(path, YAML.stringify(claim), { flag: 'wx' })
+    this.markDirty()
+    return this.snapshot()
+  }
+
+  async mergeEntities(sourceId: string, targetId: string): Promise<WorkspaceSnapshot> {
+    const source = id(sourceId)
+    const target = id(targetId)
+    if (source === target) throw new Error('Choose two different entities')
+    const snapshot = await this.snapshot()
+    const original = snapshot.entities.find((entity) => entity.id === source)
+    if (!original || !snapshot.entities.some((entity) => entity.id === target)) throw new Error('Both entities must be active before merging')
+    const from = join(this.directories[0], `${source}.md`)
+    const archived = join(this.path, 'archive', 'entities', `${source}.md`)
+    const record: MergeRecord = { id: source, target, title: original.title, recordedAt: new Date().toISOString() }
+    const history = join(this.path, 'archive', 'merges', `${source}.yaml`)
+    await rename(from, archived)
+    try { await writeFile(history, YAML.stringify(record), { flag: 'wx' }) }
+    catch (error) { await rename(archived, from); throw error }
     this.markDirty()
     return this.snapshot()
   }
@@ -260,10 +359,11 @@ export class Workspace {
     if (!record(data) || data.id !== proposalId || data.status !== 'pending') throw new Error('Proposal no longer pending. Refresh to see the current state.')
     const proposal = data as unknown as Proposal
     if (accept) {
-      const entity = parseEntity(await readFile(join(this.directories[0], `${id(proposal.subject)}.md`), 'utf8'))
-      if (entity.id !== proposal.subject) throw new Error('Proposal subject no longer exists')
+      const activeSubject = (await this.snapshot()).proposals.find((item) => item.id === proposalId)?.subject
+      const entity = parseEntity(await readFile(join(this.directories[0], `${id(activeSubject)}.md`), 'utf8'))
+      const subject = entity.id
       const claim: Claim = {
-        id: randomUUID(), subject: proposal.subject, key: requiredText(proposal.key, 'Key'),
+        id: randomUUID(), subject, key: requiredText(proposal.key, 'Key'),
         value: requiredText(proposal.value, 'Value'), source: requiredText(proposal.source, 'Source'),
         origin: proposal.origin, status: 'confirmed', recordedAt: new Date().toISOString()
       }
@@ -273,5 +373,41 @@ export class Workspace {
     proposal.status = accept ? 'accepted' : 'rejected'
     await atomicWrite(path, YAML.stringify(proposal))
     return this.snapshot()
+  }
+
+  async setModule(moduleId: ModuleId, enabled: boolean): Promise<WorkspaceSnapshot> {
+    if (!modules.some((item) => item.id === moduleId) || typeof enabled !== 'boolean') throw new Error('Invalid module setting')
+    const current = (await this.snapshot()).modules
+    current[moduleId] = enabled
+    await atomicWrite(join(this.path, '.serenity', 'modules.yaml'), YAML.stringify(current))
+    return this.snapshot()
+  }
+
+  private async saveModuleRecord(directory: string, value: CalendarEvent | TaskItem): Promise<WorkspaceSnapshot> {
+    const recordId = value.id ? id(value.id) : randomUUID()
+    const path = join(directory, `${recordId}.yaml`)
+    const previous = await readFile(path, 'utf8').catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return null
+      throw error
+    })
+    if (previous && checksum(previous) !== value.revision) throw new Error('This item changed on disk. Refresh before saving.')
+    if (!previous && value.revision) throw new Error('This item was removed on disk. Refresh before saving.')
+    const text = YAML.stringify({ ...value, id: recordId, revision: undefined })
+    await atomicWrite(path, text)
+    this.markDirty()
+    return this.snapshot()
+  }
+
+  async saveEvent(value: CalendarEvent): Promise<WorkspaceSnapshot> {
+    if (!(await this.snapshot()).modules.calendar) throw new Error('Calendar module is disabled')
+    const event = parseEvent({ ...value, id: value.id || randomUUID() })
+    if (event.end && event.end < event.start) throw new Error('End date must follow start date')
+    return this.saveModuleRecord(this.directories[5], { ...event, revision: value.revision })
+  }
+
+  async saveTask(value: TaskItem): Promise<WorkspaceSnapshot> {
+    if (!(await this.snapshot()).modules.tasks) throw new Error('Tasks module is disabled')
+    const task = parseTask({ ...value, id: value.id || randomUUID() })
+    return this.saveModuleRecord(this.directories[6], { ...task, revision: value.revision })
   }
 }

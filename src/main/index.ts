@@ -4,11 +4,20 @@ import chokidar, { type FSWatcher } from 'chokidar'
 import { Workspace } from './workspace'
 import { sendMessage } from './conversation'
 import { credentialStatus, saveCredential } from './credentials'
-import type { Autonomy, Claim, Entity, Provider } from '../shared/types'
+import { semanticSearch } from './semantic'
+import type { Autonomy, CalendarEvent, Claim, Entity, Provider, TaskItem } from '../shared/types'
+import type { ModuleId } from '../shared/modules'
 
 let window: BrowserWindow | null = null
 let workspace: Workspace | null = null
 let watcher: FSWatcher | null = null
+let activeRequests = 0
+
+async function withActiveRequest<T>(work: () => Promise<T>): Promise<T> {
+  activeRequests++
+  try { return await work() }
+  finally { activeRequests-- }
+}
 
 function currentWorkspace(): Workspace {
   if (!workspace) throw new Error('Choose a workspace to continue.')
@@ -51,6 +60,7 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   ipcMain.handle('workspace:choose', async () => {
+    if (activeRequests) throw new Error('Wait for the current AI request before switching workspaces.')
     const result = await dialog.showOpenDialog(window!, {
       title: 'Choose a Serenity workspace',
       properties: ['openDirectory', 'createDirectory']
@@ -68,7 +78,8 @@ app.whenReady().then(() => {
     return currentWorkspace().snapshot()
   })
   ipcMain.handle('workspace:search', (_event, query: string) => currentWorkspace().search(query))
-  ipcMain.handle('conversation:send', (_event, input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean }) => sendMessage(currentWorkspace(), input))
+  ipcMain.handle('workspace:semantic-search', (_event, query: string, provider: Provider) => withActiveRequest(() => semanticSearch(currentWorkspace(), query, provider)))
+  ipcMain.handle('conversation:send', (_event, input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean }) => withActiveRequest(() => sendMessage(currentWorkspace(), input)))
   ipcMain.handle('proposal:resolve', (_event, id: string, accept: boolean) => currentWorkspace().resolveProposal(id, accept))
   ipcMain.handle('conversation:delete', (_event, id: string) => currentWorkspace().deleteConversation(id))
   ipcMain.handle('credential:status', () => credentialStatus())
@@ -76,6 +87,10 @@ app.whenReady().then(() => {
     await saveCredential(provider, key)
     return credentialStatus()
   })
+  ipcMain.handle('module:set', (_event, id: ModuleId, enabled: boolean) => currentWorkspace().setModule(id, enabled))
+  ipcMain.handle('calendar:save', (_event, item: CalendarEvent) => currentWorkspace().saveEvent(item))
+  ipcMain.handle('task:save', (_event, item: TaskItem) => currentWorkspace().saveTask(item))
+  ipcMain.handle('entity:merge', (_event, source: string, target: string) => currentWorkspace().mergeEntities(source, target))
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })

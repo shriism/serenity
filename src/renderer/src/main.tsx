@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Autonomy, Entity, Provider, SearchResult, WorkspaceSnapshot } from '../../shared/types'
+import { modules } from '../../shared/modules'
+import { CalendarModule, TasksModule } from './modules'
 import './style.css'
 
 function App() {
@@ -11,7 +13,8 @@ function App() {
   const [error, setError] = useState('')
   const [claim, setClaim] = useState({ key: '', value: '', source: 'Me' })
   const [claimTarget, setClaimTarget] = useState('')
-  const [view, setView] = useState<'knowledge' | 'conversation' | 'review' | 'documents' | 'settings'>('knowledge')
+  const [mergeTarget, setMergeTarget] = useState('')
+  const [view, setView] = useState<'knowledge' | 'conversation' | 'review' | 'documents' | 'activity' | 'settings' | 'calendar' | 'tasks'>('knowledge')
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [provider, setProvider] = useState<Provider>('copilot')
   const [autonomy, setAutonomy] = useState<Autonomy>('propose')
@@ -20,6 +23,7 @@ function App() {
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[] | null>(null)
+  const [searching, setSearching] = useState(false)
   const [credentials, setCredentials] = useState<Record<Provider, boolean> | null>(null)
   const [keyProvider, setKeyProvider] = useState<Provider>('copilot')
   const [key, setKey] = useState('')
@@ -111,6 +115,20 @@ function App() {
     catch (cause) { setError(String(cause)) }
   }
 
+  async function searchSemantically() {
+    if (!query.trim() || searching) return
+    setSearching(true)
+    try {
+      const [lexical, semantic] = await Promise.all([
+        window.serenity.search(query), window.serenity.semanticSearch(query, provider)
+      ])
+      setResults([...semantic, ...lexical.filter((entry) => !semantic.some((match) =>
+        match.kind === entry.kind && match.id === entry.id && match.title === entry.title))])
+      setError('')
+    } catch (cause) { setError(String(cause)) }
+    finally { setSearching(false) }
+  }
+
   async function importDocuments() {
     try {
       const next = await window.serenity.importDocuments()
@@ -168,10 +186,39 @@ function App() {
     } catch (cause) { setError(String(cause)) }
   }
 
+  async function toggleModule(id: 'calendar' | 'tasks', enabled: boolean) {
+    try {
+      const next = await window.serenity.setModule(id, enabled)
+      setWorkspace(next)
+      if (!enabled && view === id) setView('knowledge')
+      setError('')
+    } catch (cause) { setError(String(cause)) }
+  }
+
+  async function mergeSelected() {
+    if (!selected || !mergeTarget || !workspace) return
+    if (dirty) { setError('Save or discard your edits before merging.'); return }
+    const target = workspace.entities.find((entity) => entity.id === mergeTarget)
+    if (!window.confirm(`Archive ${draft?.title} and link its claims to ${target?.title}? The archived file and merge record remain in the workspace.`)) return
+    try {
+      const next = await window.serenity.mergeEntities(selected, mergeTarget)
+      setWorkspace(next)
+      setSelected(mergeTarget)
+      setDraft(next.entities.find((entity) => entity.id === mergeTarget) ?? null)
+      setMergeTarget('')
+      setError('')
+    } catch (cause) { setError(String(cause)) }
+  }
+
   const claims = workspace?.claims.filter((item) => item.subject === selected) ?? []
   const conflicts = [...new Set(claims.map((item) => item.key))].filter((key) => new Set(claims.filter((item) => item.key === key).map((item) => item.value)).size > 1)
   const conversation = workspace?.conversations.find((item) => item.id === conversationId)
   const pending = workspace?.proposals.filter((proposal) => proposal.status === 'pending') ?? []
+  const activity = [...(workspace?.claims.map((item) => ({ id: item.id, at: item.recordedAt, title: `Claim: ${item.key}`, detail: `${workspace.entities.find((entity) => entity.id === item.subject)?.title ?? 'Unknown entity'} · ${item.value} · ${item.source}` })) ?? []),
+    ...(workspace?.merges.map((item) => ({ id: item.id, at: item.recordedAt, title: `Merged ${item.title}`, detail: `Archived; linked to ${workspace.entities.find((entity) => entity.id === item.target)?.title ?? item.target}` })) ?? []),
+    ...(workspace?.proposals.map((item) => ({ id: item.id, at: item.recordedAt, title: `Proposal ${item.status}`, detail: `${item.key}: ${item.value} · ${item.provider}` })) ?? []),
+    ...(workspace?.conversations.flatMap((item) => item.messages.map((message) => ({ id: message.id, at: message.recordedAt, title: message.role === 'user' ? 'You' : `${message.provider} replied`, detail: message.text.slice(0, 180) }))) ?? [])]
+    .sort((a, b) => b.at.localeCompare(a.at))
 
   return <div className="app">
     <aside className="sidebar">
@@ -189,10 +236,14 @@ function App() {
           <button className={view === 'conversation' ? 'active' : ''} onClick={() => setView('conversation')}>✳ <span>Conversations</span></button>
           <button className={view === 'review' ? 'active' : ''} onClick={() => setView('review')}>◉ <span>Review {pending.length ? `(${pending.length})` : ''}</span></button>
           <button className={view === 'documents' ? 'active' : ''} onClick={() => setView('documents')}>▤ <span>Documents</span></button>
+          {workspace.modules.calendar && <button className={view === 'calendar' ? 'active' : ''} onClick={() => setView('calendar')}>▦ <span>Calendar</span></button>}
+          {workspace.modules.tasks && <button className={view === 'tasks' ? 'active' : ''} onClick={() => setView('tasks')}>☑ <span>Tasks</span></button>}
+          <button className={view === 'activity' ? 'active' : ''} onClick={() => setView('activity')}>◷ <span>Activity</span></button>
           <button className={view === 'settings' ? 'active' : ''} onClick={() => void openSettings()}>⚙ <span>Connections</span></button>
         </div>
         {view === 'knowledge' && <>
         <form className="sidebar-search" onSubmit={(event) => void search(event)}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search workspace..." aria-label="Search workspace"/><button type="submit" aria-label="Search">⌕</button></form>
+        <button className="semantic-button" disabled={!query.trim() || searching} onClick={() => void searchSemantically()}>{searching ? 'Searching with AI…' : `Search meaning with ${provider} ✳`}</button>
         {results && <div className="search-results"><span className="eyebrow">RESULTS · {results.length}</span>{results.map((result, index) => <button key={`${result.kind}-${result.id}-${index}`} onClick={() => {
           const entity = workspace.entities.find((item) => item.id === result.id)
           if (entity) selectEntity(entity)
@@ -213,10 +264,13 @@ function App() {
       {error && <div className="notice error" role="alert">{error}</div>}
       {workspace?.errors.map((item) => <div key={item} className="notice warning" role="alert">Could not read {item}</div>)}
       {!workspace ? <section className="welcome"><div className="welcome-symbol">✳</div><span className="eyebrow">A PLACE TO CONNECT WHAT MATTERS</span><h1>Your world,<br/><em>within reach.</em></h1><p>Choose a folder on your device for Serenity's knowledge files. You can read and edit them with any text editor.</p><button className="primary" onClick={() => void chooseWorkspace()}>Choose a workspace <span>↗</span></button></section>
+        : view === 'calendar' && workspace.modules.calendar ? <CalendarModule workspace={workspace} onUpdate={setWorkspace} onError={setError} />
+        : view === 'tasks' && workspace.modules.tasks ? <TasksModule workspace={workspace} onUpdate={setWorkspace} onError={setError} />
         : view === 'conversation' ? <section className="conversation-panel"><div className="conversation-header"><div><span className="eyebrow">HUMAN + AI</span><h2>{conversation?.title ?? 'New conversation'}</h2></div>{conversation && <button className="text-button" onClick={() => void deleteConversation()}>Delete conversation</button>}</div><div className="messages">{!conversation && <div className="conversation-intro"><span className="welcome-symbol">✳</span><h1>Think together.</h1><p>Ask about anything in your workspace. Changes to your knowledge arrive as proposals for review.</p></div>}{conversation?.messages.map((item) => <article key={item.id} className={`message ${item.role}`}><small>{item.role === 'assistant' ? item.provider : 'You'}</small><p>{item.text}</p></article>)}{busy && <p className="hint">{provider} is thinking…</p>}</div><form className="compose" onSubmit={(event) => void sendMessage(event)}><div className="compose-settings"><label>Provider <select value={provider} onChange={(event) => setProvider(event.target.value as Provider)}><option value="copilot">GitHub Copilot</option><option value="codex">OpenAI Codex</option><option value="claude">Claude</option></select></label><label>Autonomy <select value={autonomy} onChange={(event) => setAutonomy(event.target.value as Autonomy)}><option value="ask">Ask first</option><option value="propose">Read & propose</option><option value="autonomous">Auto-save claims</option></select></label><label className="retention"><input type="checkbox" checked={retained} onChange={(event) => setRetained(event.target.checked)}/> Save history</label></div><div className="compose-input"><input value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Ask a question or share something to remember..." disabled={busy} aria-label="Message"/><button type="submit" className="primary" disabled={busy || !message.trim()}>Send ↗</button></div></form></section>
         : view === 'review' ? <section className="page"><span className="eyebrow">KNOWLEDGE REVIEW</span><h1>Proposals & activity</h1><p>Decide which suggested claims belong in your knowledge. Previous decisions remain visible.</p>{workspace.proposals.length === 0 && <p className="hint">Nothing to review yet. Conversations can suggest claims about existing entities.</p>}{workspace.proposals.map((item) => <article key={item.id} className="review-card"><span className="eyebrow">{item.status} · {item.provider} · {item.origin}</span><h2>{workspace.entities.find((entity) => entity.id === item.subject)?.title ?? 'Unknown entity'} · {item.key}</h2><strong>{item.value}</strong><p>Source: {item.source}</p>{item.status === 'pending' && <div className="review-actions"><button className="primary" onClick={() => void resolveProposal(item.id, true)}>Accept</button><button className="secondary" onClick={() => void resolveProposal(item.id, false)}>Dismiss</button></div>}</article>)}</section>
         : view === 'documents' ? <section className="page"><span className="eyebrow">SOURCES</span><h1>Documents</h1><p>Imported documents are copied into the workspace. Text, PDF, and DOCX contents can be searched and included in AI conversations.</p><button className="primary" onClick={() => void importDocuments()}>Import documents +</button><div className="document-list">{workspace.documents.map((item) => <div key={item.name} className="document-row"><span>▤</span><strong>{item.name}</strong><small>{Math.round(item.size / 1024)} KB</small><button className="text-button" onClick={() => { setConversationId(null); setMessage(`Analyze the imported document ${item.name}. Summarize it, identify useful knowledge about existing entities, and suggest claims with precise sources. Ask me to clarify any ambiguous identities.`); setView('conversation') }}>Analyze ↗</button></div>)}</div></section>
-        : view === 'settings' ? <section className="page"><span className="eyebrow">AI CONNECTIONS</span><h1>Connect providers</h1><p>Use an existing provider sign-in where supported, or set an API key. Saved keys stay outside the knowledge workspace and are protected by your operating system.</p><div className="document-list">{(['copilot', 'codex', 'claude'] as const).map((name) => <div key={name} className="document-row"><span>✳</span><strong>{name === 'copilot' ? 'GitHub Copilot' : name === 'codex' ? 'OpenAI Codex' : 'Claude Agent SDK'}</strong><small>{credentials?.[name] ? 'Key saved' : 'Use provider sign-in or add a key'}</small></div>)}</div><form className="connection-form" onSubmit={(event) => void saveKey(event)}><h2>Set an API key or token</h2><label htmlFor="key-provider">Provider</label><select id="key-provider" value={keyProvider} onChange={(event) => setKeyProvider(event.target.value as Provider)}><option value="copilot">GitHub token</option><option value="codex">Codex API key</option><option value="claude">Anthropic API key</option></select><label htmlFor="provider-key">Credential</label><input id="provider-key" type="password" autoComplete="off" value={key} onChange={(event) => setKey(event.target.value)} placeholder="Paste a key or token"/><div className="review-actions"><button className="primary" type="submit" disabled={!key.trim()}>Save securely</button>{credentials?.[keyProvider] && <button className="secondary" type="button" onClick={() => void window.serenity.saveCredential(keyProvider, '').then(setCredentials).catch((cause) => setError(String(cause)))}>Remove saved key</button>}</div></form></section>
+        : view === 'activity' ? <section className="page"><span className="eyebrow">WORKSPACE HISTORY</span><h1>Activity</h1><p>Follow the provenance of knowledge and see what changed over time.</p>{activity.length === 0 && <p className="hint">Your workspace history will appear here.</p>}{activity.map((item) => <article key={item.id} className="activity-row"><time>{new Date(item.at).toLocaleString()}</time><div><strong>{item.title}</strong><p>{item.detail}</p></div></article>)}</section>
+        : view === 'settings' ? <section className="page"><span className="eyebrow">WORKSPACE SETTINGS</span><h1>Modules & connections</h1><p>Turn modules off without removing their files. Calendar and tasks belong to Serenity and connect to the same knowledge workspace.</p><div className="document-list">{modules.map((item) => <label key={item.id} className="module-toggle"><span><strong>{item.title}</strong><small>{item.description}</small></span><input type="checkbox" checked={workspace.modules[item.id]} onChange={(event) => void toggleModule(item.id, event.target.checked)}/></label>)}</div><h2>AI providers</h2><p>Use an existing provider sign-in where supported, or set an API key. Claude requires an Anthropic API key for third-party apps. Saved keys stay outside the knowledge workspace and are protected by your operating system.</p><div className="document-list">{(['copilot', 'codex', 'claude'] as const).map((name) => <div key={name} className="document-row"><span>✳</span><strong>{name === 'copilot' ? 'GitHub Copilot' : name === 'codex' ? 'OpenAI Codex' : 'Claude Agent SDK'}</strong><small>{credentials?.[name] ? 'Key saved' : name === 'claude' ? 'API key required' : 'Use provider sign-in or add a key'}</small></div>)}</div><form className="connection-form" onSubmit={(event) => void saveKey(event)}><h2>Set an API key or token</h2><label htmlFor="key-provider">Provider</label><select id="key-provider" value={keyProvider} onChange={(event) => setKeyProvider(event.target.value as Provider)}><option value="copilot">GitHub token</option><option value="codex">Codex API key</option><option value="claude">Anthropic API key</option></select><label htmlFor="provider-key">Credential</label><input id="provider-key" type="password" autoComplete="off" value={key} onChange={(event) => setKey(event.target.value)} placeholder="Paste a key or token"/><div className="review-actions"><button className="primary" type="submit" disabled={!key.trim()}>Save securely</button>{credentials?.[keyProvider] && <button className="secondary" type="button" onClick={() => void window.serenity.saveCredential(keyProvider, '').then(setCredentials).catch((cause) => setError(String(cause)))}>Remove saved key</button>}</div></form></section>
         : !draft ? <section className="empty"><span className="empty-symbol">◇</span><h1>Start with what you know.</h1><p>Create a person, project, idea, place, or anything else meaningful to you. Categories are yours to define.</p><button className="primary" onClick={newEntity}>Create an entity <span>+</span></button></section>
           : <div className="content">
               <section className="editor">
@@ -233,9 +287,10 @@ function App() {
               </section>
               <aside className="details"><span className="eyebrow">CLAIMS & SOURCES</span><h2>What we know</h2><p className="detail-intro">Individual facts stay connected to their source. Conflicting claims remain visible.</p>
                 {conflicts.map((key) => { const possible = claims.filter((item) => item.key === key); const humanClaims = possible.filter((item) => item.origin === 'human'); const likely = humanClaims.length === 1 ? humanClaims[0] : null; return <div className="conflict" key={key}><strong>Conflicting {key}</strong><small>{likely ? `A direct statement suggests ${workspace.entities.find((entity) => entity.id === likely.value)?.title ?? likely.value}. This is not resolved.` : 'No clear answer from the available sources. Please clarify.'}</small><button onClick={() => { setConversationId(null); setMessage(`I have conflicting information about ${draft.title}'s ${key}. What do the sources say, and what should I clarify?`); setView('conversation') }}>Discuss this ↗</button></div> })}
-                {claims.map((item) => { const target = workspace.entities.find((entity) => entity.id === item.value); return <div className="claim" key={item.id}><span className="eyebrow">{item.key} {conflicts.includes(item.key) ? '· CONFLICT' : ''}</span>{target ? <button className="claim-link" onClick={() => selectEntity(target)}>{target.title} ↗</button> : <strong>{item.value}</strong>}<small>From {item.source} · {item.origin === 'human' ? 'direct statement' : item.origin === 'ai-inference' ? 'AI inference' : 'AI extraction'} · {item.status}</small></div> })}
+                {claims.map((item) => { const target = workspace.entities.find((entity) => entity.id === item.value); const sourceEntity = workspace.merges.find((merge) => merge.id === item.mergedFrom); return <div className="claim" key={item.id}><span className="eyebrow">{item.key} {conflicts.includes(item.key) ? '· CONFLICT' : ''}</span>{target ? <button className="claim-link" onClick={() => selectEntity(target)}>{target.title} ↗</button> : <strong>{item.value}</strong>}<small>From {item.source} · {item.origin === 'human' ? 'direct statement' : item.origin === 'ai-inference' ? 'AI inference' : 'AI extraction'} · {item.status}{sourceEntity ? ` · archived from ${sourceEntity.title}` : ''}</small></div> })}
                 {claims.length === 0 && <p className="hint">No claims recorded yet.</p>}
                 {selected && <form className="claim-form" onSubmit={(event) => void addClaim(event)}><h3>Add a claim</h3><label htmlFor="claim-key">About or relationship</label><input id="claim-key" placeholder="e.g. birthday, friend of" required value={claim.key} onChange={(event) => setClaim({ ...claim, key: event.target.value })}/><label htmlFor="claim-value">Value</label><input id="claim-value" placeholder="e.g. September 7" required={!claimTarget} value={claim.value} onChange={(event) => setClaim({ ...claim, value: event.target.value })} disabled={Boolean(claimTarget)}/><label htmlFor="claim-target">Or link another entity</label><select id="claim-target" value={claimTarget} onChange={(event) => setClaimTarget(event.target.value)}><option value="">No entity linked</option>{workspace.entities.filter((entity) => entity.id !== selected).map((entity) => <option key={entity.id} value={entity.id}>{entity.title}</option>)}</select><label htmlFor="claim-source">Source</label><input id="claim-source" required value={claim.source} onChange={(event) => setClaim({ ...claim, source: event.target.value })}/><button type="submit" className="secondary">Add claim +</button></form>}
+                {selected && workspace.entities.length > 1 && <div className="merge-form"><h3>Same as another entity?</h3><p>Archive this entity and resolve its links to the selected entity. Its original file and history remain available.</p><select aria-label="Merge into" value={mergeTarget} onChange={(event) => setMergeTarget(event.target.value)}><option value="">Choose the surviving entity</option>{workspace.entities.filter((entity) => entity.id !== selected).map((entity) => <option key={entity.id} value={entity.id}>{entity.title}</option>)}</select><button className="secondary" disabled={!mergeTarget} onClick={() => void mergeSelected()}>Merge into selected entity</button></div>}
               </aside>
             </div>}
     </main>

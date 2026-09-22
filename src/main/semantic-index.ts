@@ -54,7 +54,9 @@ export async function buildSemanticIndex(workspace: Workspace, ask: Ask): Promis
   const previous = await readSemanticIndex(workspace)
   const records = [
     ...snapshot.entities.map((item) => ({ key: `entity:${item.id}`, text: `${item.title}\n${item.type}\n${item.body}` })),
-    ...snapshot.claims.map((item) => ({ key: `claim:${item.id}`, text: `${item.key}: ${item.value}\nSource: ${item.source}\nOrigin: ${item.origin}` }))
+    ...snapshot.claims.filter((item) => item.status !== 'retracted').map((item) => ({ key: `claim:${item.id}`, text: `${item.key}: ${item.value}\nSource: ${item.source}\nOrigin: ${item.origin}` })),
+    ...(snapshot.modules.calendar ? snapshot.events.map((item) => ({ key: `event:${item.id}`, text: `${item.title}\n${item.start}\n${item.notes}` })) : []),
+    ...(snapshot.modules.tasks ? snapshot.tasks.map((item) => ({ key: `task:${item.id}`, text: `${item.title}\nDue: ${item.due ?? 'none'}\n${item.notes}` })) : [])
   ]
   for (const document of snapshot.documents) {
     try {

@@ -31,7 +31,12 @@ function checksum(text: string): string {
 function date(value: unknown, name: string, optional = false): string | undefined {
   if (optional && (value === undefined || value === '')) return undefined
   const text = requiredText(value, name)
-  if (!/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2})?$/.test(text) || Number.isNaN(Date.parse(text))) throw new Error(`Invalid ${name}`)
+  const match = /^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?$/.exec(text)
+  if (!match) throw new Error(`Invalid ${name}`)
+  const [year, month, day, hour, minute] = match.slice(1).map(Number)
+  const calendarDay = new Date(year, month - 1, day)
+  if (calendarDay.getFullYear() !== year || calendarDay.getMonth() !== month - 1 || calendarDay.getDate() !== day ||
+    (match[4] !== undefined && (hour > 23 || minute > 59))) throw new Error(`Invalid ${name}`)
   return text
 }
 
@@ -44,14 +49,18 @@ function parseEvent(data: unknown): CalendarEvent {
   if (!record(data)) throw new Error('Invalid event')
   return { id: id(data.id), title: requiredText(data.title, 'Title'), start: date(data.start, 'start date')!,
     end: date(data.end, 'end date', true), notes: typeof data.notes === 'string' ? data.notes : '',
-    relatedEntityIds: related(data.relatedEntityIds ?? []) }
+    relatedEntityIds: related(data.relatedEntityIds ?? []),
+    source: typeof data.source === 'string' ? data.source : undefined,
+    origin: typeof data.origin === 'string' ? data.origin as CalendarEvent['origin'] : undefined }
 }
 
 function parseTask(data: unknown): TaskItem {
   if (!record(data)) throw new Error('Invalid task')
   return { id: id(data.id), title: requiredText(data.title, 'Title'), due: date(data.due, 'due date', true),
     completed: data.completed === true, notes: typeof data.notes === 'string' ? data.notes : '',
-    relatedEntityIds: related(data.relatedEntityIds ?? []) }
+    relatedEntityIds: related(data.relatedEntityIds ?? []),
+    source: typeof data.source === 'string' ? data.source : undefined,
+    origin: typeof data.origin === 'string' ? data.origin as TaskItem['origin'] : undefined }
 }
 
 function parseEntity(text: string): Entity {
@@ -64,6 +73,8 @@ function parseEntity(text: string): Entity {
     title: requiredText(metadata.title, 'Title'),
     type: requiredText(metadata.type, 'Type'),
     body: text.slice(match[0].length),
+    source: typeof metadata.source === 'string' ? metadata.source : undefined,
+    origin: typeof metadata.origin === 'string' ? metadata.origin as Entity['origin'] : undefined,
     revision: checksum(text)
   }
 }
@@ -74,7 +85,7 @@ function parseClaim(text: string): Claim {
   const origin = requiredText(data.origin, 'Origin')
   const status = requiredText(data.status, 'Status')
   if (!['human', 'ai-statement', 'ai-inference'].includes(origin)) throw new Error('Invalid origin')
-  if (!['confirmed', 'proposed'].includes(status)) throw new Error('Invalid status')
+  if (!['confirmed', 'proposed', 'retracted'].includes(status)) throw new Error('Invalid status')
   return {
     id: id(data.id),
     subject: id(data.subject),
@@ -83,7 +94,9 @@ function parseClaim(text: string): Claim {
     source: requiredText(data.source, 'Source'),
     origin: origin as Claim['origin'],
     status: status as Claim['status'],
-    recordedAt: requiredText(data.recordedAt, 'Recorded at')
+    recordedAt: requiredText(data.recordedAt, 'Recorded at'),
+    retractedAt: typeof data.retractedAt === 'string' ? data.retractedAt : undefined,
+    retractionReason: typeof data.retractionReason === 'string' ? data.retractionReason : undefined
   }
 }
 
@@ -129,7 +142,7 @@ export class Workspace {
     const tasks: TaskItem[] = []
     const merges: MergeRecord[] = []
     const errors: string[] = []
-    const enabled: Record<ModuleId, boolean> = { calendar: true, tasks: true, semanticIndex: false }
+    const enabled: Record<ModuleId, boolean> = { calendar: true, tasks: true, semanticIndex: false, documentAnalysis: false }
     let semanticProvider: Provider = 'copilot'
     let semanticIndex: WorkspaceSnapshot['semanticIndex'] = null
     try {
@@ -198,9 +211,12 @@ export class Workspace {
             if (!Array.isArray(data.messages) || typeof data.title !== 'string') throw new Error('Invalid conversation')
             conversations.push(data as unknown as Conversation)
           } else {
-            requiredText(data.subject, 'Subject')
             requiredText(data.status, 'Status')
-            proposals.push(data as unknown as Proposal)
+            const kind = typeof data.kind === 'string' ? data.kind : 'claim'
+            if (!['claim', 'entity', 'task', 'event'].includes(kind)) throw new Error('Invalid proposal kind')
+            if (kind === 'claim') id(data.subject)
+            else requiredText(data.title, 'Title')
+            proposals.push({ ...data, kind } as unknown as Proposal)
           }
         } catch (error) {
           errors.push(`${basename(directory)}/${name}: ${error instanceof Error ? error.message : String(error)}`)
@@ -233,7 +249,10 @@ export class Workspace {
       claim.value = resolve(claim.value)
       if (claim.subject !== originalSubject) claim.mergedFrom = originalSubject
     }
-    for (const proposal of proposals) proposal.subject = resolve(proposal.subject)
+    for (const proposal of proposals) {
+      if (proposal.kind === 'claim') proposal.subject = resolve(proposal.subject)
+      if (proposal.kind === 'task' || proposal.kind === 'event') proposal.relatedEntityIds = proposal.relatedEntityIds.map(resolve)
+    }
     for (const event of events) event.relatedEntityIds = event.relatedEntityIds.map(resolve)
     for (const task of tasks) task.relatedEntityIds = task.relatedEntityIds.map(resolve)
     return { path: this.path, entities, claims, conversations, proposals, documents, events, tasks, merges, modules: enabled, semanticProvider, semanticIndex, errors }
@@ -253,7 +272,7 @@ export class Workspace {
     }
     if (!previous && input.revision) throw new Error('This entity was removed on disk. Refresh before saving.')
     if (typeof input.body !== 'string') throw new Error('Body must be text')
-    const text = `---\n${YAML.stringify({ id: entityId, title, type })}---\n${input.body}`
+    const text = `---\n${YAML.stringify({ id: entityId, title, type, source: input.source, origin: input.origin ?? 'human' })}---\n${input.body}`
     await atomicWrite(path, text)
     this.markDirty()
     return this.snapshot()
@@ -273,6 +292,19 @@ export class Workspace {
     }
     const path = join(this.directories[1], `${claim.id}.yaml`)
     await writeFile(path, YAML.stringify(claim), { flag: 'wx' })
+    this.markDirty()
+    return this.snapshot()
+  }
+
+  async retractClaim(claimId: string, reason: string): Promise<WorkspaceSnapshot> {
+    const path = join(this.directories[1], `${id(claimId)}.yaml`)
+    const original = await readFile(path, 'utf8')
+    const claim = parseClaim(original)
+    if (claim.id !== claimId || claim.status !== 'confirmed') throw new Error('Only confirmed claims can be retracted')
+    claim.status = 'retracted'
+    claim.retractedAt = new Date().toISOString()
+    claim.retractionReason = requiredText(reason, 'Reason')
+    await atomicWrite(path, YAML.stringify(claim))
     this.markDirty()
     return this.snapshot()
   }
@@ -326,9 +358,15 @@ export class Workspace {
       try {
         this.index.exec('DELETE FROM records')
         for (const entity of snapshot.entities) insert.run(entity.id, 'entity', entity.title, entity.type, entity.body)
-        for (const claim of snapshot.claims) {
+        for (const claim of snapshot.claims.filter((item) => item.status !== 'retracted')) {
           const targetName = snapshot.entities.find((entity) => entity.id === claim.value)?.title ?? claim.value
           insert.run(claim.subject, 'claim', `${claim.key}: ${targetName}`, claim.source, `${targetName} ${claim.value}`)
+        }
+        if (snapshot.modules.tasks) {
+          for (const task of snapshot.tasks) insert.run(task.id, 'task', task.title, task.due ?? 'Undated task', `${task.notes} ${task.relatedEntityIds.map((id) => snapshot.entities.find((entity) => entity.id === id)?.title ?? id).join(' ')}`)
+        }
+        if (snapshot.modules.calendar) {
+          for (const event of snapshot.events) insert.run(event.id, 'event', event.title, event.start, `${event.notes} ${event.relatedEntityIds.map((id) => snapshot.entities.find((entity) => entity.id === id)?.title ?? id).join(' ')}`)
         }
         for (const document of snapshot.documents) {
           let text = ''
@@ -373,18 +411,29 @@ export class Workspace {
     const path = join(this.directories[4], `${id(proposalId)}.yaml`)
     const data: unknown = YAML.parse(await readFile(path, 'utf8'))
     if (!record(data) || data.id !== proposalId || data.status !== 'pending') throw new Error('Proposal no longer pending. Refresh to see the current state.')
-    const proposal = data as unknown as Proposal
+    const proposal = { ...data, kind: data.kind ?? 'claim' } as unknown as Proposal
     if (accept) {
-      const activeSubject = (await this.snapshot()).proposals.find((item) => item.id === proposalId)?.subject
-      const entity = parseEntity(await readFile(join(this.directories[0], `${id(activeSubject)}.md`), 'utf8'))
-      const subject = entity.id
-      const claim: Claim = {
-        id: randomUUID(), subject, key: requiredText(proposal.key, 'Key'),
-        value: requiredText(proposal.value, 'Value'), source: requiredText(proposal.source, 'Source'),
-        origin: proposal.origin, status: 'confirmed', recordedAt: new Date().toISOString()
+      if (proposal.kind === 'claim') {
+        const active = (await this.snapshot()).proposals.find((item) => item.id === proposalId)
+        if (!active || active.kind !== 'claim') throw new Error('Claim proposal not found')
+        const entity = parseEntity(await readFile(join(this.directories[0], `${id(active.subject)}.md`), 'utf8'))
+        const claim: Claim = {
+          id: randomUUID(), subject: entity.id, key: requiredText(proposal.key, 'Key'),
+          value: requiredText(proposal.value, 'Value'), source: requiredText(proposal.source, 'Source'),
+          origin: proposal.origin, status: 'confirmed', recordedAt: new Date().toISOString()
+        }
+        await writeFile(join(this.directories[1], `${claim.id}.yaml`), YAML.stringify(claim), { flag: 'wx' })
+        this.markDirty()
+      } else if (proposal.kind === 'entity') {
+        await this.saveEntity({ id: '', title: proposal.title, type: proposal.type, body: proposal.body,
+          source: proposal.source, origin: proposal.origin })
+      } else if (proposal.kind === 'task') {
+        await this.saveTask({ id: '', title: proposal.title, due: proposal.due, notes: proposal.notes,
+          completed: false, relatedEntityIds: proposal.relatedEntityIds, source: proposal.source, origin: proposal.origin })
+      } else {
+        await this.saveEvent({ id: '', title: proposal.title, start: proposal.start, end: proposal.end,
+          notes: proposal.notes, relatedEntityIds: proposal.relatedEntityIds, source: proposal.source, origin: proposal.origin })
       }
-      await writeFile(join(this.directories[1], `${claim.id}.yaml`), YAML.stringify(claim), { flag: 'wx' })
-      this.markDirty()
     }
     proposal.status = accept ? 'accepted' : 'rejected'
     await atomicWrite(path, YAML.stringify(proposal))
@@ -396,6 +445,7 @@ export class Workspace {
     const current = (await this.snapshot()).modules
     current[moduleId] = enabled
     await atomicWrite(join(this.path, '.serenity', 'modules.yaml'), YAML.stringify(current))
+    this.markDirty()
     return this.snapshot()
   }
 

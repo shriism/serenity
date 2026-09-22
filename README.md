@@ -19,7 +19,10 @@ To check the project:
 npm run typecheck
 npm test
 npm run build
+npm run smoke:desktop
 ```
+
+The desktop smoke test launches Electron and checks that the window and secure preload API start; run it on a machine with a graphical desktop.
 
 To package for the current OS use `npm run dist`. Platform-specific commands are `npm run dist:mac`, `npm run dist:win`, and `npm run dist:linux` (cross-building may require platform-specific tooling or a machine running the target OS). Unsigned macOS builds may require manual permission to open.
 
@@ -27,8 +30,8 @@ To package for the current OS use `npm run dist`. Platform-specific commands are
 
 The conversation view can switch between GitHub Copilot, OpenAI Codex, and Claude Agent SDK. Connect a supported provider account using its native tooling, or enter a credential under **Connections**. Claude Agent SDK in a third-party app requires an Anthropic API key; it cannot reuse a claude.ai login. The SDKs use provider-backed services; no local model is required. The chosen workflow autonomy setting controls proposed claims: ask first, review proposals, or auto-save claims from that conversation. Provider agent tools are disabled or set read-only: knowledge updates are made through Serenity's own claim workflow.
 
-The desktop app also lets you browse and edit entities, link them through sourced claims, archive and merge duplicates without losing history, search text and relationships, ask a provider to search semantically on demand, import source files, analyze text/PDF/DOCX documents through conversation, review AI suggestions, and control whether conversations are retained. Its internal calendar and task modules connect records to existing entities and can be disabled without deleting their files. An optional background AI indexing module builds derived semantic summaries under `.serenity/semantic-index.yaml`; it sends changed records to the selected provider when enabled, so it is off by default.
+The desktop app also lets you browse and edit entities, link them through sourced claims, archive and merge duplicates without losing history, search text and relationships, ask a provider to search semantically on demand, import source files, analyze text/PDF/DOCX documents through conversation, review AI suggestions for claims, entities, tasks, and events, and control whether conversations are retained. Retracted claims stay in history but are excluded from current search. Its internal calendar and task modules connect records to existing entities and can be disabled without deleting their files. An optional background AI indexing module builds derived semantic summaries under `.serenity/semantic-index.yaml`; an independent opt-in document analysis module analyzes newly added or changed documents and drafts proposals. Both send workspace content to the selected provider when enabled, so both are off by default.
 
 ## Current limitations
 
-This is an actively developed application, not yet the complete product described in SERENITY.md. True vector retrieval, automated entity resolution, automatic document ingestion, more granular autonomy controls, cloud sync, local models, and mobile apps are not implemented. Calendar and tasks are internal only; no external calendar sync is planned. Provider authentication and packaged SDK operation still require live end-to-end tests on all target operating systems. Large workspaces currently fail with an explicit context-limit error instead of silently omitting files from AI requests.
+This is an actively developed application, not yet the complete product described in SERENITY.md. True vector retrieval, fully automated entity resolution, more granular autonomy controls, cloud sync, local models, and mobile apps are not implemented. Calendar and tasks are internal only; no external calendar sync is planned. A live Copilot SDK smoke test succeeded on macOS; Codex, Claude, and packaged SDK operation still require live end-to-end tests on all target operating systems. Large workspaces currently fail with an explicit context-limit error instead of silently omitting files from AI requests.

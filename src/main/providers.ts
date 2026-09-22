@@ -1,11 +1,13 @@
 import type { Provider } from '../shared/types'
 import { getCredential } from './credentials'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 
 export async function askProvider(provider: Provider, workspace: string, prompt: string): Promise<string> {
   if (provider === 'copilot') {
     const { CopilotClient } = await import('@github/copilot-sdk')
     const token = await getCredential('copilot')
-    const client = new CopilotClient({ mode: 'empty', workingDirectory: workspace, ...(token ? { gitHubToken: token } : {}) })
+    const client = new CopilotClient({ mode: 'empty', baseDirectory: join(homedir(), '.copilot'), workingDirectory: workspace, ...(token ? { gitHubToken: token } : {}) })
     await client.start()
     try {
       const session = await client.createSession({

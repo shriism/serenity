@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import YAML from 'yaml'
 import { Workspace } from '../src/main/workspace'
 import { buildSemanticIndex, readSemanticIndex } from '../src/main/semantic-index'
+import { analyzeChangedDocument } from '../src/main/document-analysis'
 
 test('workspace preserves file edits and prevents stale saves', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
@@ -38,7 +39,7 @@ test('conflicting claims remain sourced and proposals require review', async () 
     const other = await workspace.addClaim({ subject: entity.id, key: 'birthday', value: 'September 8', source: 'Old note' })
     assert.equal(other.claims.length, 2)
     await workspace.addProposal({
-      id: '123e4567-e89b-42d3-a456-426614174000', subject: entity.id,
+      id: '123e4567-e89b-42d3-a456-426614174000', kind: 'claim', subject: entity.id,
       key: 'hobby', value: 'Robotics', source: 'AI inference', origin: 'ai-inference',
       provider: 'copilot', conversationId: '123e4567-e89b-42d3-a456-426614174001',
       status: 'pending', recordedAt: new Date().toISOString()
@@ -83,7 +84,7 @@ test('conversation retention and accepting a proposal preserve claim provenance'
     assert.equal((await workspace.snapshot()).conversations.length, 1)
     const proposalId = '123e4567-e89b-42d3-a456-426614174004'
     await workspace.addProposal({
-      id: proposalId, subject: entity.id, key: 'interest', value: 'Robots', source: 'Conversation with me',
+      id: proposalId, kind: 'claim', subject: entity.id, key: 'interest', value: 'Robots', source: 'Conversation with me',
       origin: 'ai-inference', provider: 'copilot', conversationId, status: 'pending', recordedAt: new Date().toISOString()
     })
     const accepted = await workspace.resolveProposal(proposalId, true)
@@ -105,11 +106,15 @@ test('calendar and tasks remain on disk when their modules are disabled', async 
     const { entities: [entity] } = await workspace.saveEntity({ id: '', title: 'Project', type: 'project', body: '' })
     const withEvent = await workspace.saveEvent({ id: '', title: 'Meet', start: '2026-10-04T10:00', notes: '', relatedEntityIds: [entity.id] })
     assert.equal(withEvent.events[0].relatedEntityIds[0], entity.id)
+    await assert.rejects(workspace.saveEvent({ id: '', title: 'Invalid', start: '2026-02-30', notes: '', relatedEntityIds: [] }), /Invalid start date/)
     const withTask = await workspace.saveTask({ id: '', title: 'Prepare', due: '2026-10-03', completed: false, notes: '', relatedEntityIds: [entity.id] })
     assert.equal(withTask.tasks.length, 1)
+    assert.equal((await workspace.search('Prepare'))[0].kind, 'task')
+    assert.equal((await workspace.search('Meet'))[0].kind, 'event')
     const disabled = await workspace.setModule('calendar', false)
     assert.equal(disabled.modules.calendar, false)
     assert.equal(disabled.events.length, 1)
+    assert.equal((await workspace.search('Meet')).length, 0)
     await assert.rejects(workspace.saveEvent({ id: '', title: 'Blocked', start: '2026-10-05', notes: '', relatedEntityIds: [] }), /disabled/)
     const secondInstance = new Workspace(directory)
     await secondInstance.initialize()
@@ -164,6 +169,68 @@ test('opt-in semantic indexing sends changed records only and retains a rebuilda
     await buildSemanticIndex(workspace, ask)
     assert.equal(sent, 2)
     assert.equal((await workspace.snapshot()).semanticIndex?.count, 1)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('retracting a claim preserves its origin while excluding it from current search', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const { entities: [entity] } = await workspace.saveEntity({ id: '', title: 'Alex', type: 'person', body: '' })
+    const { claims: [claim] } = await workspace.addClaim({ subject: entity.id, key: 'interest', value: 'Robotics', source: 'Alex said' })
+    assert.equal((await workspace.search('Robotics')).length, 1)
+    const updated = await workspace.retractClaim(claim.id, 'Alex corrected this')
+    assert.equal(updated.claims[0].status, 'retracted')
+    assert.equal(updated.claims[0].source, 'Alex said')
+    assert.equal(updated.claims[0].retractionReason, 'Alex corrected this')
+    assert.equal((await workspace.search('Robotics')).length, 0)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('accepted AI proposals create sourced entities, tasks, and events', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const common = { provider: 'copilot' as const, conversationId: '123e4567-e89b-42d3-a456-426614174011', status: 'pending' as const, recordedAt: new Date().toISOString(), source: 'Syllabus', origin: 'ai-statement' as const }
+    const entityId = '123e4567-e89b-42d3-a456-426614174012'
+    await workspace.addProposal({ ...common, kind: 'entity', id: entityId, title: 'Research Club', type: 'community', body: 'A group.' })
+    const accepted = await workspace.resolveProposal(entityId, true)
+    assert.equal(accepted.entities[0].source, 'Syllabus')
+    assert.equal(accepted.entities[0].origin, 'ai-statement')
+    const taskId = '123e4567-e89b-42d3-a456-426614174013'
+    await workspace.addProposal({ ...common, kind: 'task', id: taskId, title: 'Apply', due: '2026-10-04', notes: '', relatedEntityIds: [accepted.entities[0].id] })
+    assert.equal((await workspace.resolveProposal(taskId, true)).tasks[0].source, 'Syllabus')
+    const eventId = '123e4567-e89b-42d3-a456-426614174014'
+    await workspace.addProposal({ ...common, kind: 'event', id: eventId, title: 'Meeting', start: '2026-10-10T11:00', notes: '', relatedEntityIds: [accepted.entities[0].id] })
+    const after = await workspace.resolveProposal(eventId, true)
+    assert.equal(after.events[0].title, 'Meeting')
+    assert.equal(after.proposals.filter((proposal) => proposal.status === 'accepted').length, 3)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('automatic document analysis is opt-in and runs once per document version', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const document = join(directory, 'documents', 'notes.txt')
+    await writeFile(document, 'Meeting on Tuesday')
+    let analyzed = 0
+    const send = async () => { analyzed++; return workspace.snapshot() }
+    await analyzeChangedDocument(workspace, 'notes.txt', send)
+    assert.equal(analyzed, 0)
+    await workspace.setModule('documentAnalysis', true)
+    await analyzeChangedDocument(workspace, 'notes.txt', send)
+    await analyzeChangedDocument(workspace, 'notes.txt', send)
+    assert.equal(analyzed, 1)
+    await writeFile(document, 'Meeting on Wednesday')
+    await analyzeChangedDocument(workspace, 'notes.txt', send)
+    assert.equal(analyzed, 2)
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

@@ -6,6 +6,8 @@ export interface Entity {
   type: string
   body: string
   revision?: string
+  source?: string
+  origin?: 'human' | 'ai-statement' | 'ai-inference'
 }
 
 export interface Claim {
@@ -15,9 +17,11 @@ export interface Claim {
   value: string
   source: string
   origin: 'human' | 'ai-statement' | 'ai-inference'
-  status: 'confirmed' | 'proposed'
+  status: 'confirmed' | 'proposed' | 'retracted'
   recordedAt: string
   mergedFrom?: string
+  retractedAt?: string
+  retractionReason?: string
 }
 
 export interface WorkspaceSnapshot {
@@ -51,6 +55,8 @@ export interface CalendarEvent {
   notes: string
   relatedEntityIds: string[]
   revision?: string
+  source?: string
+  origin?: 'human' | 'ai-statement' | 'ai-inference'
 }
 
 export interface TaskItem {
@@ -61,6 +67,8 @@ export interface TaskItem {
   notes: string
   relatedEntityIds: string[]
   revision?: string
+  source?: string
+  origin?: 'human' | 'ai-statement' | 'ai-inference'
 }
 
 export type Provider = 'copilot' | 'codex' | 'claude'
@@ -82,18 +90,20 @@ export interface Conversation {
   autonomy?: Autonomy
 }
 
-export interface Proposal {
+export interface ProposalBase {
   id: string
-  subject: string
-  key: string
-  value: string
-  source: string
-  origin: 'ai-statement' | 'ai-inference'
   provider: Provider
   conversationId: string
   status: 'pending' | 'accepted' | 'rejected'
   recordedAt: string
 }
+
+export type Proposal = ProposalBase & (
+  | { kind: 'claim'; subject: string; key: string; value: string; source: string; origin: 'ai-statement' | 'ai-inference' }
+  | { kind: 'entity'; title: string; type: string; body: string; source: string; origin: 'ai-statement' | 'ai-inference' }
+  | { kind: 'task'; title: string; due?: string; notes: string; relatedEntityIds: string[]; source: string; origin: 'ai-statement' | 'ai-inference' }
+  | { kind: 'event'; title: string; start: string; end?: string; notes: string; relatedEntityIds: string[]; source: string; origin: 'ai-statement' | 'ai-inference' }
+)
 
 export interface DocumentInfo {
   name: string
@@ -101,7 +111,7 @@ export interface DocumentInfo {
 }
 
 export interface SearchResult {
-  kind: 'entity' | 'claim' | 'document'
+  kind: 'entity' | 'claim' | 'document' | 'task' | 'event'
   id: string
   title: string
   detail: string
@@ -112,6 +122,7 @@ export interface SerenityAPI {
   refresh(): Promise<WorkspaceSnapshot | null>
   saveEntity(entity: Entity): Promise<WorkspaceSnapshot>
   addClaim(claim: Pick<Claim, 'subject' | 'key' | 'value' | 'source'>): Promise<WorkspaceSnapshot>
+  retractClaim(id: string, reason: string): Promise<WorkspaceSnapshot>
   importDocuments(): Promise<WorkspaceSnapshot | null>
   search(query: string): Promise<SearchResult[]>
   semanticSearch(query: string, provider: Provider): Promise<SearchResult[]>

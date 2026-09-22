@@ -6,6 +6,7 @@ const api: SerenityAPI = {
   refresh: () => ipcRenderer.invoke('workspace:refresh'),
   saveEntity: (entity) => ipcRenderer.invoke('entity:save', entity),
   addClaim: (claim) => ipcRenderer.invoke('claim:add', claim),
+  retractClaim: (id, reason) => ipcRenderer.invoke('claim:retract', id, reason),
   importDocuments: () => ipcRenderer.invoke('document:import'),
   search: (query) => ipcRenderer.invoke('workspace:search', query),
   semanticSearch: (query, provider) => ipcRenderer.invoke('workspace:semantic-search', query, provider),

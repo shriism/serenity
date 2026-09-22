@@ -7,6 +7,8 @@ import { credentialStatus, saveCredential } from './credentials'
 import { semanticSearch } from './semantic'
 import { buildSemanticIndex } from './semantic-index'
 import { askProvider } from './providers'
+import { analyzeChangedDocument } from './document-analysis'
+import { basename, dirname } from 'node:path'
 import type { Autonomy, CalendarEvent, Claim, Entity, Provider, TaskItem } from '../shared/types'
 import type { ModuleId } from '../shared/modules'
 
@@ -17,6 +19,9 @@ let activeRequests = 0
 let indexTimer: ReturnType<typeof setTimeout> | null = null
 let indexRunning = false
 let indexPending = false
+const pendingDocuments = new Set<string>()
+let documentTimer: ReturnType<typeof setTimeout> | null = null
+let documentsRunning = false
 
 async function withActiveRequest<T>(work: () => Promise<T>): Promise<T> {
   activeRequests++
@@ -47,15 +52,47 @@ function scheduleSemanticIndex(target: Workspace): void {
   }, 1800)
 }
 
+function queueDocumentAnalysis(target: Workspace, filename: string): void {
+  pendingDocuments.add(filename)
+  if (documentTimer) clearTimeout(documentTimer)
+  documentTimer = setTimeout(() => {
+    documentTimer = null
+    if (documentsRunning || workspace !== target) return
+    documentsRunning = true
+    void (async () => {
+      try {
+        while (pendingDocuments.size && workspace === target) {
+          const name = pendingDocuments.values().next().value!
+          pendingDocuments.delete(name)
+          try {
+            await withActiveRequest(() => analyzeChangedDocument(target, name, sendMessage))
+            window?.webContents.send('workspace:changed')
+          } catch (error) { window?.webContents.send('semantic:index-error', `Document ${name}: ${String(error)}`) }
+        }
+      } finally {
+        documentsRunning = false
+        if (pendingDocuments.size && workspace === target) queueDocumentAnalysis(target, pendingDocuments.values().next().value!)
+      }
+    })()
+  }, 1200)
+}
+
 async function openWorkspace(path: string): Promise<ReturnType<Workspace['snapshot']>> {
   if (indexTimer) clearTimeout(indexTimer)
+  if (documentTimer) clearTimeout(documentTimer)
+  pendingDocuments.clear()
   await watcher?.close()
   workspace?.close()
   const next = new Workspace(path)
   await next.initialize()
   workspace = next
   watcher = chokidar.watch(next.directories, { ignoreInitial: true, awaitWriteFinish: { stabilityThreshold: 250, pollInterval: 100 } })
-  watcher.on('all', () => { next.markDirty(); window?.webContents.send('workspace:changed'); scheduleSemanticIndex(next) })
+  watcher.on('all', (event, changedPath) => {
+    next.markDirty()
+    window?.webContents.send('workspace:changed')
+    scheduleSemanticIndex(next)
+    if ((event === 'add' || event === 'change') && dirname(changedPath) === next.directories[2]) queueDocumentAnalysis(next, basename(changedPath))
+  })
   scheduleSemanticIndex(next)
   return next.snapshot()
 }
@@ -96,6 +133,7 @@ app.whenReady().then(() => {
   ipcMain.handle('workspace:refresh', () => { workspace?.markDirty(); return workspace?.snapshot() ?? null })
   ipcMain.handle('entity:save', (_event, entity: Entity) => currentWorkspace().saveEntity(entity))
   ipcMain.handle('claim:add', (_event, claim: Pick<Claim, 'subject' | 'key' | 'value' | 'source'>) => currentWorkspace().addClaim(claim))
+  ipcMain.handle('claim:retract', (_event, id: string, reason: string) => currentWorkspace().retractClaim(id, reason))
   ipcMain.handle('document:import', async () => {
     const files = await dialog.showOpenDialog(window!, { title: 'Import documents', properties: ['openFile', 'multiSelections'] })
     if (files.canceled) return null
@@ -131,5 +169,5 @@ app.whenReady().then(() => {
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })
 
-app.on('before-quit', () => { if (indexTimer) clearTimeout(indexTimer); void watcher?.close(); workspace?.close() })
+app.on('before-quit', () => { if (indexTimer) clearTimeout(indexTimer); if (documentTimer) clearTimeout(documentTimer); void watcher?.close(); workspace?.close() })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })

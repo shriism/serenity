@@ -57,6 +57,8 @@ textarea { min-height: 260px; resize: vertical; line-height: 1.65; }
 .claim strong, .claim small { display: block; }
 .claim strong { font-size: 14px; margin: 8px 0; overflow-wrap: anywhere; }
 .claim small { color: #94a496; font-size: 10px; }
+.claim.retracted { opacity: .6; }
+.retract-button { border: 0; background: transparent; color: #ad816b; padding: 9px 0 0; font-size: 10px; }
 .claim-form { margin-top: 32px; display: flex; flex-direction: column; gap: 8px; }
 .claim-form h3 { font-size: 20px; margin: 0 0 8px; }
 .claim-form label { font-size: 10px; font-weight: 700; color: #829486; }
@@ -73,6 +75,10 @@ textarea { min-height: 260px; resize: vertical; line-height: 1.65; }
 .merge-form p { color: #93a094; line-height: 1.5; font-size: 11px; margin: 0; }
 .merge-form select { padding: 9px; border: 1px solid #dce5d9; border-radius: 6px; color: #51685a; background: white; width: 100%; }
 .merge-form .secondary { margin: 0; }
+.candidate-box { background: #f1f5ed; border: 1px solid #d6e6d3; border-radius: 8px; padding: 13px; margin-top: 16px; }
+.candidate-box strong { color: #476c54; font-size: 12px; }
+.candidate-box p { color: #8d9d8e; font-size: 11px; margin: 7px 0; }
+.candidate-box button { display: block; color: #4a7f59; border: 0; background: transparent; padding: 6px 0; font-size: 11px; }
 .secondary { border: 1px solid #bad0bd; border-radius: 7px; padding: 10px; background: #fff; color: #4f7b5a; margin-top: 8px; font-weight: 600; font-size: 11px; }
 .navigation { display: grid; gap: 3px; margin: -12px 0 28px; }
 .navigation button { border: 0; background: transparent; border-radius: 8px; padding: 11px 13px; text-align: left; font-size: 17px; color: #7b9b84; display: flex; align-items: center; gap: 12px; }
@@ -95,6 +101,7 @@ textarea { min-height: 260px; resize: vertical; line-height: 1.65; }
 .review-card h2 { margin: 9px 0; font-size: 24px; }
 .review-card strong { display: block; margin-top: 8px; font-size: 15px; }
 .review-card p { color: #829186; font-size: 12px; }
+.review-card .review-warning { color: #98743f; background: #fff8e9; padding: 10px; border-radius: 6px; }
 .review-actions { display: flex; align-items: center; gap: 10px; }
 .review-actions .secondary { margin: 0; padding: 12px 18px; }
 .document-list { margin-top: 30px; }

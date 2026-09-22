@@ -1,6 +1,8 @@
 {
   "name": "serenity",
   "version": "0.1.0",
+  "description": "A human-AI personal knowledge environment",
+  "author": "sriyan",
   "private": true,
   "type": "module",
   "main": "./out/main/index.js",
@@ -9,10 +11,10 @@
     "build": "electron-vite build",
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
-    "dist": "npm run build && electron-builder",
-    "dist:mac": "npm run build && electron-builder --mac",
-    "dist:win": "npm run build && electron-builder --win",
-    "dist:linux": "npm run build && electron-builder --linux"
+    "dist": "npm run build && electron-builder --publish never",
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist:linux": "npm run build && electron-builder --linux --publish never"
   },
   "build": {
     "appId": "app.serenity.desktop",

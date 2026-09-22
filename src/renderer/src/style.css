@@ -135,6 +135,9 @@ textarea { min-height: 260px; resize: vertical; line-height: 1.65; }
 .module-toggle strong { font-size: 13px; }
 .module-toggle small { color: #92a095; font-size: 11px; padding-top: 4px; }
 .module-toggle input { width: auto; }
+.semantic-settings { display: grid; gap: 8px; max-width: 430px; margin: 20px 0 35px; font-size: 11px; color: #738878; }
+.semantic-settings select { border: 1px solid #dde5da; background: white; border-radius: 7px; padding: 10px; color: #395b45; }
+.semantic-settings small { color: #94a499; }
 .module-page { max-width: 1400px; width: 100%; }
 .calendar-layout, .tasks-layout { display: grid; grid-template-columns: minmax(390px, 1fr) 290px; gap: 35px; }
 .calendar-toolbar { display: flex; align-items: center; justify-content: space-between; }

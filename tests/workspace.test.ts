@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import YAML from 'yaml'
 import { Workspace } from '../src/main/workspace'
+import { buildSemanticIndex, readSemanticIndex } from '../src/main/semantic-index'
 
 test('workspace preserves file edits and prevents stale saves', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
@@ -138,6 +139,31 @@ test('merge archives duplicate and resolves knowledge and module links without e
     assert.equal(merged.merges[0].title, 'Alex from club')
     assert.match(await readFile(join(directory, 'archive', 'entities', `${duplicate.id}.md`), 'utf8'), /Old context/)
     assert.equal((await workspace.snapshot()).claims.length, 2)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('opt-in semantic indexing sends changed records only and retains a rebuildable summary', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    await workspace.saveEntity({ id: '', title: 'Robotics', type: 'concept', body: 'Machines that move.' })
+    let sent = 0
+    const ask = async () => { sent++; return '{"summary":"A concept about moving machines.","terms":["robots","engineering"]}' }
+    await buildSemanticIndex(workspace, ask)
+    assert.equal(sent, 0)
+    await workspace.setModule('semanticIndex', true)
+    await buildSemanticIndex(workspace, ask)
+    assert.equal(sent, 1)
+    assert.equal((await readSemanticIndex(workspace))?.entries.length, 1)
+    await buildSemanticIndex(workspace, ask)
+    assert.equal(sent, 1)
+    const entity = (await workspace.snapshot()).entities[0]
+    await workspace.saveEntity({ ...entity, body: 'New context about robots.' })
+    await buildSemanticIndex(workspace, ask)
+    assert.equal(sent, 2)
+    assert.equal((await workspace.snapshot()).semanticIndex?.count, 1)
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

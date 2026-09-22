@@ -5,6 +5,8 @@ import { Workspace } from './workspace'
 import { sendMessage } from './conversation'
 import { credentialStatus, saveCredential } from './credentials'
 import { semanticSearch } from './semantic'
+import { buildSemanticIndex } from './semantic-index'
+import { askProvider } from './providers'
 import type { Autonomy, CalendarEvent, Claim, Entity, Provider, TaskItem } from '../shared/types'
 import type { ModuleId } from '../shared/modules'
 
@@ -12,6 +14,9 @@ let window: BrowserWindow | null = null
 let workspace: Workspace | null = null
 let watcher: FSWatcher | null = null
 let activeRequests = 0
+let indexTimer: ReturnType<typeof setTimeout> | null = null
+let indexRunning = false
+let indexPending = false
 
 async function withActiveRequest<T>(work: () => Promise<T>): Promise<T> {
   activeRequests++
@@ -24,14 +29,34 @@ function currentWorkspace(): Workspace {
   return workspace
 }
 
+function scheduleSemanticIndex(target: Workspace): void {
+  if (indexTimer) clearTimeout(indexTimer)
+  indexTimer = setTimeout(() => {
+    indexTimer = null
+    if (workspace !== target) return
+    if (indexRunning) { indexPending = true; return }
+    indexRunning = true
+    void withActiveRequest(() => buildSemanticIndex(target, askProvider)).then(() => {
+      window?.webContents.send('workspace:changed')
+    }).catch((error) => {
+      window?.webContents.send('semantic:index-error', String(error))
+    }).finally(() => {
+      indexRunning = false
+      if (indexPending && workspace === target) { indexPending = false; scheduleSemanticIndex(target) }
+    })
+  }, 1800)
+}
+
 async function openWorkspace(path: string): Promise<ReturnType<Workspace['snapshot']>> {
+  if (indexTimer) clearTimeout(indexTimer)
   await watcher?.close()
   workspace?.close()
   const next = new Workspace(path)
   await next.initialize()
   workspace = next
   watcher = chokidar.watch(next.directories, { ignoreInitial: true, awaitWriteFinish: { stabilityThreshold: 250, pollInterval: 100 } })
-  watcher.on('all', () => { next.markDirty(); window?.webContents.send('workspace:changed') })
+  watcher.on('all', () => { next.markDirty(); window?.webContents.send('workspace:changed'); scheduleSemanticIndex(next) })
+  scheduleSemanticIndex(next)
   return next.snapshot()
 }
 
@@ -87,7 +112,18 @@ app.whenReady().then(() => {
     await saveCredential(provider, key)
     return credentialStatus()
   })
-  ipcMain.handle('module:set', (_event, id: ModuleId, enabled: boolean) => currentWorkspace().setModule(id, enabled))
+  ipcMain.handle('module:set', async (_event, id: ModuleId, enabled: boolean) => {
+    const selected = currentWorkspace()
+    const snapshot = await selected.setModule(id, enabled)
+    if (id === 'semanticIndex' && enabled) scheduleSemanticIndex(selected)
+    return snapshot
+  })
+  ipcMain.handle('semantic:provider', async (_event, provider: Provider) => {
+    const selected = currentWorkspace()
+    const snapshot = await selected.setSemanticProvider(provider)
+    if (snapshot.modules.semanticIndex) scheduleSemanticIndex(selected)
+    return snapshot
+  })
   ipcMain.handle('calendar:save', (_event, item: CalendarEvent) => currentWorkspace().saveEvent(item))
   ipcMain.handle('task:save', (_event, item: TaskItem) => currentWorkspace().saveTask(item))
   ipcMain.handle('entity:merge', (_event, source: string, target: string) => currentWorkspace().mergeEntities(source, target))
@@ -95,5 +131,5 @@ app.whenReady().then(() => {
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })
 
-app.on('before-quit', () => { void watcher?.close(); workspace?.close() })
+app.on('before-quit', () => { if (indexTimer) clearTimeout(indexTimer); void watcher?.close(); workspace?.close() })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })

@@ -18,6 +18,12 @@ const api: SerenityAPI = {
   saveEvent: (event) => ipcRenderer.invoke('calendar:save', event),
   saveTask: (task) => ipcRenderer.invoke('task:save', task),
   mergeEntities: (source, target) => ipcRenderer.invoke('entity:merge', source, target),
+  setSemanticProvider: (provider) => ipcRenderer.invoke('semantic:provider', provider),
+  onIndexError: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, message: string): void => callback(message)
+    ipcRenderer.on('semantic:index-error', listener)
+    return () => ipcRenderer.removeListener('semantic:index-error', listener)
+  },
   onWorkspaceChange: (callback) => {
     const listener = (): void => callback()
     ipcRenderer.on('workspace:changed', listener)

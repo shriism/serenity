@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } f
 import { basename, extname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import YAML from 'yaml'
-import type { CalendarEvent, Claim, Conversation, DocumentInfo, Entity, MergeRecord, Proposal, SearchResult, TaskItem, WorkspaceSnapshot } from '../shared/types'
+import type { CalendarEvent, Claim, Conversation, DocumentInfo, Entity, MergeRecord, Proposal, Provider, SearchResult, TaskItem, WorkspaceSnapshot } from '../shared/types'
 import { modules, type ModuleId } from '../shared/modules'
 import { extractDocument } from './documents'
 
@@ -129,7 +129,9 @@ export class Workspace {
     const tasks: TaskItem[] = []
     const merges: MergeRecord[] = []
     const errors: string[] = []
-    const enabled: Record<ModuleId, boolean> = { calendar: true, tasks: true }
+    const enabled: Record<ModuleId, boolean> = { calendar: true, tasks: true, semanticIndex: false }
+    let semanticProvider: Provider = 'copilot'
+    let semanticIndex: WorkspaceSnapshot['semanticIndex'] = null
     try {
       const raw: unknown = YAML.parse(await readFile(join(this.path, '.serenity', 'modules.yaml'), 'utf8'))
       if (!record(raw)) throw new Error('Invalid module settings')
@@ -138,6 +140,20 @@ export class Workspace {
       }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') errors.push(`.serenity/modules.yaml: ${String(error)}`)
+    }
+    try {
+      const raw: unknown = YAML.parse(await readFile(join(this.path, '.serenity', 'semantic-provider.yaml'), 'utf8'))
+      if (!record(raw) || !['copilot', 'codex', 'claude'].includes(String(raw.provider))) throw new Error('Invalid provider setting')
+      semanticProvider = raw.provider as Provider
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') errors.push(`.serenity/semantic-provider.yaml: ${String(error)}`)
+    }
+    try {
+      const raw: unknown = YAML.parse(await readFile(join(this.path, '.serenity', 'semantic-index.yaml'), 'utf8'))
+      if (!record(raw) || !Array.isArray(raw.entries) || typeof raw.generatedAt !== 'string') throw new Error('Invalid semantic index')
+      semanticIndex = { generatedAt: raw.generatedAt, count: raw.entries.length }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') errors.push(`.serenity/semantic-index.yaml: ${String(error)}`)
     }
     const mergesDirectory = join(this.path, 'archive', 'merges')
     for (const name of (await readdir(mergesDirectory)).filter((entry) => entry.endsWith('.yaml'))) {
@@ -220,7 +236,7 @@ export class Workspace {
     for (const proposal of proposals) proposal.subject = resolve(proposal.subject)
     for (const event of events) event.relatedEntityIds = event.relatedEntityIds.map(resolve)
     for (const task of tasks) task.relatedEntityIds = task.relatedEntityIds.map(resolve)
-    return { path: this.path, entities, claims, conversations, proposals, documents, events, tasks, merges, modules: enabled, errors }
+    return { path: this.path, entities, claims, conversations, proposals, documents, events, tasks, merges, modules: enabled, semanticProvider, semanticIndex, errors }
   }
 
   async saveEntity(input: Entity): Promise<WorkspaceSnapshot> {
@@ -380,6 +396,12 @@ export class Workspace {
     const current = (await this.snapshot()).modules
     current[moduleId] = enabled
     await atomicWrite(join(this.path, '.serenity', 'modules.yaml'), YAML.stringify(current))
+    return this.snapshot()
+  }
+
+  async setSemanticProvider(provider: Provider): Promise<WorkspaceSnapshot> {
+    if (!['copilot', 'codex', 'claude'].includes(provider)) throw new Error('Unknown provider')
+    await atomicWrite(join(this.path, '.serenity', 'semantic-provider.yaml'), YAML.stringify({ provider }))
     return this.snapshot()
   }
 

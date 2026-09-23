@@ -8,9 +8,10 @@ interface Props {
   workspace: WorkspaceSnapshot
   onResolve(id: string, accept: boolean): void
   onAttach(proposalId: string, entityId: string): void
+  onOpenSource(name: string): void
 }
 
-export function ReviewPanel({ workspace, onResolve, onAttach }: Props) {
+export function ReviewPanel({ workspace, onResolve, onAttach, onOpenSource }: Props) {
   const [targets, setTargets] = useState<Record<string, string>>({})
   const ordered = [...workspace.proposals].sort((a, b) =>
     Number(b.status === 'pending') - Number(a.status === 'pending') || b.recordedAt.localeCompare(a.recordedAt))
@@ -26,6 +27,7 @@ export function ReviewPanel({ workspace, onResolve, onAttach }: Props) {
         <h2>{item.kind === 'claim' ? `${workspace.entities.find((entity) => entity.id === item.subject)?.title ?? 'Unknown entity'} · ${item.key}` : item.title}</h2>
         <strong>{item.kind === 'claim' ? item.value : item.kind === 'entity' ? `Suggested category: ${item.type}` : item.kind === 'task' ? `Due ${item.due ?? 'not set'}` : `Starts ${item.start}`}</strong>
         <p>Source: {item.source}{item.kind === 'claim' && item.confidence !== undefined ? ` · AI-estimated confidence: ${Math.round(item.confidence * 100)}%` : ''}</p>
+        {workspace.documents.some((document) => document.name === item.source) && <button className="text-button" onClick={() => onOpenSource(item.source)}>Open source document ↗</button>}
         {item.kind === 'entity' && item.body.trim() && <div className="review-context"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{
           a: ({ children }) => <span className="preview-link">{children}</span>, img: ({ alt }) => <span>[Image: {alt || 'no description'}]</span>
         }}>{item.body}</ReactMarkdown></div>}

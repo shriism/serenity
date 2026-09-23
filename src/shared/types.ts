@@ -199,6 +199,7 @@ export interface SerenityAPI {
   setCurrentClaim(id: string, reason: string): Promise<WorkspaceSnapshot>
   clearCurrentClaim(subject: string, key: string): Promise<WorkspaceSnapshot>
   importDocuments(): Promise<WorkspaceSnapshot | null>
+  openDocument(name: string): Promise<void>
   search(query: string): Promise<SearchResult[]>
   semanticSearch(query: string, provider: Provider): Promise<SearchResult[]>
   searchSemanticIndex(query: string): Promise<SearchResult[]>

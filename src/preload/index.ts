@@ -12,6 +12,7 @@ const api: SerenityAPI = {
   setCurrentClaim: (id, reason) => ipcRenderer.invoke('claim:current', id, reason),
   clearCurrentClaim: (subject, key) => ipcRenderer.invoke('claim:current-clear', subject, key),
   importDocuments: () => ipcRenderer.invoke('document:import'),
+  openDocument: (name) => ipcRenderer.invoke('document:open', name),
   search: (query) => ipcRenderer.invoke('workspace:search', query),
   semanticSearch: (query, provider) => ipcRenderer.invoke('workspace:semantic-search', query, provider),
   searchSemanticIndex: (query) => ipcRenderer.invoke('workspace:cached-semantic-search', query),

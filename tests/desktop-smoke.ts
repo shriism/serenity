@@ -104,9 +104,12 @@ try {
   assert.ok(pdfResults.includes('document'), 'PDF text should be searchable in the desktop app')
   const docxResults = await evaluate(pageUrl, `window.serenity.search('DocxSyllabusDeadline').then((items) => items.map((item) => item.kind))`) as string[]
   assert.ok(docxResults.includes('document'), 'DOCX text should be searchable in the desktop app')
-  const unsupported = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Documents')); button?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); const row = [...document.querySelectorAll('.document-row')].find((item) => item.textContent?.includes('unreadable.bin')); return { label: row?.textContent, canAnalyze: Boolean(row?.querySelector('button')) } })()`) as { label?: string; canAnalyze: boolean }
+  const unsupported = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Documents')); button?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); const row = [...document.querySelectorAll('.document-row')].find((item) => item.textContent?.includes('unreadable.bin')); const actions = [...(row?.querySelectorAll('button') ?? [])].map((item) => item.textContent); return { label: row?.textContent, canAnalyze: actions.some((label) => label?.includes('Analyze')), canOpen: actions.some((label) => label?.includes('Open')) } })()`) as { label?: string; canAnalyze: boolean; canOpen: boolean }
   assert.match(unsupported.label ?? '', /No text extraction/)
   assert.equal(unsupported.canAnalyze, false)
+  assert.equal(unsupported.canOpen, true)
+  const invalidOpen = await evaluate(pageUrl, `window.serenity.openDocument('../outside').then(() => 'allowed', (error) => String(error))`) as string
+  assert.match(invalidOpen, /Invalid document name/)
   const taskCount = await evaluate(pageUrl, `window.serenity.saveTask({ id: '', title: 'Call Alex', due: '2026-10-03', completed: false, notes: '', relatedEntityIds: ['${entityId}'] }).then((snapshot) => snapshot.tasks.length)`)
   assert.equal(taskCount, 1)
   const eventCount = await evaluate(pageUrl, `window.serenity.saveEvent({ id: '', title: 'Meet Alex', start: '2026-10-04T10:00', notes: '', relatedEntityIds: ['${entityId}'] }).then((snapshot) => snapshot.events.length)`)

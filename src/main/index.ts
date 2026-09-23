@@ -183,6 +183,15 @@ app.whenReady().then(async () => {
     for (const path of files.filePaths) await currentWorkspace().importDocument(path)
     return currentWorkspace().snapshot()
   })
+  ipcMain.handle('document:open', async (_event, name: string) => {
+    if (typeof name !== 'string' || !name || basename(name) !== name || name === '.' || name === '..') {
+      throw new Error('Invalid document name')
+    }
+    const selected = currentWorkspace()
+    if (!(await selected.snapshot()).documents.some((item) => item.name === name)) throw new Error('Document not found in this workspace')
+    const error = await shell.openPath(join(selected.directories[2], name))
+    if (error) throw new Error(error)
+  })
   ipcMain.handle('workspace:search', (_event, query: string) => currentWorkspace().search(query))
   ipcMain.handle('workspace:semantic-search', (_event, query: string, provider: Provider) => withActiveRequest(() => semanticSearch(currentWorkspace(), query, provider)))
   ipcMain.handle('workspace:cached-semantic-search', (_event, query: string) => rankSemanticIndex(currentWorkspace(), query))

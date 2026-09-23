@@ -38,7 +38,7 @@ The desktop app also lets you read and edit Markdown entities, link them through
 
 When an AI-suggested entity resembles one you already have, Review offers **Attach to selected entity** or **Create separate entity**. Attaching records the proposed narrative as a sourced context claim; it does not overwrite the existing Markdown narrative.
 
-Documents with supported text formats (`.txt`, `.md`, `.csv`, `.json`, `.yaml`, `.yml`, `.pdf`, `.docx`) can be searched and analyzed. Other imported files remain in the workspace, but the Documents view identifies them as not text-extractable rather than offering analysis without content.
+Documents with supported text formats (`.txt`, `.md`, `.csv`, `.json`, `.yaml`, `.yml`, `.pdf`, `.docx`) can be searched and analyzed. Other imported files remain in the workspace, but the Documents view identifies them as not text-extractable rather than offering analysis without content. All imported files can be opened in their native application; sourced claims and proposals link to a document when their source matches its filename.
 
 Background semantic indexing processes long records in chunks. On-demand semantic search uses a visible catalog and relevant excerpts when a workspace is larger than one provider request.
 

@@ -11,10 +11,12 @@ interface Props {
   onSelectTarget(entity: Entity): void
   onMarkCurrent(id: string): void
   onRetract(id: string): void
+  sourceIsDocument: boolean
+  onOpenSource(name: string): void
 }
 
 export function ClaimCard({ claim, target, mergedFrom, conflicting, previousAlternative,
-  onSelectTarget, onMarkCurrent, onRetract }: Props) {
+  onSelectTarget, onMarkCurrent, onRetract, sourceIsDocument, onOpenSource }: Props) {
   return <div className={`claim ${claim.status === 'retracted' ? 'retracted' : ''}`}>
     <span className="eyebrow">{claim.key} {claim.isCurrent ? '· CURRENT' : conflicting ? '· CONFLICT' : previousAlternative ? '· PREVIOUS ALTERNATIVE' : ''}</span>
     {target ? <button className="claim-link" onClick={() => onSelectTarget(target)}>{target.title} ↗</button> :
@@ -28,6 +30,7 @@ export function ClaimCard({ claim, target, mergedFrom, conflicting, previousAlte
       {claim.confidence !== undefined ? ` · AI estimate ${Math.round(claim.confidence * 100)}%` : ''}
       {mergedFrom ? ` · archived from ${mergedFrom.title}` : ''}{claim.retractionReason ? ` · ${claim.retractionReason}` : ''}
     </small>
+    {sourceIsDocument && <button className="claim-link" onClick={() => onOpenSource(claim.source)}>Open source document ↗</button>}
     {claim.status === 'confirmed' && <div className="claim-actions">
       <button onClick={() => onMarkCurrent(claim.id)}>{claim.isCurrent ? 'Change reason / reaffirm' : 'Mark current'}</button>
       <button onClick={() => onRetract(claim.id)}>Retract</button>

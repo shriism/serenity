@@ -31,7 +31,10 @@ docx.file('word/document.xml', `<?xml version="1.0" encoding="UTF-8"?><w:documen
 await writeFile(join(workspace, 'documents', 'syllabus.docx'), await docx.generateAsync({ type: 'nodebuffer' }))
 await writeFile(join(workspace, 'documents', 'unreadable.bin'), 'Not a supported document type')
 const port = 20000 + Math.floor(Math.random() * 30000)
-const child = spawn(electron, [`--remote-debugging-port=${port}`, ...(packaged ? [] : ['.']), `--workspace=${workspace}`], { stdio: ['ignore', 'pipe', 'pipe'] })
+const child = spawn(electron, [`--remote-debugging-port=${port}`, ...(packaged ? [] : ['.']), `--workspace=${workspace}`], {
+  stdio: ['ignore', 'pipe', 'pipe'],
+  env: { ...process.env }
+})
 let output = ''
 child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString() })
 child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString() })
@@ -51,7 +54,7 @@ async function evaluate(url: string, expression: string): Promise<unknown> {
       if (result.id !== 1) return
       clearTimeout(timeout)
       socket.close()
-      if (result.result?.exceptionDetails) reject(new Error(result.result.exceptionDetails.exception?.description ?? result.result.exceptionDetails.text))
+      if (result.result?.exceptionDetails) reject(new Error(`${result.result.exceptionDetails.exception?.description ?? result.result.exceptionDetails.text}\nApp logs: ${output.slice(-3000)}`))
       else resolve(result.result?.result?.value)
     })
     socket.addEventListener('error', () => { clearTimeout(timeout); reject(new Error('Could not connect to the renderer')) })
@@ -78,10 +81,13 @@ try {
 
   const path = await evaluate(pageUrl, 'window.serenity.refresh().then((snapshot) => snapshot?.path)')
   assert.equal(path, workspace)
+  const providers = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Connections')); if (button) { button.click(); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const select = document.querySelector('#index-provider'); if (select) return [...select.options].map((option) => option.value); await new Promise((resolve) => setTimeout(resolve, 100)) } return [] })()`) as string[]
+  assert.deepEqual(providers, ['copilot', 'codex'])
+  await evaluate(pageUrl, `[...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Knowledge'))?.click()`)
   if (process.env.SERENITY_SMOKE_CREDENTIALS === '1') {
-    const connected = await evaluate(pageUrl, `window.serenity.saveCredential('claude', 'test-session-only-key').then((status) => status.claude)`)
+    const connected = await evaluate(pageUrl, `window.serenity.saveCredential('codex', 'test-session-only-key').then((status) => status.codex)`)
     assert.equal(connected, true)
-    const disconnected = await evaluate(pageUrl, `window.serenity.saveCredential('claude', '').then((status) => status.claude)`)
+    const disconnected = await evaluate(pageUrl, `window.serenity.saveCredential('codex', '').then((status) => status.codex)`)
     assert.equal(disconnected, false)
     await assert.rejects(readFile(join(workspace, 'provider-credentials.json'), 'utf8'), /ENOENT/)
   }
@@ -134,7 +140,7 @@ try {
   if (process.env.SERENITY_SMOKE_SCOPE === 'selected') {
     privateId = await evaluate(pageUrl, `window.serenity.saveEntity({ id: '', title: 'Private Project', type: 'project', body: 'SecretAstralToken' }).then((snapshot) => snapshot.entities.find((entity) => entity.title === 'Private Project').id)`) as string
   }
-  if (provider === 'copilot' || provider === 'codex' || provider === 'claude') {
+  if (provider === 'copilot' || provider === 'codex') {
     const scope = privateId ? `, readScope: { mode: 'selected', entityIds: ['${entityId}'], documentNames: [], includeOtherConversations: false, includeCalendarAndTasks: false }` : ''
     const answer = await evaluate(pageUrl, `window.serenity.sendMessage({ text: 'According to the sourced claim about Alex, what is his birthday? Include the date. Do not propose any changes.', provider: '${provider}', autonomy: 'propose', retained: true${scope} }).then((snapshot) => ({ id: snapshot.conversations[0].id, text: snapshot.conversations[0].messages.at(-1)?.text, shared: snapshot.conversations[0].messages[0].sharedContext?.length, sharedRecords: snapshot.conversations[0].messages[0].sharedContext?.flatMap((entry) => entry.records.map((record) => record.ref)), readScope: snapshot.conversations[0].readScope, permissions: snapshot.conversations[0].permissions, activity: snapshot.providerActivity.find((entry) => entry.provider === '${provider}') }))`) as { id: string; text: string; shared: number; sharedRecords: string[]; readScope: { mode: string }; permissions: { claims: boolean; tasks: boolean }; activity: { status: string; operation: string; refs: string[] } }
     assert.match(answer.text, /September 7/i)

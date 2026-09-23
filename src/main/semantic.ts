@@ -23,7 +23,7 @@ function parseResponse(text: string): Response {
 
 export async function semanticSearch(workspace: Workspace, question: string, provider: Provider): Promise<SearchResult[]> {
   if (!question.trim()) return []
-  if (!['copilot', 'codex', 'claude'].includes(provider)) throw new Error('Unknown provider')
+  if (!['copilot', 'codex'].includes(provider)) throw new Error('Unknown provider')
   const snapshot = await workspace.snapshot()
   const contents: Candidate[] = [
     ...snapshot.entities.map((entity) => ({ kind: 'entity' as const, id: entity.id, searchId: entity.id, title: entity.title, detail: entity.type, content: `${entity.body}\n${JSON.stringify(entity.metadata ?? {})}`, sourceText: `${entity.title}\n${entity.type}\n${entity.body}\n${JSON.stringify(entity.metadata ?? {})}` })),

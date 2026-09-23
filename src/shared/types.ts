@@ -55,6 +55,7 @@ export interface WorkspaceSnapshot {
   mergeHistory: MergeRecord[]
   archivedEntities: Entity[]
   semanticProvider: Provider
+  backgroundProviderNeedsChoice: boolean
   semanticIndex: { generatedAt: string; count: number } | null
   providerActivity: ProviderActivity[]
   errors: string[]
@@ -62,7 +63,7 @@ export interface WorkspaceSnapshot {
 
 export interface ProviderActivity {
   id: string
-  provider: Provider
+  provider: string
   operation: 'conversation' | 'semantic-search' | 'background-index' | 'document-analysis'
   refs: string[]
   promptCharacters: number
@@ -110,7 +111,7 @@ export interface TaskItem {
   metadata?: Record<string, unknown>
 }
 
-export type Provider = 'copilot' | 'codex' | 'claude'
+export type Provider = 'copilot' | 'codex'
 export type Autonomy = 'ask' | 'propose' | 'autonomous'
 
 export interface WorkflowPermissions {
@@ -132,7 +133,7 @@ export interface Message {
   id: string
   role: 'user' | 'assistant'
   text: string
-  provider?: Provider
+  provider?: string
   recordedAt: string
   sharedContext?: SharedContext[]
 }
@@ -159,7 +160,7 @@ export interface Conversation {
 
 export interface ProposalBase {
   id: string
-  provider: Provider
+  provider: string
   conversationId: string
   status: 'pending' | 'accepted' | 'rejected'
   recordedAt: string

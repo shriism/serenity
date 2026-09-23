@@ -20,11 +20,11 @@ async function stored(): Promise<Partial<Record<Provider, string>>> {
 export async function credentialStatus(): Promise<Record<Provider, boolean>> {
   const keys = await stored()
   const status = (provider: Provider): boolean => sessionKeys.has(provider) || Boolean(canStorePersistently() && keys[provider])
-  return { copilot: status('copilot'), codex: status('codex'), claude: status('claude') }
+  return { copilot: status('copilot'), codex: status('codex') }
 }
 
 export async function saveCredential(provider: Provider, key: string): Promise<void> {
-  if (!['copilot', 'codex', 'claude'].includes(provider)) throw new Error('Unknown provider')
+  if (!['copilot', 'codex'].includes(provider)) throw new Error('Unknown provider')
   const keys = await stored()
   if (key.trim()) {
     if (canStorePersistently()) {

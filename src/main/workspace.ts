@@ -179,6 +179,7 @@ export class Workspace {
     const errors: string[] = []
     const enabled: Record<ModuleId, boolean> = { calendar: true, tasks: true, semanticIndex: false, documentAnalysis: false }
     let semanticProvider: Provider = 'copilot'
+    let backgroundProviderNeedsChoice = false
     let semanticIndex: WorkspaceSnapshot['semanticIndex'] = null
     try {
       const raw: unknown = YAML.parse(await readFile(join(this.path, '.serenity', 'modules.yaml'), 'utf8'))
@@ -191,10 +192,17 @@ export class Workspace {
     }
     try {
       const raw: unknown = YAML.parse(await readFile(join(this.path, '.serenity', 'semantic-provider.yaml'), 'utf8'))
-      if (!record(raw) || !['copilot', 'codex', 'claude'].includes(String(raw.provider))) throw new Error('Invalid provider setting')
+      if (!record(raw) || !['copilot', 'codex'].includes(String(raw.provider))) throw new Error('Invalid provider setting')
       semanticProvider = raw.provider as Provider
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') errors.push(`.serenity/semantic-provider.yaml: ${String(error)}`)
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        backgroundProviderNeedsChoice = true
+        errors.push(`.serenity/semantic-provider.yaml: ${String(error)}. Background AI is paused until you choose a supported provider.`)
+      }
+    }
+    if (backgroundProviderNeedsChoice) {
+      enabled.semanticIndex = false
+      enabled.documentAnalysis = false
     }
     try {
       const raw: unknown = YAML.parse(await readFile(join(this.path, '.serenity', 'semantic-index.yaml'), 'utf8'))
@@ -260,7 +268,7 @@ export class Workspace {
       try {
         const data: unknown = YAML.parse(await readFile(join(this.directories[8], name), 'utf8'))
         if (!record(data) || id(data.id) !== name.slice(0, -5) || !Array.isArray(data.refs) ||
-          !['copilot', 'codex', 'claude'].includes(String(data.provider)) ||
+          typeof data.provider !== 'string' || !data.provider.trim() ||
           !['running', 'completed', 'failed'].includes(String(data.status))) throw new Error('Invalid provider activity')
         providerActivity.push(data as unknown as ProviderActivity)
       } catch (error) { errors.push(`activity/${name}: ${String(error)}`) }
@@ -349,7 +357,8 @@ export class Workspace {
     for (const task of tasks) task.relatedEntityIds = task.relatedEntityIds.map(resolve)
     for (const task of archivedTasks) task.relatedEntityIds = task.relatedEntityIds.map(resolve)
     return { path: this.path, entities, archivedEntities, claims, resolutions, conversations, proposals, documents,
-      events, archivedEvents, tasks, archivedTasks, merges, mergeHistory, modules: enabled, semanticProvider, semanticIndex, providerActivity, errors }
+      events, archivedEvents, tasks, archivedTasks, merges, mergeHistory, modules: enabled, semanticProvider,
+      backgroundProviderNeedsChoice, semanticIndex, providerActivity, errors }
   }
 
   async saveEntity(input: Entity): Promise<WorkspaceSnapshot> {
@@ -678,7 +687,11 @@ export class Workspace {
 
   async setModule(moduleId: ModuleId, enabled: boolean): Promise<WorkspaceSnapshot> {
     if (!modules.some((item) => item.id === moduleId) || typeof enabled !== 'boolean') throw new Error('Invalid module setting')
-    const current = (await this.snapshot()).modules
+    const snapshot = await this.snapshot()
+    if (enabled && snapshot.backgroundProviderNeedsChoice && (moduleId === 'semanticIndex' || moduleId === 'documentAnalysis')) {
+      throw new Error('Choose a supported background AI provider before enabling this module')
+    }
+    const current = snapshot.modules
     current[moduleId] = enabled
     await atomicWrite(join(this.path, '.serenity', 'modules.yaml'), YAML.stringify(current))
     this.markDirty()
@@ -686,7 +699,7 @@ export class Workspace {
   }
 
   async setSemanticProvider(provider: Provider): Promise<WorkspaceSnapshot> {
-    if (!['copilot', 'codex', 'claude'].includes(provider)) throw new Error('Unknown provider')
+    if (!['copilot', 'codex'].includes(provider)) throw new Error('Unknown provider')
     await atomicWrite(join(this.path, '.serenity', 'semantic-provider.yaml'), YAML.stringify({ provider }))
     return this.snapshot()
   }

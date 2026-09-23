@@ -382,6 +382,30 @@ test('automatic document analysis is opt-in and runs once per document version',
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
+test('an unavailable saved provider pauses background AI until the user selects an available provider', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    await workspace.saveEntity({ id: '', title: 'Private research', type: 'project', body: 'Not yet indexed' })
+    await writeFile(join(directory, '.serenity', 'modules.yaml'), YAML.stringify({ calendar: true, tasks: true, semanticIndex: true, documentAnalysis: true }))
+    await writeFile(join(directory, '.serenity', 'semantic-provider.yaml'), YAML.stringify({ provider: 'no-longer-available' }))
+    const paused = await workspace.snapshot()
+    assert.equal(paused.backgroundProviderNeedsChoice, true)
+    assert.equal(paused.modules.semanticIndex, false)
+    assert.equal(paused.modules.documentAnalysis, false)
+    let calls = 0
+    await buildSemanticIndex(workspace, async () => { calls++; return '{"summary":"Private research","terms":["research"]}' })
+    assert.equal(calls, 0)
+    await assert.rejects(workspace.setModule('semanticIndex', true), /Choose a supported/)
+    const resumed = await workspace.setSemanticProvider('codex')
+    assert.equal(resumed.backgroundProviderNeedsChoice, false)
+    assert.equal(resumed.modules.semanticIndex, true)
+    assert.equal(resumed.modules.documentAnalysis, true)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
 test('a human can select and undo a current claim without erasing conflicting sources', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
   try {

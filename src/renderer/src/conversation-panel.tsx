@@ -48,7 +48,7 @@ export function ConversationPanel(props: Props) {
     <form className="compose" onSubmit={props.onSend}>
       <div className="compose-settings">
         <label>Provider <select value={props.provider} onChange={(event) => props.onProviderChange(event.target.value as Provider)}>
-          <option value="copilot">GitHub Copilot</option><option value="codex">OpenAI Codex</option><option value="claude">Claude</option>
+          <option value="copilot">GitHub Copilot</option><option value="codex">OpenAI Codex</option>
         </select></label>
         <label>Autonomy <select value={props.autonomy} onChange={(event) => props.onAutonomyChange(event.target.value as Autonomy)}>
           <option value="ask">Ask first</option><option value="propose">Read & propose</option><option value="autonomous">Auto-save permitted proposals</option>

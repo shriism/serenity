@@ -51,7 +51,7 @@ export async function sendMessage(
 ): Promise<WorkspaceSnapshot> {
   const question = input.text.trim()
   if (!question) throw new Error('Write a message first.')
-  if (!['copilot', 'codex', 'claude'].includes(input.provider)) throw new Error('Unknown AI provider.')
+  if (!['copilot', 'codex'].includes(input.provider)) throw new Error('Unknown AI provider.')
   if (!['ask', 'propose', 'autonomous'].includes(input.autonomy)) throw new Error('Unknown autonomy mode.')
   const snapshot = await workspace.snapshot()
   const previous = input.conversationId ? snapshot.conversations.find((item) => item.id === input.conversationId) : undefined

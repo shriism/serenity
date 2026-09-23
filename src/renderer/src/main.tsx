@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { createRoot } from 'react-dom/client'
 import type { Autonomy, Entity, Provider, ReadScope, SearchResult, WorkflowPermissions, WorkspaceSnapshot } from '../../shared/types'
-import { modules, type ModuleId } from '../../shared/modules'
 import { CalendarModule, TasksModule } from './module-views'
 import { ConversationPanel } from './conversation-panel'
 import { ReviewPanel } from './review-panel'
 import { ClaimCard } from './claim-card'
 import { DocumentsPanel } from './documents-panel'
 import { ActivityPanel } from './activity-panel'
+import { SettingsPanel } from './settings-panel'
 import { identityCandidates } from '../../shared/identity'
 import { defaultReadScope, defaultWorkflowPermissions } from '../../shared/workflow'
 import ReactMarkdown from 'react-markdown'
@@ -36,9 +36,6 @@ function App() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[] | null>(null)
   const [searching, setSearching] = useState(false)
-  const [credentials, setCredentials] = useState<Record<Provider, boolean> | null>(null)
-  const [keyProvider, setKeyProvider] = useState<Provider>('copilot')
-  const [key, setKey] = useState('')
 
   const refresh = useCallback(async () => {
     try {
@@ -245,34 +242,6 @@ function App() {
     } catch (cause) { setError(String(cause)) }
   }
 
-  async function openSettings() {
-    setView('settings')
-    try { setCredentials(await window.serenity.credentialStatus()); setError('') }
-    catch (cause) { setError(String(cause)) }
-  }
-
-  async function saveKey(event: FormEvent) {
-    event.preventDefault()
-    try {
-      setCredentials(await window.serenity.saveCredential(keyProvider, key))
-      setKey('')
-      setError('')
-    } catch (cause) { setError(String(cause)) }
-  }
-
-  async function toggleModule(id: ModuleId, enabled: boolean) {
-    try {
-      const next = await window.serenity.setModule(id, enabled)
-      setWorkspace(next)
-      if (!enabled && view === id) setView('knowledge')
-      setError('')
-    } catch (cause) { setError(String(cause)) }
-  }
-
-  async function changeSemanticProvider(selected: Provider) {
-    try { setWorkspace(await window.serenity.setSemanticProvider(selected)); setError('') }
-    catch (cause) { setError(String(cause)) }
-  }
 
   async function mergeSelected() {
     if (!selected || !mergeTarget || !workspace) return
@@ -336,7 +305,7 @@ function App() {
           {workspace.modules.calendar && <button className={view === 'calendar' ? 'active' : ''} onClick={() => setView('calendar')}>▦ <span>Calendar</span></button>}
           {workspace.modules.tasks && <button className={view === 'tasks' ? 'active' : ''} onClick={() => setView('tasks')}>☑ <span>Tasks</span></button>}
           <button className={view === 'activity' ? 'active' : ''} onClick={() => { setView('activity'); void refresh() }}>◷ <span>Activity</span></button>
-          <button className={view === 'settings' ? 'active' : ''} onClick={() => void openSettings()}>⚙ <span>Connections</span></button>
+          <button className={view === 'settings' ? 'active' : ''} onClick={() => setView('settings')}>⚙ <span>Connections</span></button>
         </div>
         {view === 'knowledge' && <>
         <form className="sidebar-search" onSubmit={(event) => void search(event)}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search workspace..." aria-label="Search workspace"/><button type="submit" aria-label="Search">⌕</button></form>
@@ -368,7 +337,6 @@ function App() {
       <header className="topbar"><span>{workspace ? 'Knowledge workspace' : 'Welcome to Serenity'}</span>{workspace && <button className="text-button" onClick={() => void refresh()}>Refresh files ↻</button>}</header>
       {error && <div className="notice error" role="alert">{error}</div>}
       {workspace?.errors.map((item) => <div key={item} className="notice warning" role="alert">Could not read {item}</div>)}
-      {view === 'settings' && <div className="notice warning" role="status">When secure OS credential storage is unavailable, keys entered here are kept only for this app session.</div>}
       {view === 'conversation' && readScope.mode === 'selected' && <div className="notice warning" role="status">Selected read scope: AI only receives chosen knowledge and this conversation. The accessible records are shown with each response.</div>}
       {view === 'review' && workspace?.proposals.some((item) => item.status === 'pending' && item.reviewReason) && <div className="notice warning" role="status">Some proposals involve similar entities. Verify the identity before accepting them.</div>}
       {!workspace ? <section className="welcome"><div className="welcome-symbol">✳</div><span className="eyebrow">A PLACE TO CONNECT WHAT MATTERS</span><h1>Your world,<br/><em>within reach.</em></h1><p>Choose a folder on your device for Serenity's knowledge files. You can read and edit them with any text editor.</p><button className="primary" onClick={() => void chooseWorkspace()}>Choose a workspace <span>↗</span></button></section>
@@ -378,7 +346,7 @@ function App() {
         : view === 'review' ? <ReviewPanel workspace={workspace} onResolve={(id, accept) => void resolveProposal(id, accept)} onAttach={(id, entityId) => void attachProposal(id, entityId)} onOpenSource={(name) => void openDocument(name)} />
         : view === 'documents' ? <DocumentsPanel workspace={workspace} onImport={() => void importDocuments()} onOpen={(name) => void openDocument(name)} onAnalyze={(name) => { setConversationId(null); setMessage(`Analyze the imported document ${name}. Summarize it, identify useful knowledge about existing entities, and suggest claims with precise sources. Ask me to clarify any ambiguous identities.`); setView('conversation') }} />
         : view === 'activity' ? <ActivityPanel workspace={workspace} activity={activity} />
-        : view === 'settings' ? <section className="page"><span className="eyebrow">WORKSPACE SETTINGS</span><h1>Modules & connections</h1><p>Turn modules off without removing their files. Calendar and tasks belong to Serenity and connect to the same knowledge workspace. Background AI modules are off by default.</p><div className="document-list">{modules.map((item) => <label key={item.id} className="module-toggle"><span><strong>{item.title}</strong><small>{item.description}</small></span><input type="checkbox" checked={workspace.modules[item.id]} onChange={(event) => void toggleModule(item.id, event.target.checked)}/></label>)}</div><div className="semantic-settings"><label htmlFor="index-provider">Background AI provider (index & document analysis)</label><select id="index-provider" value={workspace.semanticProvider} onChange={(event) => void changeSemanticProvider(event.target.value as Provider)}><option value="copilot">GitHub Copilot</option><option value="codex">OpenAI Codex</option><option value="claude">Claude</option></select><small>{workspace.semanticIndex ? `Last indexed ${workspace.semanticIndex.count} records on ${new Date(workspace.semanticIndex.generatedAt).toLocaleString()}` : 'No background index yet. Enabling background AI may send workspace content to this provider.'}</small></div><h2>AI providers</h2><p>Use an existing provider sign-in where supported, or set an API key. Claude requires an Anthropic API key for third-party apps. Saved keys stay outside the knowledge workspace and are protected by your operating system.</p><div className="document-list">{(['copilot', 'codex', 'claude'] as const).map((name) => <div key={name} className="document-row"><span>✳</span><strong>{name === 'copilot' ? 'GitHub Copilot' : name === 'codex' ? 'OpenAI Codex' : 'Claude Agent SDK'}</strong><small>{credentials?.[name] ? 'Key saved' : name === 'claude' ? 'API key required' : 'Use provider sign-in or add a key'}</small></div>)}</div><form className="connection-form" onSubmit={(event) => void saveKey(event)}><h2>Set an API key or token</h2><label htmlFor="key-provider">Provider</label><select id="key-provider" value={keyProvider} onChange={(event) => setKeyProvider(event.target.value as Provider)}><option value="copilot">GitHub token</option><option value="codex">Codex API key</option><option value="claude">Anthropic API key</option></select><label htmlFor="provider-key">Credential</label><input id="provider-key" type="password" autoComplete="off" value={key} onChange={(event) => setKey(event.target.value)} placeholder="Paste a key or token"/><div className="review-actions"><button className="primary" type="submit" disabled={!key.trim()}>Save securely</button>{credentials?.[keyProvider] && <button className="secondary" type="button" onClick={() => void window.serenity.saveCredential(keyProvider, '').then(setCredentials).catch((cause) => setError(String(cause)))}>Remove saved key</button>}</div></form></section>
+        : view === 'settings' ? <SettingsPanel workspace={workspace} onUpdate={setWorkspace} onError={setError} />
         : !draft ? <section className="empty"><span className="empty-symbol">◇</span><h1>Start with what you know.</h1><p>Create a person, project, idea, place, or anything else meaningful to you. Categories are yours to define.</p><button className="primary" onClick={newEntity}>Create an entity <span>+</span></button></section>
           : <div className="content">
               <section className="editor">

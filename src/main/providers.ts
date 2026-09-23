@@ -2,7 +2,6 @@ import type { Provider } from '../shared/types'
 import { getCredential } from './credentials'
 import { homedir } from 'node:os'
 import { delimiter, join } from 'node:path'
-import { spawn } from 'node:child_process'
 import { app } from 'electron'
 import { existsSync } from 'node:fs'
 import { trackProviderCall, type ActivityRequest } from './provider-activity'
@@ -74,39 +73,5 @@ async function runProvider(provider: Provider, workspace: string, prompt: string
     return turn.finalResponse
   }
 
-  const { query } = await import('@anthropic-ai/claude-agent-sdk')
-  const key = await getCredential('claude')
-  if (!key && !process.env.ANTHROPIC_API_KEY) throw new Error('Claude Agent SDK requires an Anthropic API key in Serenity. Add one under Connections.')
-  const abortController = new AbortController()
-  const abort = (): void => abortController.abort()
-  signal?.addEventListener('abort', abort, { once: true })
-  const run = query({
-    prompt,
-    options: {
-      cwd: workspace,
-      ...(key ? { env: { ...process.env, ANTHROPIC_API_KEY: key } } : {}),
-      tools: [],
-      settingSources: [],
-      maxTurns: 2,
-      abortController,
-      ...(app.isPackaged ? {
-        spawnClaudeCodeProcess: ({ args, cwd, env, signal }) => spawn(process.execPath, args, {
-          cwd, env: { ...env, ELECTRON_RUN_AS_NODE: '1' }, signal, stdio: ['pipe', 'pipe', 'pipe']
-        })
-      } : {}),
-      canUseTool: async () => ({ behavior: 'deny', message: 'Serenity handles knowledge changes through reviewed proposals.' })
-    }
-  })
-  try {
-    if (signal?.aborted) throw new Error('AI request cancelled')
-    for await (const message of run) {
-      if (message.type === 'result') {
-        if (message.subtype !== 'success') throw new Error(message.errors.join('; ') || 'Claude could not complete the request.')
-        if (message.is_error) throw new Error(message.result || 'Claude could not complete the request.')
-        if (signal?.aborted) throw new Error('AI request cancelled')
-        return message.result
-      }
-    }
-    throw new Error('Claude returned no answer.')
-  } finally { signal?.removeEventListener('abort', abort); run.close() }
+  throw new Error('Unknown AI provider')
 }

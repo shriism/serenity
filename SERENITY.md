@@ -617,11 +617,11 @@ build; it does not define a staged or reduced version of the product.
 
 ## AI Integrations
 
-- Support GitHub Copilot SDK, OpenAI Codex SDK, and Claude Agent SDK through
-  distinct integrations. The person using Serenity should be able to choose
-  the integration rather than have knowledge tied to one provider.
+- Support GitHub Copilot SDK and OpenAI Codex SDK through distinct
+  integrations. The person using Serenity should be able to choose the
+  integration rather than have knowledge tied to one provider.
 - GitHub Copilot SDK is the primary integration for development and testing.
-  Codex and Claude are also product requirements, not replacements for it.
+  Codex is also a current product requirement, not a replacement for it.
 - For now, use provider-backed AI services. The application itself runs
   locally, but its AI models run through the selected provider's service.
 - Add support for locally running AI models later, without making personal
@@ -673,7 +673,7 @@ claims or perform approved classes of external actions automatically.
   can change, which external systems it can access, and which actions
   still require confirmation.
 - Apply the person's permissions consistently across Copilot, Codex,
-  Claude, and future AI integrations. A provider's default tool access
+  and future AI integrations. A provider's default tool access
   must not silently override Serenity's settings.
 - Record actions and their provenance so the person can see what the AI
   did, review changes, and correct mistakes. Preserve previous claims
@@ -731,7 +731,7 @@ and remain visible and accountable.
   exclude conversations from retention. Keep provenance for retained
   knowledge independently of any conversation that is deleted.
 - Allow a visible conversation to continue when switching between
-  Copilot, Codex, and Claude. Identify the provider responsible for each
+  Copilot and Codex. Identify the provider responsible for each
   message and pass the conversation context needed for continuity;
   provider-private session state does not transfer between providers.
 

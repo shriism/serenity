@@ -263,6 +263,13 @@ test('opt-in semantic indexing sends changed records only and retains a rebuilda
     await buildSemanticIndex(workspace, ask)
     assert.equal(sent, 2)
     assert.equal((await workspace.snapshot()).semanticIndex?.count, 1)
+    const expanded = (await workspace.snapshot()).entities[0]
+    await workspace.saveEntity({ ...expanded, body: 'Robotics '.repeat(11000) })
+    await buildSemanticIndex(workspace, ask)
+    assert.equal(sent, 5, 'large records should be summarized in several provider calls')
+    assert.equal((await readSemanticIndex(workspace))?.entries.length, 1)
+    await buildSemanticIndex(workspace, ask)
+    assert.equal(sent, 5, 'unchanged long records should reuse their generated index')
     await workspace.setModule('semanticIndex', false)
     assert.deepEqual(await rankSemanticIndex(workspace, 'engineering'), [])
     workspace.close()

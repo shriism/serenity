@@ -38,6 +38,8 @@ The desktop app also lets you read and edit Markdown entities, link them through
 
 When an AI-suggested entity resembles one you already have, Review offers **Attach to selected entity** or **Create separate entity**. Attaching records the proposed narrative as a sourced context claim; it does not overwrite the existing Markdown narrative.
 
+Background semantic indexing processes long records in chunks. On-demand semantic search uses a visible catalog and relevant excerpts when a workspace is larger than one provider request.
+
 ## Current limitations
 
 This is an actively developed application, not yet the complete desktop product described in SERENITY.md. Neural embedding retrieval, fully automated entity resolution, and autonomy for external actions are not implemented. Cloud sync, local models, and mobile apps are separate later goals. Calendar and tasks are internal only; no external calendar sync is planned. Live Copilot and Codex conversations and PDF/DOCX search succeeded from the packaged macOS app; Claude needs an Anthropic API key for a live test, and packaged SDK operation still requires live end-to-end testing on Windows and Linux. Large workspaces use relevant excerpts and an inspectable record catalog rather than silently omitting knowledge; the user message shows which records were transmitted.

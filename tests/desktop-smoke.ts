@@ -168,6 +168,15 @@ try {
       assert.ok(extracted.some((item) => item.kind === 'event'), `Expected an event proposal: ${JSON.stringify(extracted)}`)
       console.log(`${provider} extracted claim, task, and event proposals from conversation.`)
     }
+    if (process.env.SERENITY_SMOKE_SEMANTIC === '1') {
+      const search = `window.serenity.semanticSearch('Find Alex birthday September 7', '${provider}').then((items) => items.map((item) => item.kind))`
+      const small = await evaluate(pageUrl, search) as string[]
+      assert.ok(small.includes('claim'), `Expected a sourced claim in semantic results: ${small}`)
+      await evaluate(pageUrl, `window.serenity.refresh().then((snapshot) => window.serenity.saveEntity({ ...snapshot.entities.find((entity) => entity.id === '${entityId}'), body: 'Unrelated archive content. '.repeat(12000) }))`)
+      const large = await evaluate(pageUrl, search) as string[]
+      assert.ok(large.includes('claim'), `Expected relevant evidence in large-workspace results: ${large}`)
+      console.log(`${provider} semantic retrieval worked with a large workspace.`)
+    }
   }
   const duplicateId = await evaluate(pageUrl, `window.serenity.saveEntity({ id: '', title: 'Alex from club', type: 'person', body: 'Possible duplicate.' }).then((snapshot) => snapshot.entities.find((entity) => entity.title === 'Alex from club').id)`) as string
   const merged = await evaluate(pageUrl, `window.serenity.mergeEntities('${duplicateId}', '${entityId}').then((snapshot) => ({ active: snapshot.merges.length, archived: snapshot.archivedEntities.length }))`) as { active: number; archived: number }

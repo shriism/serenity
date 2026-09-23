@@ -28,7 +28,7 @@ npm run smoke:desktop
 
 The desktop smoke test launches Electron and exercises workspace files, IPC, search (including PDF/DOCX), tasks, and calendar; run it on a machine with a graphical desktop. Set `SERENITY_SMOKE_PROVIDER=copilot` or `codex` to also test a live conversation against your configured provider. Set `SERENITY_SMOKE_EXECUTABLE` to the path of a packaged app executable to test the installed build instead of development Electron.
 
-To package for the current OS use `npm run dist`. Platform-specific commands are `npm run dist:mac`, `npm run dist:win`, and `npm run dist:linux` (cross-building may require platform-specific tooling or a machine running the target OS). Unsigned macOS builds may require manual permission to open.
+To package for the current OS use `npm run dist`. Platform-specific commands are `npm run dist:mac`, `npm run dist:win`, and `npm run dist:linux` (cross-building may require platform-specific tooling or a machine running the target OS). Packaging generates the platform icons from `assets/icon.svg`. Unsigned macOS builds may require manual permission to open.
 
 ## AI connections
 

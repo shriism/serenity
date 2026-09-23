@@ -12,10 +12,11 @@
     "typecheck": "tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "smoke:desktop": "npm run build && tsx tests/desktop-smoke.ts",
-    "dist": "npm run build && electron-builder --publish never",
-    "dist:mac": "npm run build && electron-builder --mac --publish never",
-    "dist:win": "npm run build && electron-builder --win --publish never",
-    "dist:linux": "npm run build && electron-builder --linux --publish never"
+    "icons": "node scripts/generate-icons.mjs",
+    "dist": "npm run icons && npm run build && electron-builder --publish never",
+    "dist:mac": "npm run icons && npm run build && electron-builder --mac --publish never",
+    "dist:win": "npm run icons && npm run build && electron-builder --win --publish never",
+    "dist:linux": "npm run icons && npm run build && electron-builder --linux --publish never"
   },
   "build": {
     "appId": "app.serenity.desktop",
@@ -35,15 +36,18 @@
       "node_modules/@anthropic-ai/claude-agent-sdk/**"
     ],
     "mac": {
+      "icon": "build/icons/app.icns",
       "target": [
         "dmg",
         "zip"
       ]
     },
     "win": {
+      "icon": "build/icons/app.ico",
       "target": "nsis"
     },
     "linux": {
+      "icon": "build/icons",
       "target": "AppImage",
       "category": "Utility"
     }
@@ -69,11 +73,16 @@
     "electron": "^44.4.4",
     "electron-builder": "^26.15.3",
     "electron-vite": "^4.0.0",
+    "icon-gen": "^5.0.0",
     "jszip": "^3.10.2",
     "pdf-lib": "^1.17.1",
+    "sharp": "^0.35.4",
     "tsx": "^4.23.15",
     "typescript": "^5.9.2",
     "vite": "^7.1.0"
+  },
+  "overrides": {
+    "sharp": "^0.35.4"
   },
   "allowScripts": {
     "electron@38.8.6": true,

@@ -17,6 +17,7 @@ let workspace: Workspace | null = null
 let watcher: FSWatcher | null = null
 let editorDirty = false
 let closePromptOpen = false
+let closeApproved = false
 let activeRequests = 0
 let conversationAbort: AbortController | null = null
 let indexTimer: ReturnType<typeof setTimeout> | null = null
@@ -101,6 +102,7 @@ async function openWorkspace(path: string): Promise<WorkspaceSnapshot> {
 }
 
 function createWindow(): void {
+  closeApproved = false
   window = new BrowserWindow({
     width: 1280,
     height: 820,
@@ -114,18 +116,25 @@ function createWindow(): void {
       sandbox: true
     }
   })
-  window.on('closed', () => { window = null })
+  window.on('closed', () => { window = null; closeApproved = false })
   window.on('close', (event) => {
-    if (!editorDirty || !window) return
+    if (closeApproved || (!editorDirty && !activeRequests) || !window) return
     event.preventDefault()
     if (closePromptOpen) return
     closePromptOpen = true
     const closingWindow = window
     void dialog.showMessageBox(closingWindow, {
-      type: 'question', title: 'Unsaved changes', message: 'Discard your unsaved entity edits and close Serenity?',
-      buttons: ['Keep editing', 'Discard and close'], defaultId: 0, cancelId: 0
+      type: 'question', title: 'Close Serenity?',
+      message: editorDirty && activeRequests ? 'Discard unsaved edits and interrupt active AI work?' :
+        editorDirty ? 'Discard your unsaved entity edits?' : 'Interrupt active AI work?',
+      buttons: ['Keep working', 'Close Serenity'], defaultId: 0, cancelId: 0
     }).then(({ response }) => {
-      if (response === 1 && !closingWindow.isDestroyed()) { editorDirty = false; closingWindow.close() }
+      if (response === 1 && !closingWindow.isDestroyed()) {
+        conversationAbort?.abort()
+        editorDirty = false
+        closeApproved = true
+        closingWindow.close()
+      }
     }).catch(() => undefined).finally(() => { closePromptOpen = false })
   })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
@@ -228,5 +237,5 @@ app.whenReady().then(async () => {
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })
 
-app.on('before-quit', () => { if (indexTimer) clearTimeout(indexTimer); if (documentTimer) clearTimeout(documentTimer); void watcher?.close(); workspace?.close() })
+app.on('will-quit', () => { if (indexTimer) clearTimeout(indexTimer); if (documentTimer) clearTimeout(documentTimer); void watcher?.close(); workspace?.close() })
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })

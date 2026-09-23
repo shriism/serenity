@@ -291,6 +291,26 @@ test('opt-in semantic indexing sends changed records only and retains a rebuilda
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
+test('aborted background indexing does not continue sending later document chunks', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    await workspace.saveEntity({ id: '', title: 'Large note', type: 'note', body: 'research '.repeat(12000) })
+    await workspace.setModule('semanticIndex', true)
+    const controller = new AbortController()
+    let calls = 0
+    await assert.rejects(buildSemanticIndex(workspace, async () => {
+      calls++
+      controller.abort()
+      return '{"summary":"Research","terms":["research"]}'
+    }, controller.signal), /cancelled/)
+    assert.equal(calls, 1)
+    assert.equal((await readSemanticIndex(workspace))?.entries.length ?? 0, 0)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
 test('retracting a claim preserves its origin while excluding it from current search', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
   try {

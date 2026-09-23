@@ -1,8 +1,8 @@
 import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import assert from 'node:assert/strict'
 import { PDFDocument } from 'pdf-lib'
@@ -12,6 +12,21 @@ import YAML from 'yaml'
 const require = createRequire(import.meta.url)
 const electron = process.env.SERENITY_SMOKE_EXECUTABLE ?? require('electron') as string
 const packaged = Boolean(process.env.SERENITY_SMOKE_EXECUTABLE)
+if (packaged) {
+  const resources = process.platform === 'darwin' ? join(dirname(electron), '..', 'Resources') : join(dirname(electron), 'resources')
+  const platform = `${process.platform}-${process.arch}`
+  const copilot = join(resources, 'app.asar.unpacked', 'node_modules', `@github/copilot-sdk-${platform}`,
+    'prebuilds', platform, process.platform === 'win32' ? 'copilot-runtime.exe' : 'copilot-runtime')
+  const triples: Record<string, string> = {
+    'darwin-arm64': 'aarch64-apple-darwin', 'darwin-x64': 'x86_64-apple-darwin',
+    'linux-arm64': 'aarch64-unknown-linux-musl', 'linux-x64': 'x86_64-unknown-linux-musl',
+    'win32-arm64': 'aarch64-pc-windows-msvc', 'win32-x64': 'x86_64-pc-windows-msvc'
+  }
+  const codex = join(resources, 'app.asar.unpacked', 'node_modules', `@openai/codex-${platform}`,
+    'vendor', triples[platform], 'bin', process.platform === 'win32' ? 'codex.exe' : 'codex')
+  assert.ok((await stat(copilot)).isFile(), 'The packaged Copilot runtime must be available')
+  assert.ok((await stat(codex)).isFile(), 'The packaged Codex runtime must be available')
+}
 const workspace = await mkdtemp(join(tmpdir(), 'serenity-desktop-smoke-'))
 await mkdir(join(workspace, 'documents'))
 await mkdir(join(workspace, 'proposals'))
@@ -197,6 +212,9 @@ try {
   assert.equal(merged.archived, 1)
   const reversed = await evaluate(pageUrl, `window.serenity.unmergeEntities('${duplicateId}', 'Different Alex').then((snapshot) => ({ active: snapshot.merges.length, history: snapshot.mergeHistory.length, restored: snapshot.entities.some((entity) => entity.id === '${duplicateId}') }))`) as { active: number; history: number; restored: boolean }
   assert.deepEqual(reversed, { active: 0, history: 1, restored: true })
+  await writeFile(join(workspace, '.serenity', 'modules.yaml'), YAML.stringify({ calendar: false, tasks: false, semanticIndex: false, documentAnalysis: false }))
+  const watched = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 50; i++) { const names = [...document.querySelectorAll('.navigation button')].map((item) => item.textContent ?? ''); if (!names.some((name) => name.includes('Tasks'))) return true; await new Promise((resolve) => setTimeout(resolve, 100)) } return false })()`)
+  assert.equal(watched, true, 'Outside edits to module settings should update the desktop UI')
   console.log('Electron workspace, entity, claim, PDF/DOCX search, reversible merges/tasks/calendar, and preload IPC passed.')
 } finally {
   child.kill()

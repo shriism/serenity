@@ -8,7 +8,7 @@ import { semanticSearch } from './semantic'
 import { buildSemanticIndex, rankSemanticIndex } from './semantic-index'
 import { askProvider } from './providers'
 import { analyzeChangedDocument } from './document-analysis'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, sep } from 'node:path'
 import type { Autonomy, CalendarEvent, Claim, Entity, Provider, ReadScope, TaskItem, WorkflowPermissions, WorkspaceSnapshot } from '../shared/types'
 import type { ModuleId } from '../shared/modules'
 
@@ -23,9 +23,11 @@ let conversationAbort: AbortController | null = null
 let indexTimer: ReturnType<typeof setTimeout> | null = null
 let indexRunning = false
 let indexPending = false
+let indexAbort: AbortController | null = null
 const pendingDocuments = new Set<string>()
 let documentTimer: ReturnType<typeof setTimeout> | null = null
 let documentsRunning = false
+let documentAbort: AbortController | null = null
 
 async function withActiveRequest<T>(work: () => Promise<T>): Promise<T> {
   activeRequests++
@@ -38,6 +40,19 @@ function currentWorkspace(): Workspace {
   return workspace
 }
 
+function pauseBackgroundIndex(): void {
+  indexAbort?.abort()
+  if (indexTimer) clearTimeout(indexTimer)
+  indexTimer = null
+}
+
+function pauseDocumentAnalysis(): void {
+  documentAbort?.abort()
+  pendingDocuments.clear()
+  if (documentTimer) clearTimeout(documentTimer)
+  documentTimer = null
+}
+
 function scheduleSemanticIndex(target: Workspace): void {
   if (indexTimer) clearTimeout(indexTimer)
   indexTimer = setTimeout(() => {
@@ -45,11 +60,14 @@ function scheduleSemanticIndex(target: Workspace): void {
     if (workspace !== target) return
     if (indexRunning) { indexPending = true; return }
     indexRunning = true
-    void withActiveRequest(() => buildSemanticIndex(target, askProvider)).then(() => {
+    const controller = new AbortController()
+    indexAbort = controller
+    void withActiveRequest(() => buildSemanticIndex(target, askProvider, controller.signal)).then(() => {
       window?.webContents.send('workspace:changed')
     }).catch((error) => {
-      window?.webContents.send('semantic:index-error', String(error))
+      if (!controller.signal.aborted) window?.webContents.send('semantic:index-error', String(error))
     }).finally(() => {
+      indexAbort = null
       indexRunning = false
       if (indexPending && workspace === target) { indexPending = false; scheduleSemanticIndex(target) }
     })
@@ -68,10 +86,14 @@ function queueDocumentAnalysis(target: Workspace, filename: string): void {
         while (pendingDocuments.size && workspace === target) {
           const name = pendingDocuments.values().next().value!
           pendingDocuments.delete(name)
+          const controller = new AbortController()
+          documentAbort = controller
           try {
-            await withActiveRequest(() => analyzeChangedDocument(target, name, sendMessage))
+            await withActiveRequest(() => analyzeChangedDocument(target, name, sendMessage, controller.signal))
             window?.webContents.send('workspace:changed')
-          } catch (error) { window?.webContents.send('semantic:index-error', `Document ${name}: ${String(error)}`) }
+          } catch (error) {
+            if (!controller.signal.aborted) window?.webContents.send('semantic:index-error', `Document ${name}: ${String(error)}`)
+          } finally { documentAbort = null }
         }
       } finally {
         documentsRunning = false
@@ -90,9 +112,24 @@ async function openWorkspace(path: string): Promise<WorkspaceSnapshot> {
   const next = new Workspace(path)
   await next.initialize()
   workspace = next
-  watcher = chokidar.watch([...next.directories.slice(0, 8), join(next.path, 'archive')], { ignoreInitial: true, awaitWriteFinish: { stabilityThreshold: 250, pollInterval: 100 } })
+  const settingsDirectory = join(next.path, '.serenity')
+  watcher = chokidar.watch([...next.directories.slice(0, 8), join(next.path, 'archive'), settingsDirectory], {
+    ignoreInitial: true,
+    ignored: (watchedPath) => watchedPath.startsWith(`${settingsDirectory}${sep}`) &&
+      !['modules.yaml', 'semantic-provider.yaml'].includes(basename(watchedPath)),
+    awaitWriteFinish: { stabilityThreshold: 250, pollInterval: 100 }
+  })
   watcher.on('all', (event, changedPath) => {
     next.markDirty()
+    if (dirname(changedPath) === settingsDirectory) {
+      void next.snapshot().then((snapshot) => {
+        if (basename(changedPath) === 'semantic-provider.yaml' || !snapshot.modules.semanticIndex) pauseBackgroundIndex()
+        if (snapshot.modules.semanticIndex) scheduleSemanticIndex(next)
+        if (!snapshot.modules.documentAnalysis) pauseDocumentAnalysis()
+        window?.webContents.send('workspace:changed')
+      }).catch((error) => window?.webContents.send('semantic:index-error', String(error)))
+      return
+    }
     window?.webContents.send('workspace:changed')
     scheduleSemanticIndex(next)
     if ((event === 'add' || event === 'change') && dirname(changedPath) === next.directories[2]) queueDocumentAnalysis(next, basename(changedPath))
@@ -220,12 +257,15 @@ app.whenReady().then(async () => {
   ipcMain.handle('module:set', async (_event, id: ModuleId, enabled: boolean) => {
     const selected = currentWorkspace()
     const snapshot = await selected.setModule(id, enabled)
+    if (!enabled && id === 'semanticIndex') pauseBackgroundIndex()
+    if (!enabled && id === 'documentAnalysis') pauseDocumentAnalysis()
     if (id === 'semanticIndex' && enabled) scheduleSemanticIndex(selected)
     return snapshot
   })
   ipcMain.handle('semantic:provider', async (_event, provider: Provider) => {
     const selected = currentWorkspace()
     const snapshot = await selected.setSemanticProvider(provider)
+    pauseBackgroundIndex()
     if (snapshot.modules.semanticIndex) scheduleSemanticIndex(selected)
     return snapshot
   })
@@ -246,5 +286,13 @@ app.whenReady().then(async () => {
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })
 
-app.on('will-quit', () => { if (indexTimer) clearTimeout(indexTimer); if (documentTimer) clearTimeout(documentTimer); void watcher?.close(); workspace?.close() })
+app.on('will-quit', () => {
+  conversationAbort?.abort()
+  indexAbort?.abort()
+  documentAbort?.abort()
+  if (indexTimer) clearTimeout(indexTimer)
+  if (documentTimer) clearTimeout(documentTimer)
+  void watcher?.close()
+  workspace?.close()
+})
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })

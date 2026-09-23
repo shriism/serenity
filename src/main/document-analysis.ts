@@ -5,9 +5,9 @@ import YAML from 'yaml'
 import { Workspace } from './workspace'
 import type { Autonomy, Provider, WorkspaceSnapshot } from '../shared/types'
 
-type Send = (workspace: Workspace, input: { text: string; provider: Provider; autonomy: Autonomy; retained: boolean; operation: 'document-analysis' }) => Promise<WorkspaceSnapshot>
+type Send = (workspace: Workspace, input: { text: string; provider: Provider; autonomy: Autonomy; retained: boolean; operation: 'document-analysis' }, signal?: AbortSignal) => Promise<WorkspaceSnapshot>
 
-export async function analyzeChangedDocument(workspace: Workspace, filename: string, send: Send): Promise<void> {
+export async function analyzeChangedDocument(workspace: Workspace, filename: string, send: Send, signal?: AbortSignal): Promise<void> {
   const snapshot = await workspace.snapshot()
   if (!snapshot.modules.documentAnalysis || !snapshot.documents.some((item) => item.name === filename && item.extractable)) return
   const path = join(workspace.directories[2], basename(filename))
@@ -19,10 +19,12 @@ export async function analyzeChangedDocument(workspace: Workspace, filename: str
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) processed = raw as Record<string, string>
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
   if (processed[filename] === hash) return
+  if (signal?.aborted) throw new Error('AI request cancelled')
   await send(workspace, {
     text: `Analyze the newly added or changed document named "${filename}". Extract useful entities, facts, tasks, and events as proposals, with the document name as their source. Ask for clarification if identities are ambiguous.`,
     provider: snapshot.semanticProvider, autonomy: 'propose', retained: true, operation: 'document-analysis'
-  })
+  }, signal)
+  if (signal?.aborted) throw new Error('AI request cancelled')
   processed[filename] = hash
   const temp = `${statePath}.${randomUUID()}.tmp`
   try { await writeFile(temp, YAML.stringify(processed), { flag: 'wx' }); await rename(temp, statePath) }

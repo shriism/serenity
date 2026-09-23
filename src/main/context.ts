@@ -25,6 +25,8 @@ export function contextRecords(snapshot: WorkspaceSnapshot, documents: { name: s
     ...snapshot.resolutions.map((item) => ({ ref: `resolution:${item.id}`, title: `Resolution ${item.key}`, text: JSON.stringify(item) })),
     ...(snapshot.modules.tasks ? snapshot.tasks.map((item) => ({ ref: `task:${item.id}`, title: item.title, text: JSON.stringify(item) })) : []),
     ...(snapshot.modules.calendar ? snapshot.events.map((item) => ({ ref: `event:${item.id}`, title: item.title, text: JSON.stringify(item) })) : []),
+    ...(snapshot.modules.tasks ? snapshot.archivedTasks.map((item) => ({ ref: `archived-task:${item.id}`, title: `Archived ${item.title}`, text: JSON.stringify({ archived: true, ...item }) })) : []),
+    ...(snapshot.modules.calendar ? snapshot.archivedEvents.map((item) => ({ ref: `archived-event:${item.id}`, title: `Archived ${item.title}`, text: JSON.stringify({ archived: true, ...item }) })) : []),
     ...snapshot.conversations.filter((item) => item.retained).map((item) => ({ ref: `conversation:${item.id}`, title: item.title, text: JSON.stringify(item.messages.map(({ role, text, provider, recordedAt }) => ({ role, text, provider, recordedAt }))) })),
     ...documents.map((item) => ({ ref: `document:${item.name}`, title: item.name, text: item.text }))
   ]
@@ -44,7 +46,7 @@ export function scopeContextRecords(snapshot: WorkspaceSnapshot, records: Contex
     if (kind === 'merge') return entities.has(snapshot.merges.find((item) => item.id === identifier)?.target ?? '')
     if (kind === 'document') return documents.has(identifier)
     if (kind === 'conversation') return scope.includeOtherConversations
-    if (kind === 'task' || kind === 'event') return scope.includeCalendarAndTasks
+    if (['task', 'event', 'archived-task', 'archived-event'].includes(kind)) return scope.includeCalendarAndTasks
     if (kind === 'proposal') {
       const proposal = snapshot.proposals.find((item) => item.id === identifier)
       if (!proposal) return false

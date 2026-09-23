@@ -131,6 +131,8 @@ export class Workspace {
     await mkdir(join(this.path, '.serenity'), { recursive: true })
     await mkdir(join(this.path, 'archive', 'entities'), { recursive: true })
     await mkdir(join(this.path, 'archive', 'merges'), { recursive: true })
+    await mkdir(join(this.path, 'archive', 'calendar'), { recursive: true })
+    await mkdir(join(this.path, 'archive', 'tasks'), { recursive: true })
   }
 
   markDirty(): void { this.indexDirty = true }
@@ -145,7 +147,9 @@ export class Workspace {
     const proposals: Proposal[] = []
     const documents: DocumentInfo[] = []
     const events: CalendarEvent[] = []
+    const archivedEvents: CalendarEvent[] = []
     const tasks: TaskItem[] = []
+    const archivedTasks: TaskItem[] = []
     const merges: MergeRecord[] = []
     const archivedEntities: Entity[] = []
     const errors: string[] = []
@@ -259,16 +263,17 @@ export class Workspace {
       }
     }
     for (const conversation of this.ephemeral.values()) conversations.push(conversation)
-    for (const [directory, parse, target] of [
-      [this.directories[5], parseEvent, events], [this.directories[6], parseTask, tasks]
+    for (const [directory, parse, archived] of [
+      [this.directories[5], parseEvent, false], [this.directories[6], parseTask, false],
+      [join(this.path, 'archive', 'calendar'), parseEvent, true], [join(this.path, 'archive', 'tasks'), parseTask, true]
     ] as const) {
       for (const name of (await readdir(directory)).filter((entry) => entry.endsWith('.yaml')).sort()) {
         try {
           const text = await readFile(join(directory, name), 'utf8')
           const parsed = parse(YAML.parse(text))
           if (`${parsed.id}.yaml` !== name) throw new Error('Filename does not match record ID')
-          if (directory === this.directories[5]) events.push({ ...parsed as CalendarEvent, revision: checksum(text) })
-          else tasks.push({ ...parsed as TaskItem, revision: checksum(text) })
+          if (parse === parseEvent) (archived ? archivedEvents : events).push({ ...parsed as CalendarEvent, revision: checksum(text) })
+          else (archived ? archivedTasks : tasks).push({ ...parsed as TaskItem, revision: checksum(text) })
         } catch (error) { errors.push(`${basename(directory)}/${name}: ${String(error)}`) }
       }
     }
@@ -297,8 +302,11 @@ export class Workspace {
       if (proposal.kind === 'task' || proposal.kind === 'event') proposal.relatedEntityIds = proposal.relatedEntityIds.map(resolve)
     }
     for (const event of events) event.relatedEntityIds = event.relatedEntityIds.map(resolve)
+    for (const event of archivedEvents) event.relatedEntityIds = event.relatedEntityIds.map(resolve)
     for (const task of tasks) task.relatedEntityIds = task.relatedEntityIds.map(resolve)
-    return { path: this.path, entities, archivedEntities, claims, resolutions, conversations, proposals, documents, events, tasks, merges, modules: enabled, semanticProvider, semanticIndex, providerActivity, errors }
+    for (const task of archivedTasks) task.relatedEntityIds = task.relatedEntityIds.map(resolve)
+    return { path: this.path, entities, archivedEntities, claims, resolutions, conversations, proposals, documents,
+      events, archivedEvents, tasks, archivedTasks, merges, modules: enabled, semanticProvider, semanticIndex, providerActivity, errors }
   }
 
   async saveEntity(input: Entity): Promise<WorkspaceSnapshot> {
@@ -581,5 +589,46 @@ export class Workspace {
     if (!(await this.snapshot()).modules.tasks) throw new Error('Tasks module is disabled')
     const task = parseTask({ ...value, id: value.id || randomUUID(), recordedAt: value.recordedAt ?? new Date().toISOString() })
     return this.saveModuleRecord(this.directories[6], { ...task, revision: value.revision })
+  }
+
+  private async archiveModuleRecord(directory: string, category: 'calendar' | 'tasks', recordId: string, revision: string): Promise<WorkspaceSnapshot> {
+    const file = `${id(recordId)}.yaml`
+    const source = join(directory, file)
+    const destination = join(this.path, 'archive', category, file)
+    const current = await readFile(source, 'utf8')
+    if (checksum(current) !== revision) throw new Error('This item changed on disk. Refresh before archiving it.')
+    try { await stat(destination); throw new Error('This item is already archived.') }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+    await rename(source, destination)
+    this.markDirty()
+    return this.snapshot()
+  }
+
+  private async restoreModuleRecord(directory: string, category: 'calendar' | 'tasks', recordId: string): Promise<WorkspaceSnapshot> {
+    if (!(await this.snapshot()).modules[category]) throw new Error(`${category} module is disabled`)
+    const file = `${id(recordId)}.yaml`
+    const source = join(this.path, 'archive', category, file)
+    const destination = join(directory, file)
+    try { await stat(destination); throw new Error('An active item already uses this ID.') }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+    await rename(source, destination)
+    this.markDirty()
+    return this.snapshot()
+  }
+
+  async archiveEvent(id: string, revision: string): Promise<WorkspaceSnapshot> {
+    return this.archiveModuleRecord(this.directories[5], 'calendar', id, revision)
+  }
+
+  async restoreEvent(id: string): Promise<WorkspaceSnapshot> {
+    return this.restoreModuleRecord(this.directories[5], 'calendar', id)
+  }
+
+  async archiveTask(id: string, revision: string): Promise<WorkspaceSnapshot> {
+    return this.archiveModuleRecord(this.directories[6], 'tasks', id, revision)
+  }
+
+  async restoreTask(id: string): Promise<WorkspaceSnapshot> {
+    return this.restoreModuleRecord(this.directories[6], 'tasks', id)
   }
 }

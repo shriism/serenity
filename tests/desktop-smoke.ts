@@ -83,6 +83,18 @@ try {
   assert.equal(taskCount, 1)
   const eventCount = await evaluate(pageUrl, `window.serenity.saveEvent({ id: '', title: 'Meet Alex', start: '2026-10-04T10:00', notes: '', relatedEntityIds: ['${entityId}'] }).then((snapshot) => snapshot.events.length)`)
   assert.equal(eventCount, 1)
+  const archivedEventCount = await evaluate(pageUrl, `window.serenity.refresh().then((snapshot) => window.serenity.archiveEvent(snapshot.events[0].id, snapshot.events[0].revision)).then((snapshot) => snapshot.archivedEvents.length)`)
+  assert.equal(archivedEventCount, 1)
+  const restoredEventCount = await evaluate(pageUrl, `window.serenity.refresh().then((snapshot) => window.serenity.restoreEvent(snapshot.archivedEvents[0].id)).then((snapshot) => snapshot.events.length)`)
+  assert.equal(restoredEventCount, 1)
+  const archivedTaskCount = await evaluate(pageUrl, `window.serenity.refresh().then((snapshot) => window.serenity.archiveTask(snapshot.tasks[0].id, snapshot.tasks[0].revision)).then((snapshot) => snapshot.archivedTasks.length)`)
+  assert.equal(archivedTaskCount, 1)
+  const restoredTaskCount = await evaluate(pageUrl, `window.serenity.refresh().then((snapshot) => window.serenity.restoreTask(snapshot.archivedTasks[0].id)).then((snapshot) => snapshot.tasks.length)`)
+  assert.equal(restoredTaskCount, 1)
+  const calendarView = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Calendar')); if (button) { button.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.module-page h1')?.textContent ?? null } await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
+  assert.equal(calendarView, 'Calendar')
+  const tasksView = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Tasks')); button?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.module-page h1')?.textContent ?? null })()`)
+  assert.equal(tasksView, 'Tasks')
   const disabled = await evaluate(pageUrl, `window.serenity.setModule('calendar', false).then((snapshot) => snapshot.modules.calendar)`)
   assert.equal(disabled, false)
 
@@ -112,7 +124,7 @@ try {
     assert.equal(settings.permissions.tasks, true)
     console.log(`${provider} conversation completed through Electron IPC.`)
   }
-  console.log('Electron workspace, entity, claim, PDF/DOCX search, task, calendar, and preload IPC passed.')
+  console.log('Electron workspace, entity, claim, PDF/DOCX search, reversible tasks/calendar, and preload IPC passed.')
 } finally {
   child.kill()
   await rm(workspace, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })

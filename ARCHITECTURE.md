@@ -21,7 +21,7 @@ Record IDs are stable UUIDs. Types and relationship names are ordinary user-chos
 
 ## Modules
 
-The registry in `src/shared/modules.ts` describes disableable modules. The workspace records their switches in `.serenity/modules.yaml`. A disabled module retains its files but does not expose its view, accept new writes, or send its records to AI. Calendar and tasks link to existing entities by ID rather than keeping duplicate copies of people and projects.
+The registry in `src/shared/modules.ts` describes disableable modules. The workspace records their switches in `.serenity/modules.yaml`. A disabled module retains its files but does not expose its view, accept new writes, or send its records to AI. Calendar and tasks link to existing entities by ID rather than keeping duplicate copies of people and projects. Removed tasks and events are archived under `archive/tasks/` and `archive/calendar/` and can be restored; user edits to active module records are checked against their file revision before archiving.
 
 To add a built-in module, register its ID and description, define its on-disk records and validation, provide main-process operations through the typed preload API, and add its view. Keep optional modules separate from the core entity/claim source of truth. Module data must remain intact when the module is disabled. External plugin installation is not yet implemented.
 

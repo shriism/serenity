@@ -142,6 +142,31 @@ test('calendar and tasks remain on disk when their modules are disabled', async 
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
+test('calendar events and tasks can be archived and restored without losing their files', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const event = (await workspace.saveEvent({ id: '', title: 'Meeting', start: '2026-10-04', notes: 'Original note', relatedEntityIds: [] })).events[0]
+    const task = (await workspace.saveTask({ id: '', title: 'Prepare', completed: false, notes: 'Original task', relatedEntityIds: [] })).tasks[0]
+    const archived = await workspace.archiveEvent(event.id, event.revision!)
+    assert.equal(archived.events.length, 0)
+    assert.equal(archived.archivedEvents[0].title, 'Meeting')
+    assert.match(await readFile(join(directory, 'archive', 'calendar', `${event.id}.yaml`), 'utf8'), /Original note/)
+    await workspace.setModule('calendar', false)
+    await assert.rejects(workspace.restoreEvent(event.id), /disabled/)
+    await workspace.setModule('calendar', true)
+    assert.equal((await workspace.restoreEvent(event.id)).events.length, 1)
+    const taskPath = join(directory, 'tasks', `${task.id}.yaml`)
+    await writeFile(taskPath, (await readFile(taskPath, 'utf8')).replace('Original task', 'Externally edited task'))
+    await assert.rejects(workspace.archiveTask(task.id, task.revision!), /changed on disk/)
+    const edited = (await workspace.snapshot()).tasks[0]
+    assert.equal((await workspace.archiveTask(edited.id, edited.revision!)).archivedTasks[0].notes, 'Externally edited task')
+    assert.equal((await workspace.restoreTask(edited.id)).tasks.length, 1)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
 test('merge archives duplicate and resolves knowledge and module links without erasing claim files', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
   try {

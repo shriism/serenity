@@ -46,7 +46,9 @@ export interface WorkspaceSnapshot {
   documents: DocumentInfo[]
   modules: Record<ModuleId, boolean>
   events: CalendarEvent[]
+  archivedEvents: CalendarEvent[]
   tasks: TaskItem[]
+  archivedTasks: TaskItem[]
   merges: MergeRecord[]
   archivedEntities: Entity[]
   semanticProvider: Provider
@@ -197,6 +199,10 @@ export interface SerenityAPI {
   setModule(id: ModuleId, enabled: boolean): Promise<WorkspaceSnapshot>
   saveEvent(event: CalendarEvent): Promise<WorkspaceSnapshot>
   saveTask(task: TaskItem): Promise<WorkspaceSnapshot>
+  archiveEvent(id: string, revision: string): Promise<WorkspaceSnapshot>
+  restoreEvent(id: string): Promise<WorkspaceSnapshot>
+  archiveTask(id: string, revision: string): Promise<WorkspaceSnapshot>
+  restoreTask(id: string): Promise<WorkspaceSnapshot>
   mergeEntities(source: string, target: string): Promise<WorkspaceSnapshot>
   setSemanticProvider(provider: Provider): Promise<WorkspaceSnapshot>
   onIndexError(callback: (message: string) => void): () => void

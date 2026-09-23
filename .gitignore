@@ -4,3 +4,16 @@ dist/
 release/
 *.log
 .DS_Store
+
+# Personal workspace data, if the repository is accidentally selected as a workspace.
+/entities/
+/claims/
+/documents/
+/conversations/
+/proposals/
+/calendar/
+/tasks/
+/archive/
+/resolutions/
+/activity/
+/.serenity/

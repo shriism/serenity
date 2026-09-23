@@ -8,7 +8,7 @@ import { semanticSearch } from './semantic'
 import { buildSemanticIndex, rankSemanticIndex } from './semantic-index'
 import { askProvider } from './providers'
 import { analyzeChangedDocument } from './document-analysis'
-import { basename, dirname } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import type { Autonomy, CalendarEvent, Claim, Entity, Provider, ReadScope, TaskItem, WorkflowPermissions, WorkspaceSnapshot } from '../shared/types'
 import type { ModuleId } from '../shared/modules'
 
@@ -86,7 +86,7 @@ async function openWorkspace(path: string): Promise<WorkspaceSnapshot> {
   const next = new Workspace(path)
   await next.initialize()
   workspace = next
-  watcher = chokidar.watch(next.directories.slice(0, 8), { ignoreInitial: true, awaitWriteFinish: { stabilityThreshold: 250, pollInterval: 100 } })
+  watcher = chokidar.watch([...next.directories.slice(0, 8), join(next.path, 'archive')], { ignoreInitial: true, awaitWriteFinish: { stabilityThreshold: 250, pollInterval: 100 } })
   watcher.on('all', (event, changedPath) => {
     next.markDirty()
     window?.webContents.send('workspace:changed')
@@ -168,6 +168,10 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('calendar:save', (_event, item: CalendarEvent) => currentWorkspace().saveEvent(item))
   ipcMain.handle('task:save', (_event, item: TaskItem) => currentWorkspace().saveTask(item))
+  ipcMain.handle('calendar:archive', (_event, id: string, revision: string) => currentWorkspace().archiveEvent(id, revision))
+  ipcMain.handle('calendar:restore', (_event, id: string) => currentWorkspace().restoreEvent(id))
+  ipcMain.handle('task:archive', (_event, id: string, revision: string) => currentWorkspace().archiveTask(id, revision))
+  ipcMain.handle('task:restore', (_event, id: string) => currentWorkspace().restoreTask(id))
   ipcMain.handle('entity:merge', (_event, source: string, target: string) => currentWorkspace().mergeEntities(source, target))
   const selected = process.argv.find((argument) => argument.startsWith('--workspace='))?.slice('--workspace='.length)
   if (selected) {

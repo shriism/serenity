@@ -202,6 +202,14 @@ textarea { min-height: 260px; resize: vertical; line-height: 1.65; }
 .module-form label { display: grid; gap: 5px; font-size: 11px; color: #788b7d; font-weight: 600; }
 .module-form input, .module-form select, .module-form textarea { border: 1px solid #dce5da; background: white; border-radius: 6px; padding: 9px; color: #35523f; font-size: 12px; width: 100%; }
 .module-form textarea { min-height: 80px; }
+.module-links { border: 1px solid #dce5da; border-radius: 7px; padding: 10px; max-height: 160px; overflow: auto; }
+.module-links legend { color: #788b7d; font-size: 11px; font-weight: 600; }
+.module-links label { display: flex; flex-direction: row; align-items: center; gap: 7px; padding: 4px 0; }
+.module-links input { width: auto; }
+.archived-items { margin: 24px 0; color: #708977; font-size: 12px; }
+.archived-items summary { cursor: pointer; }
+.archived-items div { display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid #dfe8dd; padding: 8px 0; }
+.archived-items button { background: none; border: 0; color: #5b8868; font-size: 11px; }
 .task-row { display: flex; gap: 12px; align-items: center; border-bottom: 1px solid #e3eae1; padding: 15px 0; }
 .task-row button:first-child { border: 0; background: transparent; color: #619373; font-size: 20px; }
 .task-row div { flex: 1; }

@@ -86,7 +86,7 @@ async function openWorkspace(path: string): Promise<WorkspaceSnapshot> {
   const next = new Workspace(path)
   await next.initialize()
   workspace = next
-  watcher = chokidar.watch(next.directories, { ignoreInitial: true, awaitWriteFinish: { stabilityThreshold: 250, pollInterval: 100 } })
+  watcher = chokidar.watch(next.directories.slice(0, 8), { ignoreInitial: true, awaitWriteFinish: { stabilityThreshold: 250, pollInterval: 100 } })
   watcher.on('all', (event, changedPath) => {
     next.markDirty()
     window?.webContents.send('workspace:changed')

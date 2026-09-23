@@ -5,8 +5,14 @@ import { delimiter, join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { app } from 'electron'
 import { existsSync } from 'node:fs'
+import { trackProviderCall, type ActivityRequest } from './provider-activity'
 
-export async function askProvider(provider: Provider, workspace: string, prompt: string): Promise<string> {
+export async function askProvider(provider: Provider, workspace: string, prompt: string,
+  activity: ActivityRequest = { operation: 'conversation', refs: [] }): Promise<string> {
+  return trackProviderCall(workspace, provider, prompt, activity, () => runProvider(provider, workspace, prompt))
+}
+
+async function runProvider(provider: Provider, workspace: string, prompt: string): Promise<string> {
   if (provider === 'copilot') {
     const { CopilotClient, RuntimeConnection } = await import('@github/copilot-sdk')
     const token = await getCredential('copilot')

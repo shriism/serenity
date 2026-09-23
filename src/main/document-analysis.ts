@@ -5,7 +5,7 @@ import YAML from 'yaml'
 import { Workspace } from './workspace'
 import type { Autonomy, Provider, WorkspaceSnapshot } from '../shared/types'
 
-type Send = (workspace: Workspace, input: { text: string; provider: Provider; autonomy: Autonomy; retained: boolean }) => Promise<WorkspaceSnapshot>
+type Send = (workspace: Workspace, input: { text: string; provider: Provider; autonomy: Autonomy; retained: boolean; operation: 'document-analysis' }) => Promise<WorkspaceSnapshot>
 
 export async function analyzeChangedDocument(workspace: Workspace, filename: string, send: Send): Promise<void> {
   const snapshot = await workspace.snapshot()
@@ -21,7 +21,7 @@ export async function analyzeChangedDocument(workspace: Workspace, filename: str
   if (processed[filename] === hash) return
   await send(workspace, {
     text: `Analyze the newly added or changed document named "${filename}". Extract useful entities, facts, tasks, and events as proposals, with the document name as their source. Ask for clarification if identities are ambiguous.`,
-    provider: snapshot.semanticProvider, autonomy: 'propose', retained: true
+    provider: snapshot.semanticProvider, autonomy: 'propose', retained: true, operation: 'document-analysis'
   })
   processed[filename] = hash
   const temp = `${statePath}.${randomUUID()}.tmp`

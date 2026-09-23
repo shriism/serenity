@@ -88,9 +88,12 @@ try {
 
   const provider = process.env.SERENITY_SMOKE_PROVIDER
   if (provider === 'copilot' || provider === 'codex' || provider === 'claude') {
-    const answer = await evaluate(pageUrl, `window.serenity.sendMessage({ text: 'According to the sourced claim about Alex, what is his birthday? Include the date. Do not propose any changes.', provider: '${provider}', autonomy: 'propose', retained: true }).then((snapshot) => ({ text: snapshot.conversations[0].messages.at(-1)?.text, shared: snapshot.conversations[0].messages[0].sharedContext?.length }))`) as { text: string; shared: number }
+    const answer = await evaluate(pageUrl, `window.serenity.sendMessage({ text: 'According to the sourced claim about Alex, what is his birthday? Include the date. Do not propose any changes.', provider: '${provider}', autonomy: 'propose', retained: true }).then((snapshot) => ({ text: snapshot.conversations[0].messages.at(-1)?.text, shared: snapshot.conversations[0].messages[0].sharedContext?.length, activity: snapshot.providerActivity.find((entry) => entry.provider === '${provider}') }))`) as { text: string; shared: number; activity: { status: string; operation: string; refs: string[] } }
     assert.match(answer.text, /September 7/i)
     assert.ok(answer.shared > 0)
+    assert.equal(answer.activity?.status, 'completed')
+    assert.equal(answer.activity?.operation, 'conversation')
+    assert.ok(answer.activity?.refs.some((ref) => ref.startsWith('claim:')))
     console.log(`${provider} conversation completed through Electron IPC.`)
   }
   console.log('Electron workspace, entity, claim, PDF/DOCX search, task, calendar, and preload IPC passed.')

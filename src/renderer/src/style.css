@@ -154,6 +154,13 @@ textarea { min-height: 260px; resize: vertical; line-height: 1.65; }
 .activity-row time { width: 140px; flex: none; color: #8d9f91; font-size: 11px; }
 .activity-row strong { font-size: 13px; }
 .activity-row p { color: #8d9c91; font-size: 12px; margin: 5px 0; overflow-wrap: anywhere; }
+.provider-activity { border: 1px solid #dce7dc; background: #f0f5ee; border-radius: 9px; padding: 17px 20px; margin: 22px 0; }
+.provider-activity h2 { font-size: 23px; margin: 0 0 12px; }
+.provider-activity details { border-top: 1px solid #dce7dc; padding: 9px 0; color: #5b7562; font-size: 11px; }
+.provider-activity summary { cursor: pointer; display: flex; justify-content: space-between; gap: 15px; }
+.provider-activity summary small, .provider-activity details > small { color: #91a394; font-size: 10px; }
+.provider-activity details > small { display: block; margin: 4px 0; overflow-wrap: anywhere; }
+.provider-activity p { overflow-wrap: anywhere; }
 .module-toggle { display: flex; align-items: center; justify-content: space-between; padding: 17px 0; border-bottom: 1px solid #e4ebe1; }
 .module-toggle strong, .module-toggle small { display: block; }
 .module-toggle strong { font-size: 13px; }

@@ -51,7 +51,21 @@ export interface WorkspaceSnapshot {
   archivedEntities: Entity[]
   semanticProvider: Provider
   semanticIndex: { generatedAt: string; count: number } | null
+  providerActivity: ProviderActivity[]
   errors: string[]
+}
+
+export interface ProviderActivity {
+  id: string
+  provider: Provider
+  operation: 'conversation' | 'semantic-search' | 'background-index' | 'document-analysis'
+  refs: string[]
+  promptCharacters: number
+  promptChecksum: string
+  startedAt: string
+  finishedAt?: string
+  status: 'running' | 'completed' | 'failed'
+  error?: string
 }
 
 export interface MergeRecord {

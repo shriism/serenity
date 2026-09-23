@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } f
 import { basename, extname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import YAML from 'yaml'
-import type { CalendarEvent, Claim, ClaimResolution, Conversation, DocumentInfo, Entity, MergeRecord, Proposal, Provider, SearchResult, TaskItem, WorkspaceSnapshot } from '../shared/types'
+import type { CalendarEvent, Claim, ClaimResolution, Conversation, DocumentInfo, Entity, MergeRecord, Proposal, Provider, ProviderActivity, SearchResult, TaskItem, WorkspaceSnapshot } from '../shared/types'
 import { modules, type ModuleId } from '../shared/modules'
 import { extractDocument } from './documents'
 
@@ -122,7 +122,7 @@ export class Workspace {
   constructor(readonly path: string) {}
 
   get directories(): string[] {
-    return ['entities', 'claims', 'documents', 'conversations', 'proposals', 'calendar', 'tasks', 'resolutions'].map((name) => join(this.path, name))
+    return ['entities', 'claims', 'documents', 'conversations', 'proposals', 'calendar', 'tasks', 'resolutions', 'activity'].map((name) => join(this.path, name))
   }
 
   async initialize(): Promise<void> {
@@ -139,6 +139,7 @@ export class Workspace {
     const entities: Entity[] = []
     const claims: Claim[] = []
     const resolutions: ClaimResolution[] = []
+    const providerActivity: ProviderActivity[] = []
     const conversations: Conversation[] = []
     const proposals: Proposal[] = []
     const documents: DocumentInfo[] = []
@@ -207,6 +208,15 @@ export class Workspace {
           recordedAt: requiredText(data.recordedAt, 'Recorded at'), reason: requiredText(data.reason, 'Reason'),
           sequence: typeof data.sequence === 'number' && Number.isSafeInteger(data.sequence) ? data.sequence : undefined })
       } catch (error) { errors.push(`resolutions/${name}: ${String(error)}`) }
+    }
+    for (const name of (await readdir(this.directories[8])).filter((entry) => entry.endsWith('.yaml')).sort()) {
+      try {
+        const data: unknown = YAML.parse(await readFile(join(this.directories[8], name), 'utf8'))
+        if (!record(data) || id(data.id) !== name.slice(0, -5) || !Array.isArray(data.refs) ||
+          !['copilot', 'codex', 'claude'].includes(String(data.provider)) ||
+          !['running', 'completed', 'failed'].includes(String(data.status))) throw new Error('Invalid provider activity')
+        providerActivity.push(data as unknown as ProviderActivity)
+      } catch (error) { errors.push(`activity/${name}: ${String(error)}`) }
     }
     for (const [directory, extension, parse] of [
       [this.directories[0], '.md', parseEntity],
@@ -287,7 +297,7 @@ export class Workspace {
     }
     for (const event of events) event.relatedEntityIds = event.relatedEntityIds.map(resolve)
     for (const task of tasks) task.relatedEntityIds = task.relatedEntityIds.map(resolve)
-    return { path: this.path, entities, archivedEntities, claims, resolutions, conversations, proposals, documents, events, tasks, merges, modules: enabled, semanticProvider, semanticIndex, errors }
+    return { path: this.path, entities, archivedEntities, claims, resolutions, conversations, proposals, documents, events, tasks, merges, modules: enabled, semanticProvider, semanticIndex, providerActivity, errors }
   }
 
   async saveEntity(input: Entity): Promise<WorkspaceSnapshot> {

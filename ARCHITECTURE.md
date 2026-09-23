@@ -7,7 +7,7 @@
 - **Main process (`src/main/`)** chooses the workspace, validates edits, loads files, indexes content, and runs AI SDKs. Provider credentials live in OS-protected storage outside the workspace.
 - **Shared (`src/shared/`)** defines record types and the module registry.
 
-Agent SDK tools are disabled or read-only. Providers return proposed knowledge; Serenity performs writes after the selected workflow's review or autonomy rule. Conversations, proposal decisions, claim sources, and merge history are independent of provider-private sessions.
+Agent SDK tools are disabled or read-only. Providers return proposed knowledge; Serenity performs writes after the selected workflow's review or autonomy rule. Conversations, proposal decisions, claim sources, and merge history are independent of provider-private sessions. Every provider request writes a record under `activity/` with its operation, provider, referenced workspace IDs, prompt size/checksum, and outcome; raw prompts and credentials are not duplicated there.
 
 When a workspace does not fit a provider request, the knowledge engine retrieves from its full local index, sends an explicit catalog and relevant excerpts, and can supply a requested second excerpt. Each conversation message records the references, byte counts, excerpt offsets, and checksums sent to the provider. Retrieval selects context for transmission; it does not change which workspace files are available to the human or to later AI retrieval.
 

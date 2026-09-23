@@ -69,6 +69,13 @@ try {
 
   const path = await evaluate(pageUrl, 'window.serenity.refresh().then((snapshot) => snapshot?.path)')
   assert.equal(path, workspace)
+  if (process.env.SERENITY_SMOKE_CREDENTIALS === '1') {
+    const connected = await evaluate(pageUrl, `window.serenity.saveCredential('claude', 'test-session-only-key').then((status) => status.claude)`)
+    assert.equal(connected, true)
+    const disconnected = await evaluate(pageUrl, `window.serenity.saveCredential('claude', '').then((status) => status.claude)`)
+    assert.equal(disconnected, false)
+    await assert.rejects(readFile(join(workspace, 'provider-credentials.json'), 'utf8'), /ENOENT/)
+  }
   const entityId = await evaluate(pageUrl, `window.serenity.saveEntity({ id: '', title: 'Alex', type: 'person', body: '# Alex\\nFrom **AI Club**.' }).then((snapshot) => snapshot.entities[0].id)`) as string
   assert.match(entityId, /^[a-f0-9-]{36}$/)
   assert.match(await readFile(join(workspace, 'entities', `${entityId}.md`), 'utf8'), /AI Club/)

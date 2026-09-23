@@ -42,6 +42,7 @@ jobs:
         run: xvfb-run -a npx tsx tests/desktop-smoke.ts
         env:
           SERENITY_SMOKE_EXECUTABLE: release/linux-unpacked/serenity
+          SERENITY_SMOKE_CREDENTIALS: '1'
       - uses: actions/upload-artifact@v4
         with:
           name: serenity-${{ matrix.os }}

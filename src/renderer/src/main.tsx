@@ -354,6 +354,7 @@ function App() {
       <header className="topbar"><span>{workspace ? 'Knowledge workspace' : 'Welcome to Serenity'}</span>{workspace && <button className="text-button" onClick={() => void refresh()}>Refresh files ↻</button>}</header>
       {error && <div className="notice error" role="alert">{error}</div>}
       {workspace?.errors.map((item) => <div key={item} className="notice warning" role="alert">Could not read {item}</div>)}
+      {view === 'settings' && <div className="notice warning" role="status">When secure OS credential storage is unavailable, keys entered here are kept only for this app session.</div>}
       {view === 'conversation' && readScope.mode === 'selected' && <div className="notice warning" role="status">Selected read scope: AI only receives chosen knowledge and this conversation. The accessible records are shown with each response.</div>}
       {view === 'review' && workspace?.proposals.some((item) => item.status === 'pending' && item.reviewReason) && <div className="notice warning" role="status">Some proposals involve similar entities. Verify the identity before accepting them.</div>}
       {!workspace ? <section className="welcome"><div className="welcome-symbol">✳</div><span className="eyebrow">A PLACE TO CONNECT WHAT MATTERS</span><h1>Your world,<br/><em>within reach.</em></h1><p>Choose a folder on your device for Serenity's knowledge files. You can read and edit them with any text editor.</p><button className="primary" onClick={() => void chooseWorkspace()}>Choose a workspace <span>↗</span></button></section>

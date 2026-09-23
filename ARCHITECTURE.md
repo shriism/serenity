@@ -4,7 +4,7 @@
 
 - **Renderer (`src/renderer/`)** presents the workspace. It has no Node.js filesystem access or direct provider credentials.
 - **Preload (`src/preload/`)** exposes a deliberately small, typed API through Electron's context bridge.
-- **Main process (`src/main/`)** chooses the workspace, validates edits, loads files, indexes content, and runs AI SDKs. Provider credentials live in OS-protected storage outside the workspace.
+- **Main process (`src/main/`)** chooses the workspace, validates edits, loads files, indexes content, and runs AI SDKs. Provider credentials use OS-protected storage outside the workspace when available, or remain in memory for that app session.
 - **Shared (`src/shared/`)** defines record types and the module registry.
 
 Agent SDK tools are disabled or read-only. Providers return proposed knowledge; Serenity performs writes after the selected workflow's review or autonomy rule. Conversations, proposal decisions, claim sources, and merge history are independent of provider-private sessions. User-initiated conversation requests use a cancellable signal across the provider adapters. Every provider request writes a record under `activity/` with its operation, provider, referenced workspace IDs, prompt size/checksum, and outcome; raw prompts and credentials are not duplicated there.

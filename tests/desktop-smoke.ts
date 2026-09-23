@@ -7,12 +7,20 @@ import { setTimeout as delay } from 'node:timers/promises'
 import assert from 'node:assert/strict'
 import { PDFDocument } from 'pdf-lib'
 import JSZip from 'jszip'
+import YAML from 'yaml'
 
 const require = createRequire(import.meta.url)
 const electron = process.env.SERENITY_SMOKE_EXECUTABLE ?? require('electron') as string
 const packaged = Boolean(process.env.SERENITY_SMOKE_EXECUTABLE)
 const workspace = await mkdtemp(join(tmpdir(), 'serenity-desktop-smoke-'))
 await mkdir(join(workspace, 'documents'))
+await mkdir(join(workspace, 'proposals'))
+const proposalId = '123e4567-e89b-42d3-a456-426614174092'
+await writeFile(join(workspace, 'proposals', `${proposalId}.yaml`), YAML.stringify({
+  id: proposalId, kind: 'entity', title: 'Alex', type: 'person', body: 'Met at **robotics club**.',
+  source: 'Smoke document', origin: 'ai-inference', provider: 'copilot',
+  conversationId: '123e4567-e89b-42d3-a456-426614174093', status: 'pending', recordedAt: new Date().toISOString()
+}))
 const pdf = await PDFDocument.create()
 pdf.addPage([400, 200]).drawText('QuarterlyCometResearch', { x: 25, y: 130, size: 16 })
 await writeFile(join(workspace, 'documents', 'research.pdf'), await pdf.save())
@@ -81,8 +89,14 @@ try {
   assert.match(await readFile(join(workspace, 'entities', `${entityId}.md`), 'utf8'), /AI Club/)
   const preview = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const button = [...document.querySelectorAll('.entity-link')].find((item) => item.textContent?.includes('Alex')); if (button) { button.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.markdown-preview strong')?.textContent ?? null } await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
   assert.equal(preview, 'AI Club')
+  const review = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Review')); button?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.review-identity select')?.textContent ?? null })()`)
+  assert.match(String(review), /Alex/)
+  const attached = await evaluate(pageUrl, `window.serenity.attachEntityProposal('${proposalId}', '${entityId}').then((snapshot) => ({ entities: snapshot.entities.length, source: snapshot.claims.find((item) => item.key === 'context')?.source, target: snapshot.proposals.find((item) => item.id === '${proposalId}')?.resolvedInto }))`) as { entities: number; source: string; target: string }
+  assert.deepEqual(attached, { entities: 1, source: 'Smoke document', target: entityId })
+  const attachedContext = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Knowledge')); button?.click(); for (let i = 0; i < 30; i++) { const summary = document.querySelector('.claim-context summary'); if (summary) { summary.click(); return document.querySelector('.claim-context strong')?.textContent ?? null } await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
+  assert.equal(attachedContext, 'robotics club')
   const claimCount = await evaluate(pageUrl, `window.serenity.addClaim({ subject: '${entityId}', key: 'birthday', value: 'September 7', source: 'Alex' }).then((snapshot) => snapshot.claims.length)`)
-  assert.equal(claimCount, 1)
+  assert.equal(claimCount, 2)
   const results = await evaluate(pageUrl, `window.serenity.search('birthday').then((items) => items.map((item) => item.kind))`) as string[]
   assert.ok(results.includes('claim'))
   const pdfResults = await evaluate(pageUrl, `window.serenity.search('QuarterlyCometResearch').then((items) => items.map((item) => item.kind))`) as string[]
@@ -145,6 +159,14 @@ try {
       const result = await evaluate(pageUrl, 'window.__cancelledRun') as { status: string; error?: string }
       assert.equal(result.status, 'cancelled', result.error)
       console.log(`${provider} request cancelled through Electron IPC.`)
+    }
+    if (process.env.SERENITY_SMOKE_EXTRACTION === '1') {
+      await evaluate(pageUrl, `window.serenity.setModule('calendar', true)`)
+      const extracted = await evaluate(pageUrl, `window.serenity.sendMessage({ text: 'Remember that Alex likes chess. Also make a task called Buy Alex a gift due 2026-10-03, and add an event called Lunch with Alex on 2026-10-04 at 12:00. Connect the task and event to Alex. Suggest each as a proposal with its source.', provider: '${provider}', autonomy: 'propose', retained: true }).then((snapshot) => snapshot.proposals.filter((item) => item.status === 'pending').map((item) => ({ kind: item.kind, source: item.source })))`) as { kind: string; source: string }[]
+      assert.ok(extracted.some((item) => item.kind === 'claim'), `Expected a claim proposal: ${JSON.stringify(extracted)}`)
+      assert.ok(extracted.some((item) => item.kind === 'task'), `Expected a task proposal: ${JSON.stringify(extracted)}`)
+      assert.ok(extracted.some((item) => item.kind === 'event'), `Expected an event proposal: ${JSON.stringify(extracted)}`)
+      console.log(`${provider} extracted claim, task, and event proposals from conversation.`)
     }
   }
   const duplicateId = await evaluate(pageUrl, `window.serenity.saveEntity({ id: '', title: 'Alex from club', type: 'person', body: 'Possible duplicate.' }).then((snapshot) => snapshot.entities.find((entity) => entity.title === 'Alex from club').id)`) as string

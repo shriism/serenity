@@ -164,6 +164,8 @@ export interface ProposalBase {
   status: 'pending' | 'accepted' | 'rejected'
   recordedAt: string
   reviewReason?: string
+  resolvedInto?: string
+  createdEntityId?: string
 }
 
 export type Proposal = ProposalBase & (
@@ -203,6 +205,7 @@ export interface SerenityAPI {
   cancelMessage(): Promise<boolean>
   updateConversationSettings(id: string, settings: { autonomy: Autonomy; permissions: WorkflowPermissions; retained: boolean; readScope?: ReadScope }): Promise<WorkspaceSnapshot>
   resolveProposal(id: string, accept: boolean): Promise<WorkspaceSnapshot>
+  attachEntityProposal(proposalId: string, entityId: string): Promise<WorkspaceSnapshot>
   deleteConversation(id: string): Promise<WorkspaceSnapshot>
   credentialStatus(): Promise<Record<Provider, boolean>>
   saveCredential(provider: Provider, key: string): Promise<Record<Provider, boolean>>

@@ -192,6 +192,7 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('conversation:settings', (_event, id: string, settings: { autonomy: Autonomy; permissions: WorkflowPermissions; retained: boolean; readScope?: ReadScope }) => currentWorkspace().updateConversationSettings(id, settings))
   ipcMain.handle('proposal:resolve', (_event, id: string, accept: boolean) => currentWorkspace().resolveProposal(id, accept))
+  ipcMain.handle('proposal:attach-entity', (_event, proposalId: string, entityId: string) => currentWorkspace().attachEntityProposal(proposalId, entityId))
   ipcMain.handle('conversation:delete', (_event, id: string) => currentWorkspace().deleteConversation(id))
   ipcMain.handle('credential:status', () => credentialStatus())
   ipcMain.handle('credential:save', async (_event, provider: Provider, key: string) => {

@@ -297,6 +297,7 @@ test('accepted AI proposals create sourced entities, tasks, and events', async (
     const accepted = await workspace.resolveProposal(entityId, true)
     assert.equal(accepted.entities[0].source, 'Syllabus')
     assert.equal(accepted.entities[0].origin, 'ai-statement')
+    assert.equal(accepted.proposals[0].createdEntityId, accepted.entities[0].id)
     const taskId = '123e4567-e89b-42d3-a456-426614174013'
     await workspace.addProposal({ ...common, kind: 'task', id: taskId, title: 'Apply', due: '2026-10-04', notes: '', relatedEntityIds: [accepted.entities[0].id] })
     assert.equal((await workspace.resolveProposal(taskId, true)).tasks[0].source, 'Syllabus')
@@ -305,6 +306,30 @@ test('accepted AI proposals create sourced entities, tasks, and events', async (
     const after = await workspace.resolveProposal(eventId, true)
     assert.equal(after.events[0].title, 'Meeting')
     assert.equal(after.proposals.filter((proposal) => proposal.status === 'accepted').length, 3)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('a reviewed entity proposal can attach sourced context without creating a duplicate person', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const original = (await workspace.saveEntity({ id: '', title: 'Alex', type: 'person', body: 'Known from AI Club.' })).entities[0]
+    const proposalId = '123e4567-e89b-42d3-a456-426614174018'
+    await workspace.addProposal({ id: proposalId, kind: 'entity', title: 'Alex', type: 'person', body: 'Interested in **robotics**.',
+      source: 'Imported syllabus', origin: 'ai-inference', provider: 'copilot', conversationId: '123e4567-e89b-42d3-a456-426614174019',
+      status: 'pending', recordedAt: new Date().toISOString() })
+    const attached = await workspace.attachEntityProposal(proposalId, original.id)
+    assert.equal(attached.entities.length, 1)
+    assert.equal(attached.entities[0].body, 'Known from AI Club.')
+    assert.equal(attached.claims[0].subject, original.id)
+    assert.equal(attached.claims[0].key, 'context')
+    assert.equal(attached.claims[0].source, 'Imported syllabus')
+    assert.equal(attached.claims[0].origin, 'ai-inference')
+    assert.match(attached.claims[0].value, /robotics/)
+    assert.equal(attached.proposals[0].resolvedInto, original.id)
+    await assert.rejects(workspace.attachEntityProposal(proposalId, original.id), /no longer pending/)
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

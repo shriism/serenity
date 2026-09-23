@@ -56,7 +56,7 @@ export function ConversationPanel(props: Props) {
         <label className="retention"><input type="checkbox" checked={props.retained} onChange={(event) => props.onRetentionChange(event.target.checked)}/> Save history</label>
       </div>
       <div className="compose-input">
-        <input value={props.message} onChange={(event) => props.onMessageChange(event.target.value)} placeholder="Ask a question or share something to remember..." disabled={props.busy} aria-label="Message"/>
+        <textarea value={props.message} onChange={(event) => props.onMessageChange(event.target.value)} placeholder="Ask a question or share something to remember..." disabled={props.busy} aria-label="Message"/>
         {props.busy && <button type="button" className="secondary" onClick={props.onCancel}>Cancel</button>}
         <button type="submit" className="primary" disabled={props.busy || !props.message.trim()}>Send ↗</button>
       </div>

@@ -71,6 +71,9 @@ textarea { min-height: 260px; resize: vertical; line-height: 1.65; }
 .claim strong { font-size: 14px; margin: 8px 0; overflow-wrap: anywhere; }
 .claim small { color: #94a496; font-size: 10px; }
 .claim.retracted { opacity: .6; }
+.claim-context { margin: 9px 0; max-height: 210px; overflow: auto; font-size: 11px; line-height: 1.6; }
+.claim-context summary { cursor: pointer; font-weight: 600; color: #547961; }
+.claim-context :last-child { margin-bottom: 0; }
 .retract-button { border: 0; background: transparent; color: #ad816b; padding: 9px 0 0; font-size: 10px; }
 .claim-actions { display: flex; gap: 15px; }
 .claim-actions button { border: 0; background: transparent; color: #64886b; padding: 9px 0 0; font-size: 10px; }
@@ -138,6 +141,12 @@ textarea { min-height: 260px; resize: vertical; line-height: 1.65; }
 .review-card strong { display: block; margin-top: 8px; font-size: 15px; }
 .review-card p { color: #829186; font-size: 12px; }
 .review-card .review-warning { color: #98743f; background: #fff8e9; padding: 10px; border-radius: 6px; }
+.review-context { max-height: 230px; overflow: auto; border: 1px solid #e1e9df; background: #f7faf6; border-radius: 7px; padding: 12px 16px; font-size: 12px; line-height: 1.6; }
+.review-context :first-child { margin-top: 0; }
+.review-identity { display: grid; gap: 9px; max-width: 440px; margin: 16px 0; }
+.review-identity label { color: #718a76; font-size: 11px; font-weight: 600; }
+.review-identity select { border: 1px solid #dce6db; border-radius: 7px; padding: 10px; color: #435f4a; background: #fff; }
+.review-identity button { justify-self: start; margin: 0; }
 .review-actions { display: flex; align-items: center; gap: 10px; }
 .review-actions .secondary { margin: 0; padding: 12px 18px; }
 .document-list { margin-top: 30px; }
@@ -168,7 +177,7 @@ textarea { min-height: 260px; resize: vertical; line-height: 1.65; }
 .compose-settings .retention { margin-left: auto; }
 .retention input { width: auto; }
 .compose-input { display: flex; gap: 8px; }
-.compose-input input { min-width: 0; }
+.compose-input textarea { min-width: 0; min-height: 74px; resize: vertical; }
 .compose-input .primary { flex: none; }
 .compose-input .secondary { flex: none; margin: 0; }
 .primary:disabled { opacity: .5; cursor: not-allowed; }

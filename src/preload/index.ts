@@ -19,6 +19,7 @@ const api: SerenityAPI = {
   cancelMessage: () => ipcRenderer.invoke('conversation:cancel'),
   updateConversationSettings: (id, settings) => ipcRenderer.invoke('conversation:settings', id, settings),
   resolveProposal: (id, accept) => ipcRenderer.invoke('proposal:resolve', id, accept),
+  attachEntityProposal: (proposalId, entityId) => ipcRenderer.invoke('proposal:attach-entity', proposalId, entityId),
   deleteConversation: (id) => ipcRenderer.invoke('conversation:delete', id),
   credentialStatus: () => ipcRenderer.invoke('credential:status'),
   saveCredential: (provider, key) => ipcRenderer.invoke('credential:save', provider, key),

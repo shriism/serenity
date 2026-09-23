@@ -804,3 +804,8 @@ calendar events, and tasks still require review until that workflow is
 explicitly granted each corresponding permission. Permissions are
 independent per workflow and can be changed later. Proposals for a new
 ontology category continue to require human confirmation.
+
+When AI suggests a new entity resembling existing knowledge, the review
+interface presents likely matches and lets the human attach the sourced
+information to an existing entity or create a separate entity. Do not
+silently attach evidence based on a name match.

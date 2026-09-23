@@ -613,8 +613,12 @@ export class Workspace {
         await writeFile(join(this.directories[1], `${claim.id}.yaml`), YAML.stringify(claim), { flag: 'wx' })
         this.markDirty()
       } else if (proposal.kind === 'entity') {
-        await this.saveEntity({ id: '', title: proposal.title, type: proposal.type, body: proposal.body,
+        const priorIds = new Set((await this.snapshot()).entities.map((entity) => entity.id))
+        const saved = await this.saveEntity({ id: '', title: proposal.title, type: proposal.type, body: proposal.body,
           source: proposal.source, origin: proposal.origin })
+        const created = saved.entities.find((entity) => !priorIds.has(entity.id))
+        if (!created) throw new Error('New entity was not readable after creation')
+        proposal.createdEntityId = created.id
       } else if (proposal.kind === 'task') {
         await this.saveTask({ id: '', title: proposal.title, due: proposal.due, notes: proposal.notes,
           completed: false, relatedEntityIds: proposal.relatedEntityIds, source: proposal.source, origin: proposal.origin })
@@ -625,6 +629,38 @@ export class Workspace {
     }
     proposal.status = accept ? 'accepted' : 'rejected'
     await atomicWrite(path, YAML.stringify(proposal))
+    return this.snapshot()
+  }
+
+  async attachEntityProposal(proposalId: string, entityId: string): Promise<WorkspaceSnapshot> {
+    const path = join(this.directories[4], `${id(proposalId)}.yaml`)
+    const original = await readFile(path, 'utf8')
+    const data: unknown = YAML.parse(original)
+    if (!record(data) || data.id !== proposalId || data.kind !== 'entity' || data.status !== 'pending') {
+      throw new Error('Entity proposal is no longer pending. Refresh before attaching it.')
+    }
+    const subject = id(entityId)
+    const entity = parseEntity(await readFile(join(this.directories[0], `${subject}.md`), 'utf8'))
+    if (entity.id !== subject) throw new Error('Selected entity has changed on disk')
+    const source = requiredText(data.source, 'Source')
+    const type = requiredText(data.type, 'Type')
+    const title = requiredText(data.title, 'Title')
+    const value = typeof data.body === 'string' && data.body.trim() ? data.body.trim() : `${title} (${type})`
+    if (data.origin !== 'ai-statement' && data.origin !== 'ai-inference') throw new Error('Invalid proposal origin')
+    const existing = (await this.snapshot()).claims.some((claim) => claim.subject === subject && claim.key === 'context' &&
+      claim.value === value && claim.source === source && claim.status === 'confirmed')
+    const claim: Claim = {
+      id: randomUUID(), subject, key: 'context', value, source,
+      origin: data.origin, status: 'confirmed', recordedAt: new Date().toISOString()
+    }
+    const claimPath = join(this.directories[1], `${claim.id}.yaml`)
+    if (!existing) await writeFile(claimPath, YAML.stringify(claim), { flag: 'wx' })
+    try {
+      if (checksum(await readFile(path, 'utf8')) !== checksum(original)) throw new Error('Proposal changed on disk. Refresh before attaching it.')
+      await atomicWrite(path, updateYaml(original, { status: 'accepted', resolvedInto: subject }))
+    }
+    catch (error) { if (!existing) await unlink(claimPath).catch(() => undefined); throw error }
+    this.markDirty()
     return this.snapshot()
   }
 

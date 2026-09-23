@@ -521,41 +521,17 @@ Serenity:
 
 ------------------------------------------------------------------------
 
-# Development Roadmap
+# Product Capabilities
 
-## Phase 1
+Serenity's complete vision includes:
 
-Build:
-
--   GUI
--   Markdown/YAML storage
--   entity system
--   browsing interface
-
-## Phase 2
-
-Build:
-
--   AI extraction
--   memory proposals
--   entity resolution
-
-## Phase 3
-
-Build:
-
--   semantic retrieval
--   relationships
--   knowledge graph
-
-## Phase 4
-
-Build:
-
--   calendar integration
--   document understanding
--   mobile interaction
--   autonomous workflows
+-   a browsable human interface and Markdown/YAML knowledge storage
+-   evolving entities, relationships, and a connected knowledge graph
+-   AI extraction, memory proposals, and human-guided entity resolution
+-   semantic retrieval with source-aware answers
+-   an internal calendar, tasks, and document understanding
+-   configurable autonomous workflows
+-   mobile interaction as a future platform goal
 
 ------------------------------------------------------------------------
 
@@ -591,8 +567,9 @@ The goal is a better relationship between humans, knowledge, and AI.
 # Product Direction (September 2026)
 
 Serenity is intended to be a complete product, not a set of separate
-phase deliverables. The development roadmap above lists capabilities to
-build; it does not define a staged or reduced version of the product.
+phase deliverables. The capabilities above describe the vision, while
+the current installed desktop product and later platform goals are
+defined below.
 
 ## Application
 

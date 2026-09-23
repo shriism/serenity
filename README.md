@@ -42,6 +42,8 @@ Documents with supported text formats (`.txt`, `.md`, `.csv`, `.json`, `.yaml`, 
 
 Background semantic indexing processes long records in chunks. On-demand semantic search uses a visible catalog and relevant excerpts when a workspace is larger than one provider request.
 
-## Current limitations
+## Desktop scope
 
-This is an actively developed application, not yet the complete desktop product described in SERENITY.md. Neural embedding retrieval, fully automated entity resolution, and autonomy for external actions are not implemented. Cloud sync, local models, and mobile apps are separate later goals. Calendar and tasks are internal only; no external calendar sync is planned. Live Copilot and Codex conversations and PDF/DOCX search succeeded from the packaged macOS app; live provider calls on Windows and Linux have not yet been exercised. Large workspaces use relevant excerpts and an inspectable record catalog rather than silently omitting knowledge; the user message shows which records were transmitted.
+The agreed desktop app supports the installed local workspace, Copilot and Codex integrations, human-reviewed and permission-bounded AI updates, connected knowledge, internal calendar and tasks, document analysis, and hybrid retrieval. It has passed packaged-app smoke tests on macOS, Windows, and Linux; live Copilot and Codex conversations have been tested from the packaged macOS app. Provider sign-in is needed for live use on each device.
+
+Search combines on-device text indexing, locally ranked AI-generated topic terms, and optional on-demand provider retrieval rather than neural embeddings. Identity matches are suggested for human review rather than merged without confirmation. External calendar sync is not part of the internal calendar. Cloud sync, local models, and mobile interaction remain separate future goals.

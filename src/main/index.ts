@@ -217,6 +217,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('task:archive', (_event, id: string, revision: string) => currentWorkspace().archiveTask(id, revision))
   ipcMain.handle('task:restore', (_event, id: string) => currentWorkspace().restoreTask(id))
   ipcMain.handle('entity:merge', (_event, source: string, target: string) => currentWorkspace().mergeEntities(source, target))
+  ipcMain.handle('entity:unmerge', (_event, source: string, reason: string) => currentWorkspace().unmergeEntities(source, reason))
   const selected = process.argv.find((argument) => argument.startsWith('--workspace='))?.slice('--workspace='.length)
   if (selected) {
     try { await openWorkspace(selected) }

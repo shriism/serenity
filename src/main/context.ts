@@ -22,6 +22,7 @@ export function contextRecords(snapshot: WorkspaceSnapshot, documents: { name: s
     ...snapshot.claims.map((item) => ({ ref: `claim:${item.id}`, title: `${item.key}: ${item.value}`, text: JSON.stringify(item) })),
     ...snapshot.proposals.filter((item) => item.status === 'pending').map((item) => ({ ref: `proposal:${item.id}`, title: `Unconfirmed ${item.kind}`, text: JSON.stringify(item) })),
     ...snapshot.merges.map((item) => ({ ref: `merge:${item.id}`, title: `Merge ${item.title}`, text: JSON.stringify(item) })),
+    ...snapshot.mergeHistory.filter((item) => item.undoneAt).map((item) => ({ ref: `merge-history:${item.id}:${item.recordedAt}`, title: `Reversed merge ${item.title}`, text: JSON.stringify(item) })),
     ...snapshot.resolutions.map((item) => ({ ref: `resolution:${item.id}`, title: `Resolution ${item.key}`, text: JSON.stringify(item) })),
     ...(snapshot.modules.tasks ? snapshot.tasks.map((item) => ({ ref: `task:${item.id}`, title: item.title, text: JSON.stringify(item) })) : []),
     ...(snapshot.modules.calendar ? snapshot.events.map((item) => ({ ref: `event:${item.id}`, title: item.title, text: JSON.stringify(item) })) : []),
@@ -44,6 +45,10 @@ export function scopeContextRecords(snapshot: WorkspaceSnapshot, records: Contex
     if (kind === 'claim') return entities.has(snapshot.claims.find((item) => item.id === identifier)?.subject ?? '')
     if (kind === 'resolution') return entities.has(snapshot.resolutions.find((item) => item.id === identifier)?.subject ?? '')
     if (kind === 'merge') return entities.has(snapshot.merges.find((item) => item.id === identifier)?.target ?? '')
+    if (kind === 'merge-history') {
+      const historical = snapshot.mergeHistory.find((item) => `${item.id}:${item.recordedAt}` === identifier)
+      return Boolean(historical && (entities.has(historical.id) || entities.has(historical.target)))
+    }
     if (kind === 'document') return documents.has(identifier)
     if (kind === 'conversation') return scope.includeOtherConversations
     if (['task', 'event', 'archived-task', 'archived-event'].includes(kind)) return scope.includeCalendarAndTasks

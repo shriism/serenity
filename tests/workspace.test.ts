@@ -125,15 +125,18 @@ test('conversation retention and accepting a proposal preserve claim provenance'
     await writeFile(conversationPath, (await readFile(conversationPath, 'utf8')).replace('title: Alex', 'title: Alex Chen'))
     await assert.rejects(workspace.saveConversation(stale), /changed on disk/)
     const settings = await workspace.updateConversationSettings(conversationId, {
-      autonomy: 'autonomous', permissions: { ...defaultWorkflowPermissions, tasks: true }, retained: true
+      autonomy: 'autonomous', permissions: { ...defaultWorkflowPermissions, tasks: true }, retained: true,
+      readScope: { mode: 'selected', entityIds: [entity.id], documentNames: [], includeOtherConversations: false, includeCalendarAndTasks: false }
     })
     assert.equal(settings.conversations[0].autonomy, 'autonomous')
     assert.equal(settings.conversations[0].permissions?.tasks, true)
+    assert.deepEqual(settings.conversations[0].readScope?.entityIds, [entity.id])
     assert.equal((await readFile(conversationPath, 'utf8')).includes('tasks: true'), true)
     await workspace.updateConversationSettings(conversationId, { autonomy: 'autonomous', permissions: { ...defaultWorkflowPermissions, tasks: true }, retained: false })
     await assert.rejects(readFile(conversationPath, 'utf8'), /ENOENT/)
     await workspace.updateConversationSettings(conversationId, { autonomy: 'propose', permissions: { ...defaultWorkflowPermissions }, retained: true })
     assert.equal((await workspace.snapshot()).conversations[0].retained, true)
+    assert.equal((await workspace.snapshot()).conversations[0].readScope?.mode, 'selected')
     const proposalId = '123e4567-e89b-42d3-a456-426614174004'
     await workspace.addProposal({
       id: proposalId, kind: 'claim', subject: entity.id, key: 'interest', value: 'Robots', source: 'Conversation with me',
@@ -223,6 +226,17 @@ test('merge archives duplicate and resolves knowledge and module links without e
     assert.equal(merged.archivedEntities[0].body, 'Old context.')
     assert.match(await readFile(join(directory, 'archive', 'entities', `${duplicate.id}.md`), 'utf8'), /Old context/)
     assert.equal((await workspace.snapshot()).claims.length, 2)
+    const restored = await workspace.unmergeEntities(duplicate.id, 'Different people')
+    assert.equal(restored.entities.length, 2)
+    assert.equal(restored.merges.length, 0)
+    assert.equal(restored.mergeHistory[0].undoReason, 'Different people')
+    assert.equal(restored.claims.find((item) => item.key === 'interest')?.subject, duplicate.id)
+    assert.equal(restored.claims.find((item) => item.key === 'friend of')?.value, duplicate.id)
+    assert.equal(restored.tasks[0].relatedEntityIds[0], duplicate.id)
+    assert.match(await readFile(join(directory, 'entities', `${duplicate.id}.md`), 'utf8'), /Old context/)
+    const repeated = await workspace.mergeEntities(duplicate.id, target.id)
+    assert.equal(repeated.merges.length, 1)
+    assert.equal(repeated.mergeHistory.length, 2)
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

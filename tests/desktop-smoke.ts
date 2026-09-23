@@ -140,7 +140,13 @@ try {
       console.log(`${provider} request cancelled through Electron IPC.`)
     }
   }
-  console.log('Electron workspace, entity, claim, PDF/DOCX search, reversible tasks/calendar, and preload IPC passed.')
+  const duplicateId = await evaluate(pageUrl, `window.serenity.saveEntity({ id: '', title: 'Alex from club', type: 'person', body: 'Possible duplicate.' }).then((snapshot) => snapshot.entities.find((entity) => entity.title === 'Alex from club').id)`) as string
+  const merged = await evaluate(pageUrl, `window.serenity.mergeEntities('${duplicateId}', '${entityId}').then((snapshot) => ({ active: snapshot.merges.length, archived: snapshot.archivedEntities.length }))`) as { active: number; archived: number }
+  assert.equal(merged.active, 1)
+  assert.equal(merged.archived, 1)
+  const reversed = await evaluate(pageUrl, `window.serenity.unmergeEntities('${duplicateId}', 'Different Alex').then((snapshot) => ({ active: snapshot.merges.length, history: snapshot.mergeHistory.length, restored: snapshot.entities.some((entity) => entity.id === '${duplicateId}') }))`) as { active: number; history: number; restored: boolean }
+  assert.deepEqual(reversed, { active: 0, history: 1, restored: true })
+  console.log('Electron workspace, entity, claim, PDF/DOCX search, reversible merges/tasks/calendar, and preload IPC passed.')
 } finally {
   child.kill()
   await rm(workspace, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })

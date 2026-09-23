@@ -30,6 +30,7 @@ const api: SerenityAPI = {
   archiveTask: (id, revision) => ipcRenderer.invoke('task:archive', id, revision),
   restoreTask: (id) => ipcRenderer.invoke('task:restore', id),
   mergeEntities: (source, target) => ipcRenderer.invoke('entity:merge', source, target),
+  unmergeEntities: (source, reason) => ipcRenderer.invoke('entity:unmerge', source, reason),
   setSemanticProvider: (provider) => ipcRenderer.invoke('semantic:provider', provider),
   onIndexError: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, message: string): void => callback(message)

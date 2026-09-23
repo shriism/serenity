@@ -5,7 +5,7 @@ import { DatabaseSync } from 'node:sqlite'
 import YAML from 'yaml'
 import type { Autonomy, CalendarEvent, Claim, ClaimResolution, Conversation, DocumentInfo, Entity, MergeRecord, Proposal, Provider, ProviderActivity, ReadScope, SearchResult, TaskItem, WorkflowPermissions, WorkspaceSnapshot } from '../shared/types'
 import { modules, type ModuleId } from '../shared/modules'
-import { validateWorkflowPermissions } from '../shared/workflow'
+import { validateReadScope, validateWorkflowPermissions } from '../shared/workflow'
 import { extractDocument } from './documents'
 
 const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/
@@ -153,6 +153,7 @@ export class Workspace {
     await mkdir(join(this.path, '.serenity'), { recursive: true })
     await mkdir(join(this.path, 'archive', 'entities'), { recursive: true })
     await mkdir(join(this.path, 'archive', 'merges'), { recursive: true })
+    await mkdir(join(this.path, 'archive', 'merges', 'history'), { recursive: true })
     await mkdir(join(this.path, 'archive', 'calendar'), { recursive: true })
     await mkdir(join(this.path, 'archive', 'tasks'), { recursive: true })
   }
@@ -173,6 +174,7 @@ export class Workspace {
     const tasks: TaskItem[] = []
     const archivedTasks: TaskItem[] = []
     const merges: MergeRecord[] = []
+    const mergeHistory: MergeRecord[] = []
     const archivedEntities: Entity[] = []
     const errors: string[] = []
     const enabled: Record<ModuleId, boolean> = { calendar: true, tasks: true, semanticIndex: false, documentAnalysis: false }
@@ -214,8 +216,26 @@ export class Workspace {
       try {
         const data: unknown = YAML.parse(await readFile(join(mergesDirectory, name), 'utf8'))
         if (!record(data) || id(data.id) !== name.slice(0, -5)) throw new Error('Invalid merge record')
-        merges.push({ id: id(data.id), target: id(data.target), title: requiredText(data.title, 'Title'), recordedAt: requiredText(data.recordedAt, 'Recorded at') })
+        const merge: MergeRecord = { id: id(data.id), target: id(data.target), title: requiredText(data.title, 'Title'),
+          recordedAt: requiredText(data.recordedAt, 'Recorded at'), undoneAt: typeof data.undoneAt === 'string' ? data.undoneAt : undefined,
+          undoReason: typeof data.undoReason === 'string' ? data.undoReason : undefined }
+        if (!merge.undoneAt) merges.push(merge)
+        mergeHistory.push(merge)
       } catch (error) { errors.push(`archive/merges/${name}: ${String(error)}`) }
+    }
+    const historyDirectory = join(mergesDirectory, 'history')
+    for (const directory of await readdir(historyDirectory)) {
+      const previousMerges = join(historyDirectory, directory)
+      if (!(await stat(previousMerges)).isDirectory()) continue
+      for (const name of (await readdir(previousMerges)).filter((entry) => entry.endsWith('.yaml'))) {
+        try {
+          const data: unknown = YAML.parse(await readFile(join(previousMerges, name), 'utf8'))
+          if (!record(data) || id(data.id) !== directory) throw new Error('Invalid past merge')
+          mergeHistory.push({ id: id(data.id), target: id(data.target), title: requiredText(data.title, 'Title'),
+            recordedAt: requiredText(data.recordedAt, 'Recorded at'), undoneAt: requiredText(data.undoneAt, 'Undo time'),
+            undoReason: requiredText(data.undoReason, 'Undo reason') })
+        } catch (error) { errors.push(`archive/merges/history/${directory}/${name}: ${String(error)}`) }
+      }
     }
     const resolve = (entityId: string): string => {
       const visited = new Set<string>()
@@ -270,7 +290,8 @@ export class Workspace {
           if (!record(data) || id(data.id) !== name.slice(0, -5)) throw new Error('Invalid record or mismatched filename')
           if (directory === this.directories[3]) {
             if (!Array.isArray(data.messages) || typeof data.title !== 'string') throw new Error('Invalid conversation')
-            conversations.push({ ...data, permissions: validateWorkflowPermissions(data.permissions), revision: checksum(text) } as unknown as Conversation)
+            conversations.push({ ...data, permissions: validateWorkflowPermissions(data.permissions),
+              readScope: validateReadScope(data.readScope), revision: checksum(text) } as unknown as Conversation)
           } else {
             requiredText(data.status, 'Status')
             const kind = typeof data.kind === 'string' ? data.kind : 'claim'
@@ -328,7 +349,7 @@ export class Workspace {
     for (const task of tasks) task.relatedEntityIds = task.relatedEntityIds.map(resolve)
     for (const task of archivedTasks) task.relatedEntityIds = task.relatedEntityIds.map(resolve)
     return { path: this.path, entities, archivedEntities, claims, resolutions, conversations, proposals, documents,
-      events, archivedEvents, tasks, archivedTasks, merges, modules: enabled, semanticProvider, semanticIndex, providerActivity, errors }
+      events, archivedEvents, tasks, archivedTasks, merges, mergeHistory, modules: enabled, semanticProvider, semanticIndex, providerActivity, errors }
   }
 
   async saveEntity(input: Entity): Promise<WorkspaceSnapshot> {
@@ -428,9 +449,41 @@ export class Workspace {
     const archived = join(this.path, 'archive', 'entities', `${source}.md`)
     const record: MergeRecord = { id: source, target, title: original.title, recordedAt: new Date().toISOString() }
     const history = join(this.path, 'archive', 'merges', `${source}.yaml`)
+    for (const path of [archived, history]) {
+      try { await stat(path); throw new Error(`A prior merge file already exists: ${basename(path)}`) }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+    }
     await rename(from, archived)
     try { await writeFile(history, YAML.stringify(record), { flag: 'wx' }) }
     catch (error) { await rename(archived, from); throw error }
+    this.markDirty()
+    return this.snapshot()
+  }
+
+  async unmergeEntities(sourceId: string, reason: string): Promise<WorkspaceSnapshot> {
+    const source = id(sourceId)
+    if (!(await this.snapshot()).merges.some((item) => item.id === source)) throw new Error('This entity is not currently merged')
+    const archived = join(this.path, 'archive', 'entities', `${source}.md`)
+    const active = join(this.directories[0], `${source}.md`)
+    const recordPath = join(this.path, 'archive', 'merges', `${source}.yaml`)
+    const previous = await readFile(recordPath, 'utf8')
+    if (parseEntity(await readFile(archived, 'utf8')).id !== source) throw new Error('Archived entity ID does not match the merge')
+    try { await stat(active); throw new Error('An active entity already uses this ID') }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+    const historyDirectory = join(this.path, 'archive', 'merges', 'history', source)
+    await mkdir(historyDirectory, { recursive: true })
+    const history = join(historyDirectory, `${randomUUID()}.yaml`)
+    const updated = updateYaml(previous, { undoneAt: new Date().toISOString(), undoReason: requiredText(reason, 'Undo reason') })
+    await rename(archived, active)
+    try {
+      await atomicWrite(recordPath, updated)
+      await rename(recordPath, history)
+    } catch (error) {
+      await rename(history, recordPath).catch(() => undefined)
+      await atomicWrite(recordPath, previous).catch(() => undefined)
+      await rename(active, archived).catch(() => undefined)
+      throw error
+    }
     this.markDirty()
     return this.snapshot()
   }
@@ -516,7 +569,7 @@ export class Workspace {
   }
 
   async updateConversationSettings(conversationId: string,
-    settings: { autonomy: Autonomy; permissions: WorkflowPermissions; retained: boolean }): Promise<WorkspaceSnapshot> {
+    settings: { autonomy: Autonomy; permissions: WorkflowPermissions; retained: boolean; readScope?: ReadScope }): Promise<WorkspaceSnapshot> {
     const conversation = (await this.snapshot()).conversations.find((item) => item.id === id(conversationId))
     if (!conversation) throw new Error('Conversation not found')
     if (!['ask', 'propose', 'autonomous'].includes(settings.autonomy) || typeof settings.retained !== 'boolean') {
@@ -524,6 +577,7 @@ export class Workspace {
     }
     conversation.autonomy = settings.autonomy
     conversation.permissions = validateWorkflowPermissions(settings.permissions)
+    conversation.readScope = validateReadScope(settings.readScope ?? conversation.readScope)
     conversation.retained = settings.retained
     await this.saveConversation(conversation)
     return this.snapshot()

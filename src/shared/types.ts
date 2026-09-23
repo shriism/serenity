@@ -52,6 +52,7 @@ export interface WorkspaceSnapshot {
   tasks: TaskItem[]
   archivedTasks: TaskItem[]
   merges: MergeRecord[]
+  mergeHistory: MergeRecord[]
   archivedEntities: Entity[]
   semanticProvider: Provider
   semanticIndex: { generatedAt: string; count: number } | null
@@ -77,6 +78,8 @@ export interface MergeRecord {
   target: string
   title: string
   recordedAt: string
+  undoneAt?: string
+  undoReason?: string
 }
 
 export interface CalendarEvent {
@@ -211,6 +214,7 @@ export interface SerenityAPI {
   archiveTask(id: string, revision: string): Promise<WorkspaceSnapshot>
   restoreTask(id: string): Promise<WorkspaceSnapshot>
   mergeEntities(source: string, target: string): Promise<WorkspaceSnapshot>
+  unmergeEntities(source: string, reason: string): Promise<WorkspaceSnapshot>
   setSemanticProvider(provider: Provider): Promise<WorkspaceSnapshot>
   onIndexError(callback: (message: string) => void): () => void
   onWorkspaceChange(callback: () => void): () => void

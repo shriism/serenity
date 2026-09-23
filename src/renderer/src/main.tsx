@@ -51,6 +51,7 @@ function App() {
 
   useEffect(() => window.serenity.onWorkspaceChange(() => { void refresh() }), [refresh])
   useEffect(() => { void window.serenity.refresh().then(setWorkspace).catch((cause) => setError(String(cause))) }, [])
+  useEffect(() => window.serenity.setEditorDirty(dirty), [dirty])
   useEffect(() => window.serenity.onIndexError((message) => setError(`Background AI: ${message}`)), [])
 
   async function chooseWorkspace() {
@@ -300,6 +301,7 @@ function App() {
           <span className="workspace-name">{workspace ? workspace.path.split(/[\\/]/).filter(Boolean).at(-1) : 'Choose a folder'}</span><span>↗</span>
         </button>
         {workspace && <small className="path" title={workspace.path}>{workspace.path}</small>}
+        {workspace && <button className="open-workspace" onClick={() => void window.serenity.openWorkspaceFolder().catch((cause) => setError(String(cause)))}>Open workspace folder ↗</button>}
       </div>
       {workspace && <>
         <div className="navigation">

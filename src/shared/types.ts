@@ -184,6 +184,8 @@ export interface SearchResult {
 
 export interface SerenityAPI {
   chooseWorkspace(): Promise<WorkspaceSnapshot | null>
+  openWorkspaceFolder(): Promise<void>
+  setEditorDirty(dirty: boolean): void
   refresh(): Promise<WorkspaceSnapshot | null>
   saveEntity(entity: Entity): Promise<WorkspaceSnapshot>
   addClaim(claim: Pick<Claim, 'subject' | 'key' | 'value' | 'source'>): Promise<WorkspaceSnapshot>

@@ -19,6 +19,8 @@ The chosen directory contains Markdown entity files, YAML claims and conversatio
 
 Record IDs are stable UUIDs. Types and relationship names are ordinary user-chosen strings, not a fixed ontology. Sourced claims keep confirmations, conflicts, and retractions distinct. Current-answer choices are append-only records under `resolutions/`, so selecting or undoing a correction does not rewrite its original claims. Edits to a known field update YAML nodes without dropping unknown fields or comments. A stale editor save fails rather than silently replacing an entity, event, task, or conversation changed on disk.
 
+The renderer reports unsaved entity edits to the main process, which asks before closing or switching workspaces. Only the current workspace path can be revealed in the OS file manager; the renderer cannot pass arbitrary paths to that operation.
+
 ## Modules
 
 The registry in `src/shared/modules.ts` describes disableable modules. The workspace records their switches in `.serenity/modules.yaml`. A disabled module retains its files but does not expose its view, accept new writes, or send its records to AI. Calendar and tasks link to existing entities by ID rather than keeping duplicate copies of people and projects. Removed tasks and events are archived under `archive/tasks/` and `archive/calendar/` and can be restored; user edits to active module records are checked against their file revision before archiving.

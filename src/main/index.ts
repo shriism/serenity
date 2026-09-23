@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { fileURLToPath } from 'node:url'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { Workspace } from './workspace'
@@ -15,6 +15,8 @@ import type { ModuleId } from '../shared/modules'
 let window: BrowserWindow | null = null
 let workspace: Workspace | null = null
 let watcher: FSWatcher | null = null
+let editorDirty = false
+let closePromptOpen = false
 let activeRequests = 0
 let conversationAbort: AbortController | null = null
 let indexTimer: ReturnType<typeof setTimeout> | null = null
@@ -113,6 +115,19 @@ function createWindow(): void {
     }
   })
   window.on('closed', () => { window = null })
+  window.on('close', (event) => {
+    if (!editorDirty || !window) return
+    event.preventDefault()
+    if (closePromptOpen) return
+    closePromptOpen = true
+    const closingWindow = window
+    void dialog.showMessageBox(closingWindow, {
+      type: 'question', title: 'Unsaved changes', message: 'Discard your unsaved entity edits and close Serenity?',
+      buttons: ['Keep editing', 'Discard and close'], defaultId: 0, cancelId: 0
+    }).then(({ response }) => {
+      if (response === 1 && !closingWindow.isDestroyed()) { editorDirty = false; closingWindow.close() }
+    }).catch(() => undefined).finally(() => { closePromptOpen = false })
+  })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   window.webContents.on('will-navigate', (event) => event.preventDefault())
   window.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
@@ -124,14 +139,28 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  ipcMain.on('editor:dirty', (_event, dirty: unknown) => { editorDirty = dirty === true })
   ipcMain.handle('workspace:choose', async () => {
     if (activeRequests) throw new Error('Wait for the current AI request before switching workspaces.')
+    if (editorDirty && window) {
+      const { response } = await dialog.showMessageBox(window, {
+        type: 'question', title: 'Unsaved changes', message: 'Discard unsaved entity edits before changing workspaces?',
+        buttons: ['Keep editing', 'Discard changes'], defaultId: 0, cancelId: 0
+      })
+      if (response !== 1) return null
+    }
     const result = await dialog.showOpenDialog(window!, {
       title: 'Choose a Serenity workspace',
       properties: ['openDirectory', 'createDirectory']
     })
     if (result.canceled || !result.filePaths[0]) return null
-    return openWorkspace(result.filePaths[0])
+    const snapshot = await openWorkspace(result.filePaths[0])
+    editorDirty = false
+    return snapshot
+  })
+  ipcMain.handle('workspace:open-folder', async () => {
+    const error = await shell.openPath(currentWorkspace().path)
+    if (error) throw new Error(error)
   })
   ipcMain.handle('workspace:refresh', () => { workspace?.markDirty(); return workspace?.snapshot() ?? null })
   ipcMain.handle('entity:save', (_event, entity: Entity) => currentWorkspace().saveEntity(entity))

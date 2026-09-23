@@ -3,6 +3,8 @@ import type { SerenityAPI } from '../shared/types'
 
 const api: SerenityAPI = {
   chooseWorkspace: () => ipcRenderer.invoke('workspace:choose'),
+  openWorkspaceFolder: () => ipcRenderer.invoke('workspace:open-folder'),
+  setEditorDirty: (dirty) => ipcRenderer.send('editor:dirty', dirty),
   refresh: () => ipcRenderer.invoke('workspace:refresh'),
   saveEntity: (entity) => ipcRenderer.invoke('entity:save', entity),
   addClaim: (claim) => ipcRenderer.invoke('claim:add', claim),

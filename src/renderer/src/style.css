@@ -14,6 +14,7 @@ button { cursor: pointer; }
 .workspace-button { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 12px; background: #fff; border: 1px solid #dce6db; border-radius: 9px; color: #345244; padding: 11px 13px; text-align: left; font-size: 12px; }
 .workspace-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
 .path { color: #819388; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 8px 2px 0; font-size: 10px; }
+.open-workspace { border: 0; background: transparent; color: #588363; padding: 7px 2px 0; font-size: 10px; }
 .list-heading { padding: 0 10px 12px; display: flex; justify-content: space-between; align-items: center; }
 .count { color: #adbbb0; margin-left: 6px; }
 .icon-button { border: 1px solid #d5e2d5; background: #fff; color: #55816a; width: 27px; height: 27px; border-radius: 7px; font-size: 18px; line-height: 1; }

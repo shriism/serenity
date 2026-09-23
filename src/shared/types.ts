@@ -111,6 +111,14 @@ export interface WorkflowPermissions {
   events: boolean
 }
 
+export interface ReadScope {
+  mode: 'workspace' | 'selected'
+  entityIds: string[]
+  documentNames: string[]
+  includeOtherConversations: boolean
+  includeCalendarAndTasks: boolean
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant'
@@ -126,6 +134,7 @@ export interface SharedContext {
   availableCount: number
   catalogShown: number
   sentCharacters: number
+  readScopeMode?: ReadScope['mode']
 }
 
 export interface Conversation {
@@ -135,6 +144,7 @@ export interface Conversation {
   retained: boolean
   autonomy?: Autonomy
   permissions?: WorkflowPermissions
+  readScope?: ReadScope
   revision?: string
 }
 
@@ -178,8 +188,8 @@ export interface SerenityAPI {
   search(query: string): Promise<SearchResult[]>
   semanticSearch(query: string, provider: Provider): Promise<SearchResult[]>
   searchSemanticIndex(query: string): Promise<SearchResult[]>
-  sendMessage(input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean; permissions?: WorkflowPermissions }): Promise<WorkspaceSnapshot>
-  updateConversationSettings(id: string, settings: { autonomy: Autonomy; permissions: WorkflowPermissions; retained: boolean }): Promise<WorkspaceSnapshot>
+  sendMessage(input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean; permissions?: WorkflowPermissions; readScope?: ReadScope }): Promise<WorkspaceSnapshot>
+  updateConversationSettings(id: string, settings: { autonomy: Autonomy; permissions: WorkflowPermissions; retained: boolean; readScope?: ReadScope }): Promise<WorkspaceSnapshot>
   resolveProposal(id: string, accept: boolean): Promise<WorkspaceSnapshot>
   deleteConversation(id: string): Promise<WorkspaceSnapshot>
   credentialStatus(): Promise<Record<Provider, boolean>>

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { SearchResult, SharedContext, WorkspaceSnapshot } from '../shared/types'
+import type { ReadScope, SearchResult, SharedContext, WorkspaceSnapshot } from '../shared/types'
 
 export interface ContextRecord {
   ref: string
@@ -28,6 +28,32 @@ export function contextRecords(snapshot: WorkspaceSnapshot, documents: { name: s
     ...snapshot.conversations.filter((item) => item.retained).map((item) => ({ ref: `conversation:${item.id}`, title: item.title, text: JSON.stringify(item.messages.map(({ role, text, provider, recordedAt }) => ({ role, text, provider, recordedAt }))) })),
     ...documents.map((item) => ({ ref: `document:${item.name}`, title: item.name, text: item.text }))
   ]
+}
+
+export function scopeContextRecords(snapshot: WorkspaceSnapshot, records: ContextRecord[], scope: ReadScope): ContextRecord[] {
+  if (scope.mode === 'workspace') return records
+  const entities = new Set(scope.entityIds)
+  const documents = new Set(scope.documentNames)
+  return records.filter((record) => {
+    const [kind, ...rest] = record.ref.split(':')
+    const identifier = rest.join(':')
+    if (kind === 'entity') return entities.has(identifier)
+    if (kind === 'archived') return entities.has(identifier) || snapshot.merges.some((item) => item.id === identifier && entities.has(item.target))
+    if (kind === 'claim') return entities.has(snapshot.claims.find((item) => item.id === identifier)?.subject ?? '')
+    if (kind === 'resolution') return entities.has(snapshot.resolutions.find((item) => item.id === identifier)?.subject ?? '')
+    if (kind === 'merge') return entities.has(snapshot.merges.find((item) => item.id === identifier)?.target ?? '')
+    if (kind === 'document') return documents.has(identifier)
+    if (kind === 'conversation') return scope.includeOtherConversations
+    if (kind === 'task' || kind === 'event') return scope.includeCalendarAndTasks
+    if (kind === 'proposal') {
+      const proposal = snapshot.proposals.find((item) => item.id === identifier)
+      if (!proposal) return false
+      if (proposal.kind === 'claim') return entities.has(proposal.subject)
+      if (proposal.kind === 'entity') return false
+      return scope.includeCalendarAndTasks
+    }
+    return false
+  })
 }
 
 function evidence(record: ContextRecord, text: string, startCharacter = 0) {

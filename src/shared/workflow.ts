@@ -1,7 +1,26 @@
-import type { Autonomy, Proposal, WorkflowPermissions } from './types'
+import type { Autonomy, Proposal, ReadScope, WorkflowPermissions } from './types'
 
 export const defaultWorkflowPermissions: Readonly<WorkflowPermissions> = {
   claims: true, entities: false, tasks: false, events: false
+}
+
+export const defaultReadScope: Readonly<ReadScope> = {
+  mode: 'workspace', entityIds: [], documentNames: [],
+  includeOtherConversations: false, includeCalendarAndTasks: false
+}
+
+export function validateReadScope(input: unknown): ReadScope {
+  if (input === undefined) return { ...defaultReadScope, entityIds: [], documentNames: [] }
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid read scope')
+  const scope = input as Record<string, unknown>
+  if ((scope.mode !== 'workspace' && scope.mode !== 'selected') ||
+    !Array.isArray(scope.entityIds) || !scope.entityIds.every((item) => typeof item === 'string') ||
+    !Array.isArray(scope.documentNames) || !scope.documentNames.every((item) => typeof item === 'string') ||
+    typeof scope.includeOtherConversations !== 'boolean' || typeof scope.includeCalendarAndTasks !== 'boolean') {
+    throw new Error('Invalid workflow read scope')
+  }
+  return { mode: scope.mode, entityIds: [...scope.entityIds], documentNames: [...scope.documentNames],
+    includeOtherConversations: scope.includeOtherConversations, includeCalendarAndTasks: scope.includeCalendarAndTasks }
 }
 
 export function validateWorkflowPermissions(input: unknown): WorkflowPermissions {

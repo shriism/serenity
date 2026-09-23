@@ -87,8 +87,13 @@ try {
   assert.equal(disabled, false)
 
   const provider = process.env.SERENITY_SMOKE_PROVIDER
+  let privateId: string | undefined
+  if (process.env.SERENITY_SMOKE_SCOPE === 'selected') {
+    privateId = await evaluate(pageUrl, `window.serenity.saveEntity({ id: '', title: 'Private Project', type: 'project', body: 'SecretAstralToken' }).then((snapshot) => snapshot.entities.find((entity) => entity.title === 'Private Project').id)`) as string
+  }
   if (provider === 'copilot' || provider === 'codex' || provider === 'claude') {
-    const answer = await evaluate(pageUrl, `window.serenity.sendMessage({ text: 'According to the sourced claim about Alex, what is his birthday? Include the date. Do not propose any changes.', provider: '${provider}', autonomy: 'propose', retained: true }).then((snapshot) => ({ id: snapshot.conversations[0].id, text: snapshot.conversations[0].messages.at(-1)?.text, shared: snapshot.conversations[0].messages[0].sharedContext?.length, permissions: snapshot.conversations[0].permissions, activity: snapshot.providerActivity.find((entry) => entry.provider === '${provider}') }))`) as { id: string; text: string; shared: number; permissions: { claims: boolean; tasks: boolean }; activity: { status: string; operation: string; refs: string[] } }
+    const scope = privateId ? `, readScope: { mode: 'selected', entityIds: ['${entityId}'], documentNames: [], includeOtherConversations: false, includeCalendarAndTasks: false }` : ''
+    const answer = await evaluate(pageUrl, `window.serenity.sendMessage({ text: 'According to the sourced claim about Alex, what is his birthday? Include the date. Do not propose any changes.', provider: '${provider}', autonomy: 'propose', retained: true${scope} }).then((snapshot) => ({ id: snapshot.conversations[0].id, text: snapshot.conversations[0].messages.at(-1)?.text, shared: snapshot.conversations[0].messages[0].sharedContext?.length, sharedRecords: snapshot.conversations[0].messages[0].sharedContext?.flatMap((entry) => entry.records.map((record) => record.ref)), readScope: snapshot.conversations[0].readScope, permissions: snapshot.conversations[0].permissions, activity: snapshot.providerActivity.find((entry) => entry.provider === '${provider}') }))`) as { id: string; text: string; shared: number; sharedRecords: string[]; readScope: { mode: string }; permissions: { claims: boolean; tasks: boolean }; activity: { status: string; operation: string; refs: string[] } }
     assert.match(answer.text, /September 7/i)
     assert.ok(answer.shared > 0)
     assert.equal(answer.activity?.status, 'completed')
@@ -96,6 +101,12 @@ try {
     assert.ok(answer.activity?.refs.some((ref) => ref.startsWith('claim:')))
     assert.equal(answer.permissions?.claims, true)
     assert.equal(answer.permissions?.tasks, false)
+    if (privateId) {
+      assert.equal(answer.readScope.mode, 'selected')
+      assert.equal(answer.sharedRecords.includes(`entity:${privateId}`), false)
+      assert.equal(answer.sharedRecords.some((ref) => ref.startsWith('document:')), false)
+      assert.equal(answer.activity.refs.includes(`entity:${privateId}`), false)
+    }
     const settings = await evaluate(pageUrl, `window.serenity.updateConversationSettings('${answer.id}', { autonomy: 'autonomous', permissions: { claims: true, entities: false, tasks: true, events: false }, retained: true }).then((snapshot) => snapshot.conversations[0])`) as { autonomy: string; permissions: { tasks: boolean } }
     assert.equal(settings.autonomy, 'autonomous')
     assert.equal(settings.permissions.tasks, true)

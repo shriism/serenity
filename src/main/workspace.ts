@@ -3,7 +3,7 @@ import { copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } f
 import { basename, extname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import YAML from 'yaml'
-import type { Autonomy, CalendarEvent, Claim, ClaimResolution, Conversation, DocumentInfo, Entity, MergeRecord, Proposal, Provider, ProviderActivity, SearchResult, TaskItem, WorkflowPermissions, WorkspaceSnapshot } from '../shared/types'
+import type { Autonomy, CalendarEvent, Claim, ClaimResolution, Conversation, DocumentInfo, Entity, MergeRecord, Proposal, Provider, ProviderActivity, ReadScope, SearchResult, TaskItem, WorkflowPermissions, WorkspaceSnapshot } from '../shared/types'
 import { modules, type ModuleId } from '../shared/modules'
 import { validateWorkflowPermissions } from '../shared/workflow'
 import { extractDocument } from './documents'

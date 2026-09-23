@@ -17,8 +17,8 @@ const maxExcerpt = 9000
 
 export function contextRecords(snapshot: WorkspaceSnapshot, documents: { name: string; text: string }[]): ContextRecord[] {
   return [
-    ...snapshot.entities.map((item) => ({ ref: `entity:${item.id}`, title: item.title, text: JSON.stringify({ title: item.title, type: item.type, body: item.body, source: item.source }) })),
-    ...snapshot.archivedEntities.map((item) => ({ ref: `archived:${item.id}`, title: item.title, text: JSON.stringify({ archived: true, title: item.title, type: item.type, body: item.body }) })),
+    ...snapshot.entities.map((item) => ({ ref: `entity:${item.id}`, title: item.title, text: JSON.stringify({ title: item.title, type: item.type, body: item.body, source: item.source, metadata: item.metadata }) })),
+    ...snapshot.archivedEntities.map((item) => ({ ref: `archived:${item.id}`, title: item.title, text: JSON.stringify({ archived: true, title: item.title, type: item.type, body: item.body, metadata: item.metadata }) })),
     ...snapshot.claims.map((item) => ({ ref: `claim:${item.id}`, title: `${item.key}: ${item.value}`, text: JSON.stringify(item) })),
     ...snapshot.proposals.filter((item) => item.status === 'pending').map((item) => ({ ref: `proposal:${item.id}`, title: `Unconfirmed ${item.kind}`, text: JSON.stringify(item) })),
     ...snapshot.merges.map((item) => ({ ref: `merge:${item.id}`, title: `Merge ${item.title}`, text: JSON.stringify(item) })),

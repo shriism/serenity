@@ -31,6 +31,42 @@ test('workspace preserves file edits and prevents stale saves', async () => {
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
+test('editing in Serenity preserves custom YAML fields from external editors', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const entity = (await workspace.saveEntity({ id: '', title: 'Alex', type: 'person', body: 'First draft' })).entities[0]
+    const entityPath = join(directory, 'entities', `${entity.id}.md`)
+    await writeFile(entityPath, (await readFile(entityPath, 'utf8')).replace('type: person\n', 'type: person\n# Keep this note about Alex\nattributes:\n  favorite_color: violet\n'))
+    const changedEntity = (await workspace.snapshot()).entities[0]
+    assert.deepEqual(changedEntity.metadata?.attributes, { favorite_color: 'violet' })
+    await workspace.saveEntity({ ...changedEntity, body: 'Updated in Serenity' })
+    assert.match(await readFile(entityPath, 'utf8'), /favorite_color: violet/)
+    assert.match(await readFile(entityPath, 'utf8'), /# Keep this note about Alex/)
+    assert.equal((await workspace.search('violet'))[0].kind, 'entity')
+
+    const claim = (await workspace.addClaim({ subject: entity.id, key: 'hobby', value: 'Robotics', source: 'Alex' })).claims[0]
+    const claimPath = join(directory, 'claims', `${claim.id}.yaml`)
+    await writeFile(claimPath, `${await readFile(claimPath, 'utf8')}# Keep source annotation\nevidence:\n  note: confirmed privately\n`)
+    assert.deepEqual((await workspace.snapshot()).claims[0].metadata?.evidence, { note: 'confirmed privately' })
+    await workspace.retractClaim(claim.id, 'Corrected')
+    assert.match(await readFile(claimPath, 'utf8'), /confirmed privately/)
+    assert.match(await readFile(claimPath, 'utf8'), /# Keep source annotation/)
+
+    const task = (await workspace.saveTask({ id: '', title: 'Call Alex', completed: false, notes: 'Draft', relatedEntityIds: [] })).tasks[0]
+    const taskPath = join(directory, 'tasks', `${task.id}.yaml`)
+    await writeFile(taskPath, `${(await readFile(taskPath, 'utf8')).replace('notes: Draft', 'notes: Draft # human note')}# Keep task annotation\ncustom_label: violet-task\n`)
+    const editedTask = (await workspace.snapshot()).tasks[0]
+    await workspace.saveTask({ ...editedTask, notes: 'Updated task' })
+    assert.match(await readFile(taskPath, 'utf8'), /custom_label: violet-task/)
+    assert.match(await readFile(taskPath, 'utf8'), /# Keep task annotation/)
+    assert.match(await readFile(taskPath, 'utf8'), /# human note/)
+    assert.ok((await workspace.search('violet-task')).some((result) => result.kind === 'task'))
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
 test('conflicting claims remain sourced and proposals require review', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
   try {

@@ -8,6 +8,7 @@ export interface Entity {
   revision?: string
   source?: string
   origin?: 'human' | 'ai-statement' | 'ai-inference'
+  metadata?: Record<string, unknown>
 }
 
 export interface Claim {
@@ -24,6 +25,7 @@ export interface Claim {
   retractionReason?: string
   confidence?: number
   isCurrent?: boolean
+  metadata?: Record<string, unknown>
 }
 
 export interface ClaimResolution {
@@ -88,6 +90,7 @@ export interface CalendarEvent {
   source?: string
   origin?: 'human' | 'ai-statement' | 'ai-inference'
   recordedAt?: string
+  metadata?: Record<string, unknown>
 }
 
 export interface TaskItem {
@@ -101,6 +104,7 @@ export interface TaskItem {
   source?: string
   origin?: 'human' | 'ai-statement' | 'ai-inference'
   recordedAt?: string
+  metadata?: Record<string, unknown>
 }
 
 export type Provider = 'copilot' | 'codex' | 'claude'

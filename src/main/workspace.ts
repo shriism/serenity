@@ -14,6 +14,24 @@ function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value)
 }
 
+function extraProperties(value: Record<string, unknown>, known: readonly string[]): Record<string, unknown> | undefined {
+  const extra = Object.fromEntries(Object.entries(value).filter(([key]) => !known.includes(key)))
+  return Object.keys(extra).length ? extra : undefined
+}
+
+function updateYaml(text: string, changes: Record<string, unknown>): string {
+  const document = YAML.parseDocument(text)
+  if (document.errors.length) throw document.errors[0]
+  const existing = document.toJS()
+  if (!record(existing)) throw new Error('Invalid YAML mapping')
+  for (const [key, value] of Object.entries(changes)) {
+    if (value === undefined) {
+      if (Object.hasOwn(existing, key)) document.delete(key)
+    } else if (JSON.stringify(existing[key]) !== JSON.stringify(value)) document.set(key, value)
+  }
+  return document.toString()
+}
+
 function requiredText(value: unknown, name: string): string {
   if (typeof value !== 'string' || !value.trim()) throw new Error(`${name} must be a non-empty string`)
   return value.trim()
@@ -53,7 +71,8 @@ function parseEvent(data: unknown): CalendarEvent {
     relatedEntityIds: related(data.relatedEntityIds ?? []),
     source: typeof data.source === 'string' ? data.source : undefined,
     origin: typeof data.origin === 'string' ? data.origin as CalendarEvent['origin'] : undefined,
-    recordedAt: typeof data.recordedAt === 'string' ? data.recordedAt : undefined }
+    recordedAt: typeof data.recordedAt === 'string' ? data.recordedAt : undefined,
+    metadata: extraProperties(data, ['id', 'title', 'start', 'end', 'notes', 'relatedEntityIds', 'source', 'origin', 'recordedAt']) }
 }
 
 function parseTask(data: unknown): TaskItem {
@@ -63,7 +82,8 @@ function parseTask(data: unknown): TaskItem {
     relatedEntityIds: related(data.relatedEntityIds ?? []),
     source: typeof data.source === 'string' ? data.source : undefined,
     origin: typeof data.origin === 'string' ? data.origin as TaskItem['origin'] : undefined,
-    recordedAt: typeof data.recordedAt === 'string' ? data.recordedAt : undefined }
+    recordedAt: typeof data.recordedAt === 'string' ? data.recordedAt : undefined,
+    metadata: extraProperties(data, ['id', 'title', 'due', 'completed', 'notes', 'relatedEntityIds', 'source', 'origin', 'recordedAt']) }
 }
 
 function parseEntity(text: string): Entity {
@@ -78,6 +98,7 @@ function parseEntity(text: string): Entity {
     body: text.slice(match[0].length),
     source: typeof metadata.source === 'string' ? metadata.source : undefined,
     origin: typeof metadata.origin === 'string' ? metadata.origin as Entity['origin'] : undefined,
+    metadata: extraProperties(metadata, ['id', 'title', 'type', 'source', 'origin']),
     revision: checksum(text)
   }
 }
@@ -100,7 +121,8 @@ function parseClaim(text: string): Claim {
     recordedAt: requiredText(data.recordedAt, 'Recorded at'),
     retractedAt: typeof data.retractedAt === 'string' ? data.retractedAt : undefined,
     retractionReason: typeof data.retractionReason === 'string' ? data.retractionReason : undefined,
-    confidence: typeof data.confidence === 'number' && data.confidence >= 0 && data.confidence <= 1 ? data.confidence : undefined
+    confidence: typeof data.confidence === 'number' && data.confidence >= 0 && data.confidence <= 1 ? data.confidence : undefined,
+    metadata: extraProperties(data, ['id', 'subject', 'key', 'value', 'source', 'origin', 'status', 'recordedAt', 'retractedAt', 'retractionReason', 'confidence'])
   }
 }
 
@@ -323,7 +345,10 @@ export class Workspace {
     }
     if (!previous && input.revision) throw new Error('This entity was removed on disk. Refresh before saving.')
     if (typeof input.body !== 'string') throw new Error('Body must be text')
-    const text = `---\n${YAML.stringify({ id: entityId, title, type, source: input.source, origin: input.origin ?? 'human' })}---\n${input.body}`
+    const metadata = previous ? updateYaml(frontmatter.exec(previous)?.[1] ?? '',
+      { id: entityId, title, type, source: input.source, origin: input.origin ?? 'human' }) :
+      YAML.stringify({ ...input.metadata, id: entityId, title, type, source: input.source, origin: input.origin ?? 'human' })
+    const text = `---\n${metadata}---\n${input.body}`
     await atomicWrite(path, text)
     this.markDirty()
     return this.snapshot()
@@ -357,7 +382,8 @@ export class Workspace {
     claim.retractedAt = new Date().toISOString()
     claim.retractionReason = requiredText(reason, 'Reason')
     if (checksum(await readFile(path, 'utf8')) !== checksum(original)) throw new Error('Claim changed on disk. Refresh before retracting it.')
-    await atomicWrite(path, YAML.stringify(claim))
+    await atomicWrite(path, updateYaml(original, { status: claim.status, retractedAt: claim.retractedAt,
+      retractionReason: claim.retractionReason }))
     this.markDirty()
     if (selected?.isCurrent) await this.recordResolution({ subject: selected.subject, key: selected.key,
       currentClaimId: null, reason: 'Selected claim was retracted' })
@@ -439,17 +465,17 @@ export class Workspace {
       this.index.exec('BEGIN TRANSACTION')
       try {
         this.index.exec('DELETE FROM records')
-        for (const entity of snapshot.entities) insert.run(entity.id, 'entity', entity.title, entity.type, entity.body)
+        for (const entity of snapshot.entities) insert.run(entity.id, 'entity', entity.title, entity.type, `${entity.body} ${JSON.stringify(entity.metadata ?? {})}`)
         for (const claim of snapshot.claims.filter((item) => item.status !== 'retracted')) {
           const targetName = snapshot.entities.find((entity) => entity.id === claim.value)?.title ?? claim.value
           const context = claim.isCurrent ? 'Current' : claim.isCurrent === false ? 'Historical alternative' : 'Sourced claim'
-          insert.run(claim.subject, 'claim', `${claim.key}: ${targetName}`, `${context} · ${claim.source}`, `${targetName} ${claim.value}`)
+          insert.run(claim.subject, 'claim', `${claim.key}: ${targetName}`, `${context} · ${claim.source}`, `${targetName} ${claim.value} ${JSON.stringify(claim.metadata ?? {})}`)
         }
         if (snapshot.modules.tasks) {
-          for (const task of snapshot.tasks) insert.run(task.id, 'task', task.title, task.due ?? 'Undated task', `${task.notes} ${task.relatedEntityIds.map((id) => snapshot.entities.find((entity) => entity.id === id)?.title ?? id).join(' ')}`)
+          for (const task of snapshot.tasks) insert.run(task.id, 'task', task.title, task.due ?? 'Undated task', `${task.notes} ${JSON.stringify(task.metadata ?? {})} ${task.relatedEntityIds.map((id) => snapshot.entities.find((entity) => entity.id === id)?.title ?? id).join(' ')}`)
         }
         if (snapshot.modules.calendar) {
-          for (const event of snapshot.events) insert.run(event.id, 'event', event.title, event.start, `${event.notes} ${event.relatedEntityIds.map((id) => snapshot.entities.find((entity) => entity.id === id)?.title ?? id).join(' ')}`)
+          for (const event of snapshot.events) insert.run(event.id, 'event', event.title, event.start, `${event.notes} ${JSON.stringify(event.metadata ?? {})} ${event.relatedEntityIds.map((id) => snapshot.entities.find((entity) => entity.id === id)?.title ?? id).join(' ')}`)
         }
         for (const document of snapshot.documents) {
           let text = ''
@@ -572,7 +598,9 @@ export class Workspace {
     })
     if (previous && checksum(previous) !== value.revision) throw new Error('This item changed on disk. Refresh before saving.')
     if (!previous && value.revision) throw new Error('This item was removed on disk. Refresh before saving.')
-    const text = YAML.stringify({ ...value, id: recordId, revision: undefined })
+    const { metadata, revision: _revision, ...recordData } = value
+    const text = previous ? updateYaml(previous, { ...recordData, id: recordId }) :
+      YAML.stringify({ ...metadata, ...recordData, id: recordId })
     await atomicWrite(path, text)
     this.markDirty()
     return this.snapshot()

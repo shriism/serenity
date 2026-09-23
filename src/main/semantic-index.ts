@@ -54,10 +54,10 @@ export async function buildSemanticIndex(workspace: Workspace, ask: Ask): Promis
   const provider = snapshot.semanticProvider
   const previous = await readSemanticIndex(workspace)
   const records = [
-    ...snapshot.entities.map((item) => ({ key: `entity:${item.id}`, text: `${item.title}\n${item.type}\n${item.body}` })),
-    ...snapshot.claims.filter((item) => item.status !== 'retracted').map((item) => ({ key: `claim:${item.id}`, text: `${item.key}: ${item.value}\nSource: ${item.source}\nOrigin: ${item.origin}` })),
-    ...(snapshot.modules.calendar ? snapshot.events.map((item) => ({ key: `event:${item.id}`, text: `${item.title}\n${item.start}\n${item.notes}` })) : []),
-    ...(snapshot.modules.tasks ? snapshot.tasks.map((item) => ({ key: `task:${item.id}`, text: `${item.title}\nDue: ${item.due ?? 'none'}\n${item.notes}` })) : [])
+    ...snapshot.entities.map((item) => ({ key: `entity:${item.id}`, text: `${item.title}\n${item.type}\n${item.body}\n${JSON.stringify(item.metadata ?? {})}` })),
+    ...snapshot.claims.filter((item) => item.status !== 'retracted').map((item) => ({ key: `claim:${item.id}`, text: `${item.key}: ${item.value}\nSource: ${item.source}\nOrigin: ${item.origin}\n${JSON.stringify(item.metadata ?? {})}` })),
+    ...(snapshot.modules.calendar ? snapshot.events.map((item) => ({ key: `event:${item.id}`, text: `${item.title}\n${item.start}\n${item.notes}\n${JSON.stringify(item.metadata ?? {})}` })) : []),
+    ...(snapshot.modules.tasks ? snapshot.tasks.map((item) => ({ key: `task:${item.id}`, text: `${item.title}\nDue: ${item.due ?? 'none'}\n${item.notes}\n${JSON.stringify(item.metadata ?? {})}` })) : [])
   ]
   for (const document of snapshot.documents) {
     try {

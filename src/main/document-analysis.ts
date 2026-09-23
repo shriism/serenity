@@ -9,7 +9,7 @@ type Send = (workspace: Workspace, input: { text: string; provider: Provider; au
 
 export async function analyzeChangedDocument(workspace: Workspace, filename: string, send: Send): Promise<void> {
   const snapshot = await workspace.snapshot()
-  if (!snapshot.modules.documentAnalysis || !snapshot.documents.some((item) => item.name === filename)) return
+  if (!snapshot.modules.documentAnalysis || !snapshot.documents.some((item) => item.name === filename && item.extractable)) return
   const path = join(workspace.directories[2], basename(filename))
   const hash = createHash('sha256').update(await readFile(path)).digest('hex')
   const statePath = join(workspace.path, '.serenity', 'analyzed-documents.yaml')

@@ -6,7 +6,7 @@ import YAML from 'yaml'
 import type { Autonomy, CalendarEvent, Claim, ClaimResolution, Conversation, DocumentInfo, Entity, MergeRecord, Proposal, Provider, ProviderActivity, ReadScope, SearchResult, TaskItem, WorkflowPermissions, WorkspaceSnapshot } from '../shared/types'
 import { modules, type ModuleId } from '../shared/modules'
 import { validateReadScope, validateWorkflowPermissions } from '../shared/workflow'
-import { extractDocument } from './documents'
+import { canExtractText, extractDocument } from './documents'
 
 const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/
 
@@ -323,7 +323,7 @@ export class Workspace {
     for (const name of await readdir(this.directories[2])) {
       try {
         const info = await stat(join(this.directories[2], name))
-        if (info.isFile()) documents.push({ name, size: info.size })
+        if (info.isFile()) documents.push({ name, size: info.size, extractable: canExtractText(name) })
       } catch { /* A document was moved while reading the directory. */ }
     }
     for (const claim of claims) {
@@ -509,8 +509,20 @@ export class Workspace {
   async search(term: string): Promise<SearchResult[]> {
     const query = requiredText(term, 'Search')
     if (!this.index) {
-      this.index = new DatabaseSync(join(this.path, '.serenity', 'index.sqlite'))
-      this.index.exec('CREATE VIRTUAL TABLE IF NOT EXISTS records USING fts5(id UNINDEXED, kind UNINDEXED, title, detail, content)')
+      const path = join(this.path, '.serenity', 'index.sqlite')
+      try {
+        this.index = new DatabaseSync(path)
+        this.index.exec('CREATE VIRTUAL TABLE IF NOT EXISTS records USING fts5(id UNINDEXED, kind UNINDEXED, title, detail, content)')
+      } catch (error) {
+        this.index?.close()
+        this.index = null
+        const message = String(error).toLowerCase()
+        if (!message.includes('not a database') && !message.includes('database disk image is malformed')) throw error
+        await rename(path, `${path}.corrupt-${randomUUID()}`)
+        this.index = new DatabaseSync(path)
+        this.index.exec('CREATE VIRTUAL TABLE records USING fts5(id UNINDEXED, kind UNINDEXED, title, detail, content)')
+        this.markDirty()
+      }
     }
     if (this.indexDirty) {
       const snapshot = await this.snapshot()

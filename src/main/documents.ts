@@ -1,6 +1,10 @@
 import { readFile } from 'node:fs/promises'
 import { extname } from 'node:path'
 
+export function canExtractText(path: string): boolean {
+  return ['.txt', '.md', '.csv', '.json', '.yaml', '.yml', '.docx', '.pdf'].includes(extname(path).toLowerCase())
+}
+
 export async function extractDocument(path: string): Promise<string | null> {
   const extension = extname(path).toLowerCase()
   if (['.txt', '.md', '.csv', '.json', '.yaml', '.yml'].includes(extension)) return readFile(path, 'utf8')

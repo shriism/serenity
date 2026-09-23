@@ -178,6 +178,7 @@ export type Proposal = ProposalBase & (
 export interface DocumentInfo {
   name: string
   size: number
+  extractable: boolean
 }
 
 export interface SearchResult {

@@ -29,6 +29,7 @@ docx.file('[Content_Types].xml', `<?xml version="1.0" encoding="UTF-8"?><Types x
 docx.file('_rels/.rels', `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`)
 docx.file('word/document.xml', `<?xml version="1.0" encoding="UTF-8"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>DocxSyllabusDeadline</w:t></w:r></w:p></w:body></w:document>`)
 await writeFile(join(workspace, 'documents', 'syllabus.docx'), await docx.generateAsync({ type: 'nodebuffer' }))
+await writeFile(join(workspace, 'documents', 'unreadable.bin'), 'Not a supported document type')
 const port = 20000 + Math.floor(Math.random() * 30000)
 const child = spawn(electron, [`--remote-debugging-port=${port}`, ...(packaged ? [] : ['.']), `--workspace=${workspace}`], { stdio: ['ignore', 'pipe', 'pipe'] })
 let output = ''
@@ -103,6 +104,9 @@ try {
   assert.ok(pdfResults.includes('document'), 'PDF text should be searchable in the desktop app')
   const docxResults = await evaluate(pageUrl, `window.serenity.search('DocxSyllabusDeadline').then((items) => items.map((item) => item.kind))`) as string[]
   assert.ok(docxResults.includes('document'), 'DOCX text should be searchable in the desktop app')
+  const unsupported = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Documents')); button?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); const row = [...document.querySelectorAll('.document-row')].find((item) => item.textContent?.includes('unreadable.bin')); return { label: row?.textContent, canAnalyze: Boolean(row?.querySelector('button')) } })()`) as { label?: string; canAnalyze: boolean }
+  assert.match(unsupported.label ?? '', /No text extraction/)
+  assert.equal(unsupported.canAnalyze, false)
   const taskCount = await evaluate(pageUrl, `window.serenity.saveTask({ id: '', title: 'Call Alex', due: '2026-10-03', completed: false, notes: '', relatedEntityIds: ['${entityId}'] }).then((snapshot) => snapshot.tasks.length)`)
   assert.equal(taskCount, 1)
   const eventCount = await evaluate(pageUrl, `window.serenity.saveEvent({ id: '', title: 'Meet Alex', start: '2026-10-04T10:00', notes: '', relatedEntityIds: ['${entityId}'] }).then((snapshot) => snapshot.events.length)`)

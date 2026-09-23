@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import YAML from 'yaml'
@@ -105,6 +105,21 @@ test('search index rebuilds after knowledge updates and can be recreated', async
     await rm(join(directory, '.serenity'), { recursive: true })
     await workspace.initialize()
     assert.equal((await workspace.search('robotics'))[0].title, 'AI Club')
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('search preserves a damaged derived index and rebuilds from knowledge files', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    await workspace.saveEntity({ id: '', title: 'Library', type: 'place', body: 'Robotics collection' })
+    const indexPath = join(directory, '.serenity', 'index.sqlite')
+    await writeFile(indexPath, 'not a database')
+    assert.equal((await workspace.search('Robotics'))[0].title, 'Library')
+    const files = await readdir(join(directory, '.serenity'))
+    assert.ok(files.some((name) => name.startsWith('index.sqlite.corrupt-')))
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
@@ -348,11 +363,15 @@ test('automatic document analysis is opt-in and runs once per document version',
     await workspace.initialize()
     const document = join(directory, 'documents', 'notes.txt')
     await writeFile(document, 'Meeting on Tuesday')
+    await writeFile(join(directory, 'documents', 'photo.png'), 'not a real image')
     let analyzed = 0
     const send = async () => { analyzed++; return workspace.snapshot() }
     await analyzeChangedDocument(workspace, 'notes.txt', send)
     assert.equal(analyzed, 0)
     await workspace.setModule('documentAnalysis', true)
+    assert.equal((await workspace.snapshot()).documents.find((item) => item.name === 'photo.png')?.extractable, false)
+    await analyzeChangedDocument(workspace, 'photo.png', send)
+    assert.equal(analyzed, 0)
     await analyzeChangedDocument(workspace, 'notes.txt', send)
     await analyzeChangedDocument(workspace, 'notes.txt', send)
     assert.equal(analyzed, 1)

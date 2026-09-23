@@ -30,7 +30,8 @@ child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString() })
 async function evaluate(url: string, expression: string): Promise<unknown> {
   const socket = new WebSocket(url)
   return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => { socket.close(); reject(new Error('Renderer evaluation timed out')) }, 30000)
+    const timeout = setTimeout(() => { socket.close(); reject(new Error(`Renderer evaluation timed out for ${expression.slice(0, 85)}. App logs: ${output.slice(-1200)}`)) },
+      process.env.SERENITY_SMOKE_PROVIDER ? 90000 : 30000)
     socket.addEventListener('open', () => socket.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: {
       expression, awaitPromise: true, returnByValue: true
     } })))
@@ -125,6 +126,19 @@ try {
     assert.equal(settings.autonomy, 'autonomous')
     assert.equal(settings.permissions.tasks, true)
     console.log(`${provider} conversation completed through Electron IPC.`)
+    if (process.env.SERENITY_SMOKE_CANCEL === '1') {
+      await evaluate(pageUrl, `window.__cancelledRun = window.serenity.sendMessage({ text: 'Write a thorough multi-page plan about the history of robotics and include many detailed examples.', provider: '${provider}', autonomy: 'propose', retained: true }).then(() => ({ status: 'completed' }), (error) => ({ status: 'cancelled', error: String(error) })); 'started'`)
+      let cancelled = false
+      for (let attempt = 0; attempt < 20; attempt++) {
+        cancelled = await evaluate(pageUrl, 'window.serenity.cancelMessage()') as boolean
+        if (cancelled) break
+        await delay(50)
+      }
+      assert.equal(cancelled, true, 'The active request should be cancellable')
+      const result = await evaluate(pageUrl, 'window.__cancelledRun') as { status: string; error?: string }
+      assert.equal(result.status, 'cancelled', result.error)
+      console.log(`${provider} request cancelled through Electron IPC.`)
+    }
   }
   console.log('Electron workspace, entity, claim, PDF/DOCX search, reversible tasks/calendar, and preload IPC passed.')
 } finally {

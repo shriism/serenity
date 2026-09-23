@@ -8,11 +8,12 @@ import { existsSync } from 'node:fs'
 import { trackProviderCall, type ActivityRequest } from './provider-activity'
 
 export async function askProvider(provider: Provider, workspace: string, prompt: string,
-  activity: ActivityRequest = { operation: 'conversation', refs: [] }): Promise<string> {
-  return trackProviderCall(workspace, provider, prompt, activity, () => runProvider(provider, workspace, prompt))
+  activity: ActivityRequest = { operation: 'conversation', refs: [] }, signal?: AbortSignal): Promise<string> {
+  return trackProviderCall(workspace, provider, prompt, activity, () => runProvider(provider, workspace, prompt, signal))
 }
 
-async function runProvider(provider: Provider, workspace: string, prompt: string): Promise<string> {
+async function runProvider(provider: Provider, workspace: string, prompt: string, signal?: AbortSignal): Promise<string> {
+  if (signal?.aborted) throw new Error('AI request cancelled')
   if (provider === 'copilot') {
     const { CopilotClient, RuntimeConnection } = await import('@github/copilot-sdk')
     const token = await getCredential('copilot')
@@ -29,11 +30,15 @@ async function runProvider(provider: Provider, workspace: string, prompt: string
         availableTools: [],
         onPermissionRequest: () => ({ kind: 'reject', feedback: 'Serenity handles knowledge changes through reviewed proposals.' })
       })
+      const abort = (): void => { void session.abort().catch(() => undefined) }
+      signal?.addEventListener('abort', abort, { once: true })
       try {
+        if (signal?.aborted) throw new Error('AI request cancelled')
         const answer = await session.sendAndWait({ prompt }, 120000)
+        if (signal?.aborted) throw new Error('AI request cancelled')
         if (!answer?.data.content) throw new Error('Copilot returned no answer.')
         return answer.data.content
-      } finally { await session.disconnect() }
+      } finally { signal?.removeEventListener('abort', abort); await session.disconnect() }
     } finally { await client.stop() }
   }
 
@@ -63,7 +68,8 @@ async function runProvider(provider: Provider, workspace: string, prompt: string
       approvalPolicy: 'never',
       networkAccessEnabled: false
     })
-    const turn = await thread.run(prompt)
+    const turn = await thread.run(prompt, { signal })
+    if (signal?.aborted) throw new Error('AI request cancelled')
     if (!turn.finalResponse) throw new Error('Codex returned no answer.')
     return turn.finalResponse
   }
@@ -71,6 +77,9 @@ async function runProvider(provider: Provider, workspace: string, prompt: string
   const { query } = await import('@anthropic-ai/claude-agent-sdk')
   const key = await getCredential('claude')
   if (!key && !process.env.ANTHROPIC_API_KEY) throw new Error('Claude Agent SDK requires an Anthropic API key in Serenity. Add one under Connections.')
+  const abortController = new AbortController()
+  const abort = (): void => abortController.abort()
+  signal?.addEventListener('abort', abort, { once: true })
   const run = query({
     prompt,
     options: {
@@ -79,6 +88,7 @@ async function runProvider(provider: Provider, workspace: string, prompt: string
       tools: [],
       settingSources: [],
       maxTurns: 2,
+      abortController,
       ...(app.isPackaged ? {
         spawnClaudeCodeProcess: ({ args, cwd, env, signal }) => spawn(process.execPath, args, {
           cwd, env: { ...env, ELECTRON_RUN_AS_NODE: '1' }, signal, stdio: ['pipe', 'pipe', 'pipe']
@@ -87,12 +97,16 @@ async function runProvider(provider: Provider, workspace: string, prompt: string
       canUseTool: async () => ({ behavior: 'deny', message: 'Serenity handles knowledge changes through reviewed proposals.' })
     }
   })
-  for await (const message of run) {
-    if (message.type === 'result') {
-      if (message.subtype !== 'success') throw new Error(message.errors.join('; ') || 'Claude could not complete the request.')
-      if (message.is_error) throw new Error(message.result || 'Claude could not complete the request.')
-      return message.result
+  try {
+    if (signal?.aborted) throw new Error('AI request cancelled')
+    for await (const message of run) {
+      if (message.type === 'result') {
+        if (message.subtype !== 'success') throw new Error(message.errors.join('; ') || 'Claude could not complete the request.')
+        if (message.is_error) throw new Error(message.result || 'Claude could not complete the request.')
+        if (signal?.aborted) throw new Error('AI request cancelled')
+        return message.result
+      }
     }
-  }
-  throw new Error('Claude returned no answer.')
+    throw new Error('Claude returned no answer.')
+  } finally { signal?.removeEventListener('abort', abort); run.close() }
 }

@@ -195,6 +195,7 @@ export interface SerenityAPI {
   semanticSearch(query: string, provider: Provider): Promise<SearchResult[]>
   searchSemanticIndex(query: string): Promise<SearchResult[]>
   sendMessage(input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean; permissions?: WorkflowPermissions; readScope?: ReadScope }): Promise<WorkspaceSnapshot>
+  cancelMessage(): Promise<boolean>
   updateConversationSettings(id: string, settings: { autonomy: Autonomy; permissions: WorkflowPermissions; retained: boolean; readScope?: ReadScope }): Promise<WorkspaceSnapshot>
   resolveProposal(id: string, accept: boolean): Promise<WorkspaceSnapshot>
   deleteConversation(id: string): Promise<WorkspaceSnapshot>

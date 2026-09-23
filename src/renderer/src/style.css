@@ -169,6 +169,7 @@ textarea { min-height: 260px; resize: vertical; line-height: 1.65; }
 .compose-input { display: flex; gap: 8px; }
 .compose-input input { min-width: 0; }
 .compose-input .primary { flex: none; }
+.compose-input .secondary { flex: none; margin: 0; }
 .primary:disabled { opacity: .5; cursor: not-allowed; }
 .connection-form { max-width: 480px; display: flex; flex-direction: column; gap: 10px; margin-top: 35px; }
 .connection-form h2 { font-size: 26px; }

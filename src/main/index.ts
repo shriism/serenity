@@ -16,6 +16,7 @@ let window: BrowserWindow | null = null
 let workspace: Workspace | null = null
 let watcher: FSWatcher | null = null
 let activeRequests = 0
+let conversationAbort: AbortController | null = null
 let indexTimer: ReturnType<typeof setTimeout> | null = null
 let indexRunning = false
 let indexPending = false
@@ -147,7 +148,19 @@ app.whenReady().then(async () => {
   ipcMain.handle('workspace:search', (_event, query: string) => currentWorkspace().search(query))
   ipcMain.handle('workspace:semantic-search', (_event, query: string, provider: Provider) => withActiveRequest(() => semanticSearch(currentWorkspace(), query, provider)))
   ipcMain.handle('workspace:cached-semantic-search', (_event, query: string) => rankSemanticIndex(currentWorkspace(), query))
-  ipcMain.handle('conversation:send', (_event, input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean; permissions?: WorkflowPermissions; readScope?: ReadScope }) => withActiveRequest(() => sendMessage(currentWorkspace(), input)))
+  ipcMain.handle('conversation:send', async (_event, input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean; permissions?: WorkflowPermissions; readScope?: ReadScope }) => {
+    if (conversationAbort) throw new Error('Another conversation request is still running')
+    const controller = new AbortController()
+    conversationAbort = controller
+    const timeout = setTimeout(() => controller.abort(), 150000)
+    try { return await withActiveRequest(() => sendMessage(currentWorkspace(), input, controller.signal)) }
+    finally { clearTimeout(timeout); conversationAbort = null }
+  })
+  ipcMain.handle('conversation:cancel', () => {
+    if (!conversationAbort) return false
+    conversationAbort.abort()
+    return true
+  })
   ipcMain.handle('conversation:settings', (_event, id: string, settings: { autonomy: Autonomy; permissions: WorkflowPermissions; retained: boolean; readScope?: ReadScope }) => currentWorkspace().updateConversationSettings(id, settings))
   ipcMain.handle('proposal:resolve', (_event, id: string, accept: boolean) => currentWorkspace().resolveProposal(id, accept))
   ipcMain.handle('conversation:delete', (_event, id: string) => currentWorkspace().deleteConversation(id))

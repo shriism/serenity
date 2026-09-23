@@ -13,6 +13,7 @@ interface Props {
   onMessageChange(message: string): void
   busy: boolean
   onSend(event: FormEvent): void
+  onCancel(): void
   onDelete(): void
 }
 
@@ -56,6 +57,7 @@ export function ConversationPanel(props: Props) {
       </div>
       <div className="compose-input">
         <input value={props.message} onChange={(event) => props.onMessageChange(event.target.value)} placeholder="Ask a question or share something to remember..." disabled={props.busy} aria-label="Message"/>
+        {props.busy && <button type="button" className="secondary" onClick={props.onCancel}>Cancel</button>}
         <button type="submit" className="primary" disabled={props.busy || !props.message.trim()}>Send ↗</button>
       </div>
     </form>

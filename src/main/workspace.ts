@@ -204,7 +204,8 @@ export class Workspace {
         if (!record(data) || id(data.id) !== name.slice(0, -5)) throw new Error('Invalid resolution record')
         resolutions.push({ id: id(data.id), subject: resolve(id(data.subject)), key: requiredText(data.key, 'Key'),
           currentClaimId: data.currentClaimId === null ? null : id(data.currentClaimId),
-          recordedAt: requiredText(data.recordedAt, 'Recorded at'), reason: requiredText(data.reason, 'Reason') })
+          recordedAt: requiredText(data.recordedAt, 'Recorded at'), reason: requiredText(data.reason, 'Reason'),
+          sequence: typeof data.sequence === 'number' && Number.isSafeInteger(data.sequence) ? data.sequence : undefined })
       } catch (error) { errors.push(`resolutions/${name}: ${String(error)}`) }
     }
     for (const [directory, extension, parse] of [
@@ -273,7 +274,7 @@ export class Workspace {
       if (claim.subject !== originalSubject) claim.mergedFrom = originalSubject
     }
     const current = new Map<string, string | null>()
-    for (const item of resolutions.sort((a, b) => a.recordedAt.localeCompare(b.recordedAt) || a.id.localeCompare(b.id))) {
+    for (const item of resolutions.sort((a, b) => (a.sequence ?? 0) - (b.sequence ?? 0) || a.recordedAt.localeCompare(b.recordedAt) || a.id.localeCompare(b.id))) {
       current.set(`${item.subject}\u0000${item.key}`, item.currentClaimId)
     }
     for (const claim of claims) {
@@ -361,9 +362,11 @@ export class Workspace {
   }
 
   private async recordResolution(input: Pick<ClaimResolution, 'subject' | 'key' | 'currentClaimId' | 'reason'>): Promise<void> {
+    const previous = (await this.snapshot()).resolutions
     const resolution: ClaimResolution = {
       id: randomUUID(), subject: id(input.subject), key: requiredText(input.key, 'Key'), currentClaimId: input.currentClaimId,
-      reason: requiredText(input.reason, 'Reason'), recordedAt: new Date().toISOString()
+      reason: requiredText(input.reason, 'Reason'), recordedAt: new Date().toISOString(),
+      sequence: previous.reduce((highest, item) => Math.max(highest, item.sequence ?? 0), 0) + 1
     }
     await writeFile(join(this.directories[7], `${resolution.id}.yaml`), YAML.stringify(resolution), { flag: 'wx' })
     this.markDirty()

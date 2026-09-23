@@ -33,6 +33,7 @@ export interface ClaimResolution {
   currentClaimId: string | null
   recordedAt: string
   reason: string
+  sequence?: number
 }
 
 export interface WorkspaceSnapshot {

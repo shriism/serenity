@@ -25,4 +25,4 @@ To add a built-in module, register its ID and description, define its on-disk re
 
 ## Development verification
 
-`npm test` checks storage invariants and module behavior; `npm run smoke:desktop` boots Electron and verifies the renderer/preload boundary. GitHub Actions typechecks, tests, and packages on macOS, Windows, and Linux. Live provider calls require provider-specific credentials and are not made in CI.
+`npm test` checks storage invariants and module behavior; `npm run smoke:desktop` boots Electron with an explicitly chosen temporary workspace and exercises the renderer/preload/main-process path. The smoke test can also target a packaged executable and, with a configured account, run a live provider turn. GitHub Actions typechecks, tests, and packages on macOS, Windows, and Linux. Live provider calls require provider-specific credentials and are not made in CI.

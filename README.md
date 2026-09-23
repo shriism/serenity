@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Choose an existing directory or create one when the application opens. Serenity writes `entities/`, `claims/`, `conversations/`, `proposals/`, `documents/`, `calendar/`, `tasks/`, and `archive/` there. The rebuildable SQLite full-text index is in `.serenity/index.sqlite`; module settings are in `.serenity/modules.yaml`. The selected directory is the knowledge source of truth; provider credentials are stored in the operating system's secure storage outside it. You can edit the Markdown and YAML files in a text editor; Serenity refreshes when files change and refuses to overwrite an entity, calendar event, or task modified since you began editing it.
+Choose an existing directory or create one when the application opens. You can also explicitly supply one at startup with `--workspace=/path/to/directory`. Serenity writes `entities/`, `claims/`, `conversations/`, `proposals/`, `documents/`, `calendar/`, `tasks/`, and `archive/` there. The rebuildable SQLite full-text index is in `.serenity/index.sqlite`; module settings are in `.serenity/modules.yaml`. The selected directory is the knowledge source of truth; provider credentials are stored in the operating system's secure storage outside it. You can edit the Markdown and YAML files in a text editor; Serenity refreshes when files change and refuses to overwrite an entity, calendar event, task, or conversation modified since you began editing it.
 
 To check the project:
 
@@ -22,7 +22,7 @@ npm run build
 npm run smoke:desktop
 ```
 
-The desktop smoke test launches Electron and checks that the window and secure preload API start; run it on a machine with a graphical desktop.
+The desktop smoke test launches Electron and exercises workspace files, IPC, search (including PDF/DOCX), tasks, and calendar; run it on a machine with a graphical desktop. Set `SERENITY_SMOKE_PROVIDER=copilot` or `codex` to also test a live conversation against your configured provider. Set `SERENITY_SMOKE_EXECUTABLE` to the path of a packaged app executable to test the installed build instead of development Electron.
 
 To package for the current OS use `npm run dist`. Platform-specific commands are `npm run dist:mac`, `npm run dist:win`, and `npm run dist:linux` (cross-building may require platform-specific tooling or a machine running the target OS). Unsigned macOS builds may require manual permission to open.
 
@@ -34,4 +34,4 @@ The desktop app also lets you browse and edit entities, link them through source
 
 ## Current limitations
 
-This is an actively developed application, not yet the complete product described in SERENITY.md. Neural embedding retrieval, fully automated entity resolution, more granular autonomy controls, cloud sync, local models, and mobile apps are not implemented. Calendar and tasks are internal only; no external calendar sync is planned. Live Copilot and Codex SDK smoke tests succeeded on macOS; Claude needs an Anthropic API key for a live test, and packaged SDK operation still requires end-to-end testing on all target operating systems. Large workspaces use relevant excerpts and an inspectable record catalog rather than silently omitting knowledge; the user message shows which records were transmitted.
+This is an actively developed application, not yet the complete desktop product described in SERENITY.md. Neural embedding retrieval, fully automated entity resolution, and more granular autonomy controls are not implemented. Cloud sync, local models, and mobile apps are separate later goals. Calendar and tasks are internal only; no external calendar sync is planned. Live Copilot and Codex conversations succeeded from the packaged macOS app; Claude needs an Anthropic API key for a live test, and packaged SDK operation still requires live end-to-end testing on Windows and Linux. Large workspaces use relevant excerpts and an inspectable record catalog rather than silently omitting knowledge; the user message shows which records were transmitted.

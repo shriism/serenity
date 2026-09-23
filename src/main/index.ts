@@ -9,7 +9,7 @@ import { buildSemanticIndex, rankSemanticIndex } from './semantic-index'
 import { askProvider } from './providers'
 import { analyzeChangedDocument } from './document-analysis'
 import { basename, dirname } from 'node:path'
-import type { Autonomy, CalendarEvent, Claim, Entity, Provider, TaskItem } from '../shared/types'
+import type { Autonomy, CalendarEvent, Claim, Entity, Provider, TaskItem, WorkspaceSnapshot } from '../shared/types'
 import type { ModuleId } from '../shared/modules'
 
 let window: BrowserWindow | null = null
@@ -77,7 +77,7 @@ function queueDocumentAnalysis(target: Workspace, filename: string): void {
   }, 1200)
 }
 
-async function openWorkspace(path: string): Promise<ReturnType<Workspace['snapshot']>> {
+async function openWorkspace(path: string): Promise<WorkspaceSnapshot> {
   if (indexTimer) clearTimeout(indexTimer)
   if (documentTimer) clearTimeout(documentTimer)
   pendingDocuments.clear()
@@ -120,7 +120,7 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   ipcMain.handle('workspace:choose', async () => {
     if (activeRequests) throw new Error('Wait for the current AI request before switching workspaces.')
     const result = await dialog.showOpenDialog(window!, {
@@ -168,6 +168,11 @@ app.whenReady().then(() => {
   ipcMain.handle('calendar:save', (_event, item: CalendarEvent) => currentWorkspace().saveEvent(item))
   ipcMain.handle('task:save', (_event, item: TaskItem) => currentWorkspace().saveTask(item))
   ipcMain.handle('entity:merge', (_event, source: string, target: string) => currentWorkspace().mergeEntities(source, target))
+  const selected = process.argv.find((argument) => argument.startsWith('--workspace='))?.slice('--workspace='.length)
+  if (selected) {
+    try { await openWorkspace(selected) }
+    catch (error) { dialog.showErrorBox('Could not open workspace', String(error)) }
+  }
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })

@@ -43,6 +43,7 @@ function App() {
   }, [dirty, selected])
 
   useEffect(() => window.serenity.onWorkspaceChange(() => { void refresh() }), [refresh])
+  useEffect(() => { void window.serenity.refresh().then(setWorkspace).catch((cause) => setError(String(cause))) }, [])
   useEffect(() => window.serenity.onIndexError((message) => setError(`Background AI: ${message}`)), [])
 
   async function chooseWorkspace() {

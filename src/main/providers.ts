@@ -1,15 +1,21 @@
 import type { Provider } from '../shared/types'
 import { getCredential } from './credentials'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import { spawn } from 'node:child_process'
 import { app } from 'electron'
+import { existsSync } from 'node:fs'
 
 export async function askProvider(provider: Provider, workspace: string, prompt: string): Promise<string> {
   if (provider === 'copilot') {
-    const { CopilotClient } = await import('@github/copilot-sdk')
+    const { CopilotClient, RuntimeConnection } = await import('@github/copilot-sdk')
     const token = await getCredential('copilot')
-    const client = new CopilotClient({ mode: 'empty', baseDirectory: join(homedir(), '.copilot'), workingDirectory: workspace, ...(token ? { gitHubToken: token } : {}) })
+    const platform = `${process.platform}-${process.arch}`
+    const runtime = join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', `@github/copilot-sdk-${platform}`,
+      'prebuilds', platform, process.platform === 'win32' ? 'copilot-runtime.exe' : 'copilot-runtime')
+    const client = new CopilotClient({ mode: 'empty', baseDirectory: join(homedir(), '.copilot'), workingDirectory: workspace,
+      ...(app.isPackaged ? { connection: RuntimeConnection.forStdio({ path: runtime }) } : {}),
+      ...(token ? { gitHubToken: token } : {}) })
     await client.start()
     try {
       const session = await client.createSession({
@@ -28,7 +34,22 @@ export async function askProvider(provider: Provider, workspace: string, prompt:
   if (provider === 'codex') {
     const { Codex } = await import('@openai/codex-sdk')
     const key = await getCredential('codex')
-    const codex = new Codex(key ? { apiKey: key } : {})
+    const triples: Record<string, string> = {
+      'darwin-arm64': 'aarch64-apple-darwin', 'darwin-x64': 'x86_64-apple-darwin',
+      'linux-arm64': 'aarch64-unknown-linux-musl', 'linux-x64': 'x86_64-unknown-linux-musl',
+      'win32-arm64': 'aarch64-pc-windows-msvc', 'win32-x64': 'x86_64-pc-windows-msvc'
+    }
+    const platform = `${process.platform}-${process.arch}`
+    const triple = triples[platform]
+    if (app.isPackaged && !triple) throw new Error(`Codex is not packaged for ${platform}`)
+    const vendor = join(process.resourcesPath, 'app.asar.unpacked', 'node_modules', `@openai/codex-${platform}`, 'vendor', triple ?? '')
+    const codexPath = join(vendor, 'bin', process.platform === 'win32' ? 'codex.exe' : 'codex')
+    if (app.isPackaged && !existsSync(codexPath)) throw new Error(`Bundled Codex runtime is missing: ${codexPath}`)
+    const pathKey = Object.keys(process.env).find((name) => name.toLowerCase() === 'path') ?? 'PATH'
+    const extraPaths = [join(vendor, 'codex-path'), join(vendor, 'path')].filter(existsSync)
+    const env = Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined))
+    env[pathKey] = [...extraPaths, env[pathKey]].filter(Boolean).join(delimiter)
+    const codex = new Codex({ ...(key ? { apiKey: key } : {}), ...(app.isPackaged ? { codexPathOverride: codexPath, env } : {}) })
     const thread = codex.startThread({
       workingDirectory: workspace,
       skipGitRepoCheck: true,

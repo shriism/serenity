@@ -24,6 +24,21 @@ jobs:
       - run: npm run dist
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Smoke packaged macOS app
+        if: runner.os == 'macOS'
+        run: npx tsx tests/desktop-smoke.ts
+        env:
+          SERENITY_SMOKE_EXECUTABLE: release/mac-arm64/Serenity.app/Contents/MacOS/Serenity
+      - name: Smoke packaged Windows app
+        if: runner.os == 'Windows'
+        run: npx tsx tests/desktop-smoke.ts
+        env:
+          SERENITY_SMOKE_EXECUTABLE: release/win-unpacked/Serenity.exe
+      - name: Smoke packaged Linux app
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npx tsx tests/desktop-smoke.ts
+        env:
+          SERENITY_SMOKE_EXECUTABLE: release/linux-unpacked/serenity
       - uses: actions/upload-artifact@v4
         with:
           name: serenity-${{ matrix.os }}

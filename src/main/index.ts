@@ -113,6 +113,8 @@ function createWindow(): void {
   })
   window.on('closed', () => { window = null })
   window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+  window.webContents.on('will-navigate', (event) => event.preventDefault())
+  window.webContents.session.setPermissionRequestHandler((_webContents, _permission, callback) => callback(false))
   if (process.env.ELECTRON_RENDERER_URL) {
     void window.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {

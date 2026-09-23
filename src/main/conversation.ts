@@ -124,14 +124,14 @@ export async function sendMessage(
     if (readScope.mode === 'selected' && (suggestion.kind === 'task' || suggestion.kind === 'event') &&
       suggestion.relatedEntityIds.some((id) => !readScope.entityIds.includes(id))) continue
     const matches = suggestion.kind === 'entity' ? identityCandidates(suggestion.title, suggestion.type, snapshot.entities) : []
-    if (matches.some((match) => match.score === 1)) continue
     const subject = suggestion.kind === 'claim' ? snapshot.entities.find((entity) => entity.id === suggestion.subject) : undefined
     const ambiguousIdentity = Boolean(subject && identityCandidates(subject.title, subject.type,
       snapshot.entities.filter((entity) => entity.id !== subject.id)).length)
     const proposal = {
       ...suggestion, id: randomUUID(), provider: input.provider, conversationId: conversation.id,
       status: 'pending', recordedAt: new Date().toISOString(),
-      ...(ambiguousIdentity ? { reviewReason: 'Potentially ambiguous entity identity; confirm the subject.' } : {})
+      ...(ambiguousIdentity ? { reviewReason: 'Potentially ambiguous entity identity; confirm the subject.' } :
+        matches.length ? { reviewReason: 'Possible duplicate entity; confirm whether this is a new identity.' } : {})
     } as Proposal
     await workspace.addProposal(proposal)
     if (canAutoApply(input.autonomy, permissions, proposal, {

@@ -3,8 +3,9 @@ import { copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } f
 import { basename, extname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import YAML from 'yaml'
-import type { CalendarEvent, Claim, ClaimResolution, Conversation, DocumentInfo, Entity, MergeRecord, Proposal, Provider, ProviderActivity, SearchResult, TaskItem, WorkspaceSnapshot } from '../shared/types'
+import type { Autonomy, CalendarEvent, Claim, ClaimResolution, Conversation, DocumentInfo, Entity, MergeRecord, Proposal, Provider, ProviderActivity, SearchResult, TaskItem, WorkflowPermissions, WorkspaceSnapshot } from '../shared/types'
 import { modules, type ModuleId } from '../shared/modules'
+import { validateWorkflowPermissions } from '../shared/workflow'
 import { extractDocument } from './documents'
 
 const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/
@@ -243,7 +244,7 @@ export class Workspace {
           if (!record(data) || id(data.id) !== name.slice(0, -5)) throw new Error('Invalid record or mismatched filename')
           if (directory === this.directories[3]) {
             if (!Array.isArray(data.messages) || typeof data.title !== 'string') throw new Error('Invalid conversation')
-            conversations.push({ ...data, revision: checksum(text) } as unknown as Conversation)
+            conversations.push({ ...data, permissions: validateWorkflowPermissions(data.permissions), revision: checksum(text) } as unknown as Conversation)
           } else {
             requiredText(data.status, 'Status')
             const kind = typeof data.kind === 'string' ? data.kind : 'claim'
@@ -478,6 +479,20 @@ export class Workspace {
       await unlink(path).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error })
       conversation.revision = undefined
     }
+  }
+
+  async updateConversationSettings(conversationId: string,
+    settings: { autonomy: Autonomy; permissions: WorkflowPermissions; retained: boolean }): Promise<WorkspaceSnapshot> {
+    const conversation = (await this.snapshot()).conversations.find((item) => item.id === id(conversationId))
+    if (!conversation) throw new Error('Conversation not found')
+    if (!['ask', 'propose', 'autonomous'].includes(settings.autonomy) || typeof settings.retained !== 'boolean') {
+      throw new Error('Invalid workflow settings')
+    }
+    conversation.autonomy = settings.autonomy
+    conversation.permissions = validateWorkflowPermissions(settings.permissions)
+    conversation.retained = settings.retained
+    await this.saveConversation(conversation)
+    return this.snapshot()
   }
 
   async deleteConversation(conversationId: string): Promise<WorkspaceSnapshot> {

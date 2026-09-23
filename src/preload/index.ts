@@ -14,6 +14,7 @@ const api: SerenityAPI = {
   semanticSearch: (query, provider) => ipcRenderer.invoke('workspace:semantic-search', query, provider),
   searchSemanticIndex: (query) => ipcRenderer.invoke('workspace:cached-semantic-search', query),
   sendMessage: (input) => ipcRenderer.invoke('conversation:send', input),
+  updateConversationSettings: (id, settings) => ipcRenderer.invoke('conversation:settings', id, settings),
   resolveProposal: (id, accept) => ipcRenderer.invoke('proposal:resolve', id, accept),
   deleteConversation: (id) => ipcRenderer.invoke('conversation:delete', id),
   credentialStatus: () => ipcRenderer.invoke('credential:status'),

@@ -104,6 +104,13 @@ export interface TaskItem {
 export type Provider = 'copilot' | 'codex' | 'claude'
 export type Autonomy = 'ask' | 'propose' | 'autonomous'
 
+export interface WorkflowPermissions {
+  claims: boolean
+  entities: boolean
+  tasks: boolean
+  events: boolean
+}
+
 export interface Message {
   id: string
   role: 'user' | 'assistant'
@@ -127,6 +134,7 @@ export interface Conversation {
   messages: Message[]
   retained: boolean
   autonomy?: Autonomy
+  permissions?: WorkflowPermissions
   revision?: string
 }
 
@@ -136,6 +144,7 @@ export interface ProposalBase {
   conversationId: string
   status: 'pending' | 'accepted' | 'rejected'
   recordedAt: string
+  reviewReason?: string
 }
 
 export type Proposal = ProposalBase & (
@@ -169,7 +178,8 @@ export interface SerenityAPI {
   search(query: string): Promise<SearchResult[]>
   semanticSearch(query: string, provider: Provider): Promise<SearchResult[]>
   searchSemanticIndex(query: string): Promise<SearchResult[]>
-  sendMessage(input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean }): Promise<WorkspaceSnapshot>
+  sendMessage(input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean; permissions?: WorkflowPermissions }): Promise<WorkspaceSnapshot>
+  updateConversationSettings(id: string, settings: { autonomy: Autonomy; permissions: WorkflowPermissions; retained: boolean }): Promise<WorkspaceSnapshot>
   resolveProposal(id: string, accept: boolean): Promise<WorkspaceSnapshot>
   deleteConversation(id: string): Promise<WorkspaceSnapshot>
   credentialStatus(): Promise<Record<Provider, boolean>>

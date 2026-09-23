@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
-import type { Autonomy, Conversation, Message, Proposal, Provider, WorkspaceSnapshot } from '../shared/types'
+import type { Autonomy, Conversation, Message, Proposal, Provider, WorkflowPermissions, WorkspaceSnapshot } from '../shared/types'
 import { askProvider } from './providers'
 import { Workspace } from './workspace'
 import { extractDocument } from './documents'
 import { identityCandidates } from '../shared/identity'
 import { contextRecords, prepareContext } from './context'
 import { rankSemanticIndex } from './semantic-index'
+import { canAutoApply, validateWorkflowPermissions } from '../shared/workflow'
 
 type Suggestion =
   | { kind: 'claim'; subject: string; key: string; value: string; source: string; origin: 'ai-statement' | 'ai-inference'; confidence?: number }
@@ -44,7 +45,7 @@ function parseAnswer(text: string): { answer: string; proposals: Suggestion[]; r
 
 export async function sendMessage(
   workspace: Workspace,
-  input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean; operation?: 'document-analysis' }
+  input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean; permissions?: WorkflowPermissions; operation?: 'document-analysis' }
 ): Promise<WorkspaceSnapshot> {
   const question = input.text.trim()
   if (!question) throw new Error('Write a message first.')
@@ -53,11 +54,13 @@ export async function sendMessage(
   const snapshot = await workspace.snapshot()
   const previous = input.conversationId ? snapshot.conversations.find((item) => item.id === input.conversationId) : undefined
   if (input.conversationId && !previous) throw new Error('Conversation not found.')
+  const permissions = validateWorkflowPermissions(input.permissions ?? previous?.permissions)
   const conversation: Conversation = previous ?? {
     id: randomUUID(), title: question.slice(0, 70), messages: [], retained: input.retained, autonomy: input.autonomy
   }
   conversation.retained = input.retained
   conversation.autonomy = input.autonomy
+  conversation.permissions = permissions
   const message: Message = { id: randomUUID(), role: 'user', text: question, provider: input.provider, recordedAt: new Date().toISOString() }
   conversation.messages.push(message)
   await workspace.saveConversation(conversation)
@@ -109,13 +112,18 @@ export async function sendMessage(
       suggestion.relatedEntityIds.some((id) => !snapshot.entities.some((entity) => entity.id === id))) continue
     const matches = suggestion.kind === 'entity' ? identityCandidates(suggestion.title, suggestion.type, snapshot.entities) : []
     if (matches.some((match) => match.score === 1)) continue
+    const subject = suggestion.kind === 'claim' ? snapshot.entities.find((entity) => entity.id === suggestion.subject) : undefined
+    const ambiguousIdentity = Boolean(subject && identityCandidates(subject.title, subject.type,
+      snapshot.entities.filter((entity) => entity.id !== subject.id)).length)
     const proposal = {
       ...suggestion, id: randomUUID(), provider: input.provider, conversationId: conversation.id,
-      status: 'pending', recordedAt: new Date().toISOString()
+      status: 'pending', recordedAt: new Date().toISOString(),
+      ...(ambiguousIdentity ? { reviewReason: 'Potentially ambiguous entity identity; confirm the subject.' } : {})
     } as Proposal
     await workspace.addProposal(proposal)
-    const newCategory = proposal.kind === 'entity' && !snapshot.entities.some((entity) => entity.type.toLowerCase() === proposal.type.toLowerCase())
-    if (input.autonomy === 'autonomous' && !newCategory && matches.length === 0) await workspace.resolveProposal(proposal.id, true)
+    if (canAutoApply(input.autonomy, permissions, proposal, {
+      knownCategories: snapshot.entities.map((entity) => entity.type), identityCandidates: matches.length, ambiguousIdentity
+    })) await workspace.resolveProposal(proposal.id, true)
   }
   return workspace.snapshot()
 }

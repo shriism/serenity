@@ -795,3 +795,12 @@ and remain visible and accountable.
   confirmation, mark the applicable claim as the current answer so an
   old mistake does not remain an unresolved conflict. Keep the previous
   claims and the resolution visible and reversible.
+
+## Autonomous Workflow Permission Default
+
+When a person switches a workflow to autonomous mode, initially permit
+automatic saving of sourced claims only. Entity creation, internal
+calendar events, and tasks still require review until that workflow is
+explicitly granted each corresponding permission. Permissions are
+independent per workflow and can be changed later. Proposals for a new
+ontology category continue to require human confirmation.

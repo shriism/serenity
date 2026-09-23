@@ -8,6 +8,7 @@ import { Workspace } from '../src/main/workspace'
 import { buildSemanticIndex, rankSemanticIndex, readSemanticIndex } from '../src/main/semantic-index'
 import { analyzeChangedDocument } from '../src/main/document-analysis'
 import { contextRecords, prepareContext } from '../src/main/context'
+import { defaultWorkflowPermissions } from '../src/shared/workflow'
 
 test('workspace preserves file edits and prevents stale saves', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
@@ -87,6 +88,16 @@ test('conversation retention and accepting a proposal preserve claim provenance'
     const conversationPath = join(directory, 'conversations', `${conversationId}.yaml`)
     await writeFile(conversationPath, (await readFile(conversationPath, 'utf8')).replace('title: Alex', 'title: Alex Chen'))
     await assert.rejects(workspace.saveConversation(stale), /changed on disk/)
+    const settings = await workspace.updateConversationSettings(conversationId, {
+      autonomy: 'autonomous', permissions: { ...defaultWorkflowPermissions, tasks: true }, retained: true
+    })
+    assert.equal(settings.conversations[0].autonomy, 'autonomous')
+    assert.equal(settings.conversations[0].permissions?.tasks, true)
+    assert.equal((await readFile(conversationPath, 'utf8')).includes('tasks: true'), true)
+    await workspace.updateConversationSettings(conversationId, { autonomy: 'autonomous', permissions: { ...defaultWorkflowPermissions, tasks: true }, retained: false })
+    await assert.rejects(readFile(conversationPath, 'utf8'), /ENOENT/)
+    await workspace.updateConversationSettings(conversationId, { autonomy: 'propose', permissions: { ...defaultWorkflowPermissions }, retained: true })
+    assert.equal((await workspace.snapshot()).conversations[0].retained, true)
     const proposalId = '123e4567-e89b-42d3-a456-426614174004'
     await workspace.addProposal({
       id: proposalId, kind: 'claim', subject: entity.id, key: 'interest', value: 'Robots', source: 'Conversation with me',

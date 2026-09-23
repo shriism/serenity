@@ -9,6 +9,8 @@
 
 Agent SDK tools are disabled or read-only. Providers return proposed knowledge; Serenity performs writes after the selected workflow's review or autonomy rule. Conversations, proposal decisions, claim sources, and merge history are independent of provider-private sessions. Every provider request writes a record under `activity/` with its operation, provider, referenced workspace IDs, prompt size/checksum, and outcome; raw prompts and credentials are not duplicated there.
 
+Autonomy is stored with each conversation. The default autonomous permission set allows claims only; entity, task, and event writes can be enabled independently for that workflow. Even when entity writes are enabled, creating a new category or resolving a potentially ambiguous identity remains a review action.
+
 When a workspace does not fit a provider request, the knowledge engine retrieves from its full local index, sends an explicit catalog and relevant excerpts, and can supply a requested second excerpt. Each conversation message records the references, byte counts, excerpt offsets, and checksums sent to the provider. Retrieval selects context for transmission; it does not change which workspace files are available to the human or to later AI retrieval.
 
 ## Source of truth

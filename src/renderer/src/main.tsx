@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { Autonomy, Entity, Provider, SearchResult, WorkspaceSnapshot } from '../../shared/types'
+import type { Autonomy, Entity, Provider, SearchResult, WorkflowPermissions, WorkspaceSnapshot } from '../../shared/types'
 import { modules, type ModuleId } from '../../shared/modules'
 import { CalendarModule, TasksModule } from './modules'
 import { identityCandidates } from '../../shared/identity'
+import { defaultWorkflowPermissions } from '../../shared/workflow'
 import './style.css'
 
 function App() {
@@ -20,6 +21,7 @@ function App() {
   const [provider, setProvider] = useState<Provider>('copilot')
   const [autonomy, setAutonomy] = useState<Autonomy>('propose')
   const [retained, setRetained] = useState(true)
+  const [permissions, setPermissions] = useState<WorkflowPermissions>({ ...defaultWorkflowPermissions })
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState('')
@@ -57,6 +59,7 @@ function App() {
       setError('')
       setView('knowledge')
       setConversationId(null)
+      setPermissions({ ...defaultWorkflowPermissions })
       setResults(null)
     } catch (cause) {
       setError(String(cause))
@@ -177,7 +180,7 @@ function App() {
     if (autonomy === 'ask' && !window.confirm(`Allow ${provider} to read this workspace for this request? No knowledge changes will be saved without separate approval.`)) return
     setBusy(true)
     try {
-      const next = await window.serenity.sendMessage({ conversationId: conversationId ?? undefined, text: message, provider, autonomy, retained })
+      const next = await window.serenity.sendMessage({ conversationId: conversationId ?? undefined, text: message, provider, autonomy, retained, permissions })
       if (!conversationId) {
         const created = next.conversations.find((item) => !workspace?.conversations.some((old) => old.id === item.id))
         setConversationId(created?.id ?? null)
@@ -201,6 +204,14 @@ function App() {
     try {
       setWorkspace(await window.serenity.deleteConversation(conversationId))
       setConversationId(null)
+      setError('')
+    } catch (cause) { setError(String(cause)) }
+  }
+
+  async function saveWorkflowSettings() {
+    if (!conversationId) return
+    try {
+      setWorkspace(await window.serenity.updateConversationSettings(conversationId, { autonomy, permissions, retained }))
       setError('')
     } catch (cause) { setError(String(cause)) }
   }
@@ -304,7 +315,11 @@ function App() {
           {workspace.entities.length === 0 && <p className="hint">Your workspace is ready. Create an entity to begin.</p>}
         </nav>
         </>}
-        {view === 'conversation' && <nav className="entity-list" aria-label="Conversations"><button className="entity-link" onClick={() => { setConversationId(null); setRetained(true); setAutonomy('propose') }}>+ New conversation</button>{workspace.conversations.map((item) => <button key={item.id} className={`entity-link ${conversationId === item.id ? 'active' : ''}`} onClick={() => { setConversationId(item.id); setRetained(item.retained); setAutonomy(item.autonomy ?? 'propose') }}><span><strong>{item.title}</strong><small>{item.messages.length} messages {item.retained ? '' : '· not retained'}</small></span></button>)}</nav>}
+        {view === 'conversation' && <nav className="entity-list" aria-label="Conversations"><button className="entity-link" onClick={() => { setConversationId(null); setRetained(true); setAutonomy('propose'); setPermissions({ ...defaultWorkflowPermissions }) }}>+ New conversation</button>{workspace.conversations.map((item) => <button key={item.id} className={`entity-link ${conversationId === item.id ? 'active' : ''}`} onClick={() => { setConversationId(item.id); setRetained(item.retained); setAutonomy(item.autonomy ?? 'propose'); setPermissions(item.permissions ?? { ...defaultWorkflowPermissions }) }}><span><strong>{item.title}</strong><small>{item.messages.length} messages {item.retained ? '' : '· not retained'}</small></span></button>)}</nav>}
+        {view === 'conversation' && autonomy === 'autonomous' && <div className="workflow-scope"><span className="eyebrow">THIS WORKFLOW MAY AUTO-SAVE</span>{([
+          ['claims', 'Sourced claims'], ['entities', 'Existing-category entities'], ['tasks', 'Tasks'], ['events', 'Calendar events']
+        ] as const).map(([key, label]) => <label key={key}><input type="checkbox" checked={permissions[key]} onChange={(event) => setPermissions({ ...permissions, [key]: event.target.checked })}/>{label}</label>)}<small>New categories and ambiguous identities still need your review.</small></div>}
+        {view === 'conversation' && conversationId && <button className="workflow-save" onClick={() => void saveWorkflowSettings()}>Save workflow settings</button>}
       </>}
       <div className="sidebar-footer">On-device workspace · AI connections coming next</div>
     </aside>
@@ -312,6 +327,7 @@ function App() {
       <header className="topbar"><span>{workspace ? 'Knowledge workspace' : 'Welcome to Serenity'}</span>{workspace && <button className="text-button" onClick={() => void refresh()}>Refresh files ↻</button>}</header>
       {error && <div className="notice error" role="alert">{error}</div>}
       {workspace?.errors.map((item) => <div key={item} className="notice warning" role="alert">Could not read {item}</div>)}
+      {view === 'review' && workspace?.proposals.some((item) => item.status === 'pending' && item.reviewReason) && <div className="notice warning" role="status">Some proposals involve similar entities. Verify the identity before accepting them.</div>}
       {!workspace ? <section className="welcome"><div className="welcome-symbol">✳</div><span className="eyebrow">A PLACE TO CONNECT WHAT MATTERS</span><h1>Your world,<br/><em>within reach.</em></h1><p>Choose a folder on your device for Serenity's knowledge files. You can read and edit them with any text editor.</p><button className="primary" onClick={() => void chooseWorkspace()}>Choose a workspace <span>↗</span></button></section>
         : view === 'calendar' && workspace.modules.calendar ? <CalendarModule workspace={workspace} onUpdate={setWorkspace} onError={setError} />
         : view === 'tasks' && workspace.modules.tasks ? <TasksModule workspace={workspace} onUpdate={setWorkspace} onError={setError} />

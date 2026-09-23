@@ -8,6 +8,7 @@ import { identityCandidates } from '../shared/identity'
 import { contextRecords, prepareContext, scopeContextRecords } from './context'
 import { rankSemanticIndex } from './semantic-index'
 import { canAutoApply, validateReadScope, validateWorkflowPermissions } from '../shared/workflow'
+import { isDuplicateProposal } from '../shared/deduplicate'
 
 type Suggestion =
   | { kind: 'claim'; subject: string; key: string; value: string; source: string; origin: 'ai-statement' | 'ai-inference'; confidence?: number }
@@ -133,6 +134,7 @@ export async function sendMessage(
       ...(ambiguousIdentity ? { reviewReason: 'Potentially ambiguous entity identity; confirm the subject.' } :
         matches.length ? { reviewReason: 'Possible duplicate entity; confirm whether this is a new identity.' } : {})
     } as Proposal
+    if (isDuplicateProposal(proposal, await workspace.snapshot())) continue
     await workspace.addProposal(proposal)
     if (canAutoApply(input.autonomy, permissions, proposal, {
       knownCategories: snapshot.entities.map((entity) => entity.type), identityCandidates: matches.length, ambiguousIdentity

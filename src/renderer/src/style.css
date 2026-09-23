@@ -47,6 +47,20 @@ h1, h2, h3 { font-family: Georgia, 'Palatino Linotype', serif; font-weight: 400;
 input, textarea { width: 100%; background: #fff; color: #2f4739; border: 1px solid #dde5da; border-radius: 7px; padding: 12px 14px; outline-color: #80a98b; }
 .title-input { border: 0; background: transparent; border-bottom: 1px solid #e0e8de; border-radius: 0; padding: 8px 0 15px; font-family: Georgia, 'Palatino Linotype', serif; font-size: 36px; }
 textarea { min-height: 260px; resize: vertical; line-height: 1.65; }
+.body-tabs { display: flex; gap: 4px; margin-bottom: 8px; }
+.body-tabs button { border: 1px solid #dce6dc; background: #f4f7f1; color: #728677; padding: 7px 12px; border-radius: 6px; font-size: 11px; }
+.body-tabs button.active { background: #e0ede0; border-color: #b9d3c0; color: #416b4c; }
+.markdown-preview { min-height: 260px; padding: 16px 19px; background: #fff; border: 1px solid #dde5da; border-radius: 7px; line-height: 1.7; overflow-wrap: anywhere; font-size: 13px; }
+.markdown-preview :first-child { margin-top: 0; }
+.markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { line-height: 1.3; }
+.markdown-preview pre { overflow-x: auto; background: #edf2ec; padding: 12px; border-radius: 6px; }
+.markdown-preview code { background: #edf2ec; padding: 2px 4px; border-radius: 3px; }
+.markdown-preview pre code { padding: 0; }
+.markdown-preview blockquote { border-left: 3px solid #98b69f; padding-left: 14px; margin-left: 0; color: #738a78; }
+.markdown-preview table { border-collapse: collapse; width: 100%; }
+.markdown-preview th, .markdown-preview td { border: 1px solid #dce5da; padding: 6px 9px; }
+.preview-link { color: #4d7c60; text-decoration: underline; cursor: help; }
+.preview-image { color: #87988a; font-style: italic; }
 .form-actions { margin-top: 22px; display: flex; justify-content: space-between; align-items: center; gap: 10px; color: #97a59a; font-size: 11px; }
 .details { background: #f1f4ec; border-left: 1px solid #e2e9df; padding: 50px 24px; overflow: auto; }
 .details h2 { font-size: 28px; margin: 12px 0; }

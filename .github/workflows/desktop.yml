@@ -34,6 +34,9 @@ jobs:
         run: npx tsx tests/desktop-smoke.ts
         env:
           SERENITY_SMOKE_EXECUTABLE: release/win-unpacked/Serenity.exe
+      - name: Configure Linux Chromium sandbox on runner
+        if: runner.os == 'Linux'
+        run: sudo chown root:root release/linux-unpacked/chrome-sandbox && sudo chmod 4755 release/linux-unpacked/chrome-sandbox
       - name: Smoke packaged Linux app
         if: runner.os == 'Linux'
         run: xvfb-run -a npx tsx tests/desktop-smoke.ts

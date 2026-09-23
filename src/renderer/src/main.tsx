@@ -6,6 +6,8 @@ import { CalendarModule, TasksModule } from './module-views'
 import { ConversationPanel } from './conversation-panel'
 import { identityCandidates } from '../../shared/identity'
 import { defaultReadScope, defaultWorkflowPermissions } from '../../shared/workflow'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import './style.css'
 
 function App() {
@@ -13,6 +15,7 @@ function App() {
   const [selected, setSelected] = useState<string | null>(null)
   const [draft, setDraft] = useState<Entity | null>(null)
   const [dirty, setDirty] = useState(false)
+  const [bodyMode, setBodyMode] = useState<'edit' | 'preview'>('edit')
   const [error, setError] = useState('')
   const [claim, setClaim] = useState({ key: '', value: '', source: 'Me' })
   const [claimTarget, setClaimTarget] = useState('')
@@ -58,6 +61,7 @@ function App() {
       setSelected(null)
       setDraft(null)
       setDirty(false)
+      setBodyMode('edit')
       setError('')
       setView('knowledge')
       setConversationId(null)
@@ -74,6 +78,7 @@ function App() {
     setSelected(entity.id)
     setDraft({ ...entity })
     setDirty(false)
+    setBodyMode('preview')
     setError('')
     setView('knowledge')
   }
@@ -83,6 +88,7 @@ function App() {
     setSelected(null)
     setDraft({ id: '', title: '', type: '', body: '' })
     setDirty(false)
+    setBodyMode('edit')
     setError('')
     setView('knowledge')
   }
@@ -352,7 +358,12 @@ function App() {
                   <input id="type" placeholder="Person, project, concept..." value={draft.type} required onChange={(event) => { setDraft({ ...draft, type: event.target.value }); setDirty(true) }} />
                   {candidates.length > 0 && <div className="candidate-box"><strong>Could this already exist?</strong><p>Review these matches before creating a new entity. Similar names do not prove they are the same.</p>{candidates.map(({ entity }) => <button type="button" key={entity.id} onClick={() => selectEntity(entity)}>{entity.title} · {entity.type} ↗</button>)}</div>}
                   <label className="field-label" htmlFor="body">Context · Markdown</label>
-                  <textarea id="body" placeholder="Tell the story in your own words..." value={draft.body} onChange={(event) => { setDraft({ ...draft, body: event.target.value }); setDirty(true) }} />
+                  <div className="body-tabs"><button type="button" className={bodyMode === 'preview' ? 'active' : ''} onClick={() => setBodyMode('preview')}>Read</button><button type="button" className={bodyMode === 'edit' ? 'active' : ''} onClick={() => setBodyMode('edit')}>Edit Markdown</button></div>
+                  {bodyMode === 'edit' ? <textarea id="body" placeholder="Tell the story in your own words..." value={draft.body} onChange={(event) => { setDraft({ ...draft, body: event.target.value }); setDirty(true) }} /> :
+                    <div className="markdown-preview">{draft.body.trim() ? <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
+                      a: ({ children, href }) => <span className="preview-link" title={href}>{children}</span>,
+                      img: ({ alt }) => <span className="preview-image">[Image: {alt || 'no description'}]</span>
+                    }}>{draft.body}</ReactMarkdown> : <p className="hint">Nothing written yet. Switch to Edit Markdown to add context.</p>}</div>}
                   <div className="form-actions"><span>{dirty ? 'Unsaved changes' : draft.id ? 'Saved to your workspace' : 'Ready to create'}</span><button className="primary" type="submit">{draft.id ? 'Save changes' : 'Create entity'}</button></div>
                 </form>
               </section>

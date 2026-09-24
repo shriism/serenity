@@ -17,7 +17,7 @@ The selected directory is the knowledge source of truth. Provider credentials ar
 
 Use **Open workspace folder** in the sidebar to inspect or back up your files. Unsaved entity edits prompt before you switch workspaces or close the window.
 
-The desktop UI has three panes: navigation on the left, open files and tools in the middle, and a persistent AI assistant on the right. Each sidebar collapses to an icon rail and reopens with its panel button. The assistant's expand button gives chat the middle pane too. Entity and supported document files open in tabs; the assistant sees which file is active and prioritizes permitted open files for relevant questions. Its conversation inspector shows which records were actually sent. Use **⌘K** on macOS or **Ctrl+K** on Windows/Linux to search, and choose System, Light, or Dark in the navigation sidebar's Appearance control.
+The desktop UI has three panes: navigation on the left, open files and tools in the middle, and a persistent AI assistant on the right. Each sidebar collapses to an icon rail and reopens with its panel button. The assistant's expand button gives chat the middle pane too. Entity and supported document files open in tabs; the assistant sees which file is active and prioritizes permitted open files for relevant questions. Its conversation inspector shows which records were actually sent. Search and workspace actions are in the compact top bar; use **⌘K** on macOS or **Ctrl+K** on Windows/Linux to search. The app starts in Dark appearance, with Light and System options in the navigation sidebar.
 
 To check the project:
 

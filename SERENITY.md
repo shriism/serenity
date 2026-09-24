@@ -798,6 +798,8 @@ in central tabs. The assistant knows the active file path and may read
 its content when permitted; it prioritizes relevant open files and
 discloses the records actually sent with each response. Keep fast search
 and an integrated Home overview of upcoming items, review proposals,
-and connections. Follow the operating system's light or dark appearance
-by default, with manual overrides and a near-black / muted periwinkle
-identity plus a coordinated light palette.
+and connections. Default to a restrained dark appearance, with Light
+and System choices available. Use a near-black / muted periwinkle
+identity plus a coordinated light palette. Give the active document
+the strongest emphasis; keep navigation, history, and advanced AI
+controls quieter than its content.

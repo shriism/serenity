@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ArrowRight, FolderOpen, Link2, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, RotateCw, Search, Sparkles } from 'lucide-react'
+import { ArrowRight, FolderOpen, Link2, Maximize2, Minimize2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, RotateCw, Search, Sparkles } from 'lucide-react'
 import type { Autonomy, Conversation, Entity, Provider, ReadScope, SearchResult, WorkflowPermissions, WorkspaceSnapshot } from '../../shared/types'
 import { CalendarModule, TasksModule } from './module-views'
 import { ConversationPanel } from './conversation-panel'
@@ -67,10 +67,11 @@ function App() {
   useEffect(() => { try { localStorage.setItem('serenity.right-open', String(rightOpen)) } catch { /* Still works for this session. */ } }, [rightOpen])
   useEffect(() => {
     const narrow = window.matchMedia('(max-width: 1020px)')
-    const onChange = (): void => { if (narrow.matches) setLeftOpen(false) }
+    const onChange = (): void => { if (window.innerWidth <= 1020) setLeftOpen(false) }
     onChange()
     narrow.addEventListener('change', onChange)
-    return () => narrow.removeEventListener('change', onChange)
+    window.addEventListener('resize', onChange)
+    return () => { narrow.removeEventListener('change', onChange); window.removeEventListener('resize', onChange) }
   }, [])
 
   const closePalette = useCallback(() => {
@@ -484,7 +485,7 @@ function App() {
 
   return <div className={`app three-pane ${leftOpen ? '' : 'left-collapsed'} ${rightOpen ? '' : 'right-collapsed'} ${aiExpanded && rightOpen ? 'ai-expanded' : ''}`}>
     <aside className="sidebar" aria-label="Workspace sidebar">
-      <div className="brand"><img className="brand-icon" src={serenityIcon} alt=""/><div><strong>Serenity</strong><small>PERSONAL KNOWLEDGE</small></div></div>
+      <div className="brand"><img className="brand-icon" src={serenityIcon} alt=""/><div><strong>Serenity</strong></div></div>
       <button className="left-rail-toggle" onClick={() => setLeftOpen(!leftOpen)} aria-label={leftOpen ? 'Collapse navigation' : 'Expand navigation'} title={leftOpen ? 'Collapse navigation' : 'Expand navigation'}>{leftOpen ? <PanelLeftClose size={17}/> : <PanelLeftOpen size={19}/>}</button>
       <div className="workspace-control">
         <button className="workspace-button" onClick={() => void chooseWorkspace()} title={workspace?.path ?? 'Choose a workspace'}>
@@ -500,17 +501,15 @@ function App() {
       <div className="sidebar-footer">
         {workspace && <button className="footer-folder" onClick={() => void window.serenity.openWorkspaceFolder().catch((cause) => setError(String(cause)))}><FolderOpen size={16}/> Open workspace folder</button>}
         <ThemeControl preference={theme} onChange={setTheme}/>
-        <div className="local-status"><span/> On this device</div>
       </div>
     </aside>
     <main className="main" id="workspace-main">
       <header className="topbar">
-        <div className="breadcrumbs"><span>Workspace</span><span className="breadcrumb-divider">/</span><strong>{workspace ? currentTab?.title ?? title[view] : 'Welcome'}</strong></div>
+        <div className="breadcrumbs"><strong>{workspace ? title[view] : 'Welcome'}</strong></div>
         {workspace && <div className="topbar-actions">
-          <button className="topbar-search" onClick={() => setPaletteOpen(true)}><Search size={16}/><span>Search anything</span><kbd>{navigator.platform.includes('Mac') ? '⌘ K' : 'Ctrl K'}</kbd></button>
-          <button className="topbar-icon" onClick={() => void refresh()} title="Refresh files" aria-label="Refresh files"><RotateCw size={17}/></button>
-          <button className="primary topbar-create" onClick={newEntity}><Plus size={16}/> New entity</button>
-          <button className="topbar-icon show-ai" onClick={() => { setRightOpen(!rightOpen); setAIExpanded(false) }} title={rightOpen ? 'Hide AI sidebar' : 'Show AI sidebar'} aria-label={rightOpen ? 'Hide AI sidebar' : 'Show AI sidebar'}>{rightOpen ? <PanelRightClose size={18}/> : <PanelRightOpen size={18}/>}</button>
+          <button className="topbar-search" onClick={() => setPaletteOpen(true)} title={`Search workspace (${navigator.platform.includes('Mac') ? '⌘K' : 'Ctrl+K'})`} aria-label="Search workspace"><Search size={18}/></button>
+          <details className="topbar-more"><summary aria-label="Workspace actions" title="Workspace actions"><MoreHorizontal size={19}/></summary><div className="topbar-menu"><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); newEntity() }}><Plus size={15}/> New entity</button><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); void refresh() }}><RotateCw size={15}/> Refresh files</button></div></details>
+          {!rightOpen && <button className="topbar-icon show-ai" onClick={() => setRightOpen(true)} title="Show AI sidebar" aria-label="Show AI sidebar"><PanelRightOpen size={18}/></button>}
         </div>}
       </header>
       {workspace && <WorkspaceTabs tabs={tabs} active={activeTab} onSelect={activateTab} onClose={closeTab}/>}
@@ -518,7 +517,7 @@ function App() {
       {workspace?.errors.map((item) => <div key={item} className="notice warning" role="alert">Could not read {item}</div>)}
       {view === 'review' && workspace?.proposals.some((item) => item.status === 'pending' && item.reviewReason) && <div className="notice warning" role="status">Some proposals involve similar entities. Verify the identity before accepting them.</div>}
       {!workspace ? <section className="welcome-screen"><div className="welcome-visual"><img src={serenityIcon} alt=""/><span className="visual-orbit orbit-one"/><span className="visual-orbit orbit-two"/><span className="visual-dot dot-one"/><span className="visual-dot dot-two"/><span className="visual-dot dot-three"/></div><div className="welcome-copy"><span className="eyebrow">A SPACE FOR EVERYTHING THAT MATTERS</span><h1>Your world,<br/><em>more connected.</em></h1><p>A private workspace for your knowledge, relationships, plans, and the ideas in between. Choose a folder on your device to begin.</p><button className="primary welcome-action" onClick={() => void chooseWorkspace()}><FolderOpen size={18}/> Choose a workspace <ArrowRight size={17}/></button><small>Your files stay in a folder you control.</small></div></section>
-        : view === 'home' ? <HomePanel workspace={workspace} onNavigate={navigate} onSelectEntity={selectEntity} onNewEntity={newEntity} onAsk={() => startConversation()} onImport={() => { setView('documents'); void importDocuments() }} onOpenEvent={openEvent} onOpenTask={openTask} />
+         : view === 'home' ? <HomePanel workspace={workspace} onNavigate={navigate} onSelectEntity={selectEntity} onNewEntity={newEntity} onImport={() => { setView('documents'); void importDocuments() }} onOpenEvent={openEvent} onOpenTask={openTask} />
         : view === 'calendar' && workspace.modules.calendar ? <CalendarModule workspace={workspace} onUpdate={setWorkspace} onError={setError} focusEventId={focusedEventId} focusVersion={focusVersion} />
         : view === 'tasks' && workspace.modules.tasks ? <TasksModule workspace={workspace} onUpdate={setWorkspace} onError={setError} focusTaskId={focusedTaskId} focusVersion={focusVersion} />
         : view === 'review' ? <ReviewPanel workspace={workspace} onResolve={(id, accept) => void resolveProposal(id, accept)} onAttach={(id, entityId) => void attachProposal(id, entityId)} onOpenSource={(name) => void openDocument(name)} />
@@ -530,25 +529,24 @@ function App() {
               <aside className="knowledge-list-panel"><div className="list-heading"><span className="eyebrow">LIBRARY <span className="count">{workspace.entities.length}</span></span><button className="icon-button" onClick={newEntity} aria-label="New entity" title="New entity"><Plus size={15}/></button></div>
                 <nav className="entity-list" aria-label="Entities">{workspace.entities.map((entity) => <button key={entity.id} className={`entity-link ${selected === entity.id ? 'active' : ''}`} onClick={() => selectEntity(entity)}><span className="entity-icon">{entity.title.slice(0, 1).toUpperCase()}</span><span><strong>{entity.title}</strong><small>{entity.type}</small></span></button>)}</nav>
               </aside>
-              <section className="editor">
-                <span className="eyebrow">{draft.id ? 'ENTITY' : 'NEW ENTITY'}</span>
-                <form onSubmit={(event) => void saveEntity(event)}>
-                  <label className="field-label" htmlFor="title">Name</label>
-                  <input id="title" className="title-input" placeholder="What is it called?" value={draft.title} required onChange={(event) => { setDraft({ ...draft, title: event.target.value }); setDirty(true) }} />
-                  <label className="field-label" htmlFor="type">Type · your own words</label>
-                  <input id="type" placeholder="Person, project, concept..." value={draft.type} required onChange={(event) => { setDraft({ ...draft, type: event.target.value }); setDirty(true) }} />
-                  {candidates.length > 0 && <div className="candidate-box"><strong>Could this already exist?</strong><p>Review these matches before creating a new entity. Similar names do not prove they are the same.</p>{candidates.map(({ entity }) => <button type="button" key={entity.id} onClick={() => selectEntity(entity)}>{entity.title} · {entity.type} ↗</button>)}</div>}
-                  <label className="field-label" htmlFor="body">Context · Markdown</label>
-                  <div className="body-tabs"><button type="button" className={bodyMode === 'preview' ? 'active' : ''} onClick={() => setBodyMode('preview')}>Read</button><button type="button" className={bodyMode === 'edit' ? 'active' : ''} onClick={() => setBodyMode('edit')}>Edit Markdown</button></div>
+               <section className="editor">
+                 <form onSubmit={(event) => void saveEntity(event)}>
+                   <label className={draft.id ? 'sr-only' : 'field-label'} htmlFor="title">Name</label>
+                   <input id="title" className="title-input" placeholder="What is it called?" value={draft.title} required onChange={(event) => { setDraft({ ...draft, title: event.target.value }); setDirty(true) }} />
+                   <label className={draft.id ? 'sr-only' : 'field-label'} htmlFor="type">Type · your own words</label>
+                   <input id="type" className="entity-type-input" placeholder="Person, project, concept..." value={draft.type} required onChange={(event) => { setDraft({ ...draft, type: event.target.value }); setDirty(true) }} />
+                   {candidates.length > 0 && <div className="candidate-box"><strong>Could this already exist?</strong><p>Review these matches before creating a new entity. Similar names do not prove they are the same.</p>{candidates.map(({ entity }) => <button type="button" key={entity.id} onClick={() => selectEntity(entity)}>{entity.title} · {entity.type} ↗</button>)}</div>}
+                   <label className="sr-only" htmlFor="body">Context · Markdown</label>
+                   <div className="body-tabs"><button type="button" className={bodyMode === 'preview' ? 'active' : ''} onClick={() => setBodyMode('preview')}>Read</button><button type="button" className={bodyMode === 'edit' ? 'active' : ''} onClick={() => setBodyMode('edit')}>Edit</button></div>
                   {bodyMode === 'edit' ? <textarea id="body" placeholder="Tell the story in your own words..." value={draft.body} onChange={(event) => { setDraft({ ...draft, body: event.target.value }); setDirty(true) }} /> :
                     <div className="markdown-preview">{draft.body.trim() ? <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
                       a: ({ children, href }) => <span className="preview-link" title={href}>{children}</span>,
                       img: ({ alt }) => <span className="preview-image">[Image: {alt || 'no description'}]</span>
                     }}>{draft.body}</ReactMarkdown> : <p className="hint">Nothing written yet. Switch to Edit Markdown to add context.</p>}</div>}
-                  <div className="form-actions"><span>{dirty ? 'Unsaved changes' : draft.id ? 'Saved to your workspace' : 'Ready to create'}</span><button className="primary" type="submit">{draft.id ? 'Save changes' : 'Create entity'}</button></div>
-                </form>
-              </section>
-              <aside className="details"><span className="eyebrow">CLAIMS & SOURCES</span><h2>What we know</h2><p className="detail-intro">Individual facts stay connected to their source. Conflicting claims remain visible.</p>
+                   <div className="form-actions"><span>{dirty ? 'Unsaved changes' : draft.id ? 'Saved' : 'Ready to create'}</span>{(dirty || !draft.id) && <button className="primary" type="submit">{draft.id ? 'Save changes' : 'Create entity'}</button>}</div>
+                 </form>
+               </section>
+               <section className="details"><details className="knowledge-details" open={conflicts.length > 0 ? true : undefined}><summary><span>Facts & sources</span><small>{claims.length} {claims.length === 1 ? 'claim' : 'claims'}{conflicts.length ? ` · ${conflicts.length} to clarify` : ''}</small></summary><div className="knowledge-details-body">
                 {resolvedKeys.map((key) => { const choice = activeClaims.find((item) => item.key === key && item.isCurrent)!; const decision = [...workspace.resolutions].reverse().find((item) => item.subject === selected && item.key === key && item.currentClaimId === choice.id); return <div className="current-banner" key={key}><strong>Current {key}: {workspace.entities.find((entity) => entity.id === choice.value)?.title ?? choice.value}</strong><small>{decision?.reason ?? 'Selected by the user'} · earlier claims remain below.</small><button onClick={() => void clearCurrent(key)}>Undo designation</button></div> })}
                  {conflicts.map((key) => { const possible = activeClaims.filter((item) => item.key === key); const humanClaims = possible.filter((item) => item.origin === 'human'); const likely = humanClaims.length === 1 ? humanClaims[0] : null; return <div className="conflict" key={key}><strong>Conflicting {key}</strong><small>{likely ? `A direct statement suggests ${workspace.entities.find((entity) => entity.id === likely.value)?.title ?? likely.value}. This is not resolved.` : 'No clear answer from the available sources. Please clarify.'}</small><button onClick={() => startConversation(`I have conflicting information about ${draft.title}'s ${key}. What do the sources say, and what should I clarify?`)}>Discuss this ↗</button></div> })}
                 {claims.map((item) => <ClaimCard key={item.id} claim={item} target={workspace.entities.find((entity) => entity.id === item.value)} mergedFrom={workspace.merges.find((merge) => merge.id === item.mergedFrom)} conflicting={conflicts.includes(item.key)} previousAlternative={resolvedKeys.includes(item.key)} sourceIsDocument={workspace.documents.some((document) => document.name === item.source)} onOpenSource={(name) => void openDocument(name)} onSelectTarget={selectEntity} onMarkCurrent={(id) => void markCurrent(id)} onRetract={(id) => void retractClaim(id)} />)}
@@ -556,8 +554,8 @@ function App() {
                 {incoming.length > 0 && <div className="incoming"><h3>Connected from elsewhere</h3>{incoming.map((link) => { const source = workspace.entities.find((entity) => entity.id === link.subject); return source && <button key={link.id} onClick={() => selectEntity(source)}>{source.title} · {link.key} ↗</button> })}</div>}
                 {selected && <form className="claim-form" onSubmit={(event) => void addClaim(event)}><h3>Add a claim</h3><label htmlFor="claim-key">About or relationship</label><input id="claim-key" placeholder="e.g. birthday, friend of" required value={claim.key} onChange={(event) => setClaim({ ...claim, key: event.target.value })}/><label htmlFor="claim-value">Value</label><input id="claim-value" placeholder="e.g. September 7" required={!claimTarget} value={claim.value} onChange={(event) => setClaim({ ...claim, value: event.target.value })} disabled={Boolean(claimTarget)}/><label htmlFor="claim-target">Or link another entity</label><select id="claim-target" value={claimTarget} onChange={(event) => setClaimTarget(event.target.value)}><option value="">No entity linked</option>{workspace.entities.filter((entity) => entity.id !== selected).map((entity) => <option key={entity.id} value={entity.id}>{entity.title}</option>)}</select><label htmlFor="claim-source">Source</label><input id="claim-source" required value={claim.source} onChange={(event) => setClaim({ ...claim, source: event.target.value })}/><button type="submit" className="secondary">Add claim +</button></form>}
                 {selected && workspace.entities.length > 1 && <div className="merge-form"><h3>Same as another entity?</h3><p>Archive this entity and resolve its links to the selected entity. Its original file and history remain available.</p><select aria-label="Merge into" value={mergeTarget} onChange={(event) => setMergeTarget(event.target.value)}><option value="">Choose the surviving entity</option>{workspace.entities.filter((entity) => entity.id !== selected).map((entity) => <option key={entity.id} value={entity.id}>{entity.title}</option>)}</select><button className="secondary" disabled={!mergeTarget} onClick={() => void mergeSelected()}>Merge into selected entity</button></div>}
-                {selected && workspace.merges.filter((item) => item.target === selected).map((item) => <div className="merge-form" key={item.id}><h3>Archived as {draft.title}</h3><p>{item.title} was merged here. Its original file and links can be restored without deleting the merge history.</p><button className="secondary" onClick={() => void undoMerge(item.id)}>Restore {item.title}</button></div>)}
-              </aside>
+                 {selected && workspace.merges.filter((item) => item.target === selected).map((item) => <div className="merge-form" key={item.id}><h3>Archived as {draft.title}</h3><p>{item.title} was merged here. Its original file and links can be restored without deleting the merge history.</p><button className="secondary" onClick={() => void undoMerge(item.id)}>Restore {item.title}</button></div>)}
+               </div></details></section>
             </div>}
     </main>
     {workspace && (rightOpen ? <aside className="assistant-sidebar" aria-label="AI assistant">

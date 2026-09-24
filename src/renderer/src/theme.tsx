@@ -6,8 +6,8 @@ export type ThemePreference = 'system' | 'light' | 'dark'
 function savedPreference(): ThemePreference {
   try {
     const saved = localStorage.getItem('serenity.theme')
-    return saved === 'light' || saved === 'dark' ? saved : 'system'
-  } catch { return 'system' }
+    return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'dark'
+  } catch { return 'dark' }
 }
 
 export function useTheme(): [ThemePreference, (theme: ThemePreference) => void] {

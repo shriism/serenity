@@ -17,10 +17,10 @@ interface Props {
 
 export function ConversationList(props: Props) {
   return <aside className="conversation-list">
-    <div className="conversation-list-heading"><div><span className="eyebrow">YOUR THREADS</span><h2>Conversations</h2></div>
-      <button className="icon-button" title="New conversation" aria-label="New conversation" onClick={props.onNew} disabled={props.busy}><Plus size={16}/></button>
+    <div className="conversation-list-heading">
+      <button className="icon-button" title="New conversation" aria-label="New conversation" onClick={props.onNew} disabled={props.busy}><Plus size={15}/><span>New chat</span></button>
     </div>
-    <details className="thread-switcher"><summary>Recent conversations <span>{props.workspace.conversations.length}</span></summary>
+    <details className="thread-switcher"><summary>History <span>{props.workspace.conversations.length}</span></summary>
     <nav className="conversation-history-list" aria-label="Conversations">
       {props.workspace.conversations.map((item) => <button key={item.id} className={props.conversationId === item.id ? 'active' : ''}
         disabled={props.busy} onClick={() => props.onSelect(item)}>
@@ -30,7 +30,7 @@ export function ConversationList(props: Props) {
       {!props.workspace.conversations.length && <p className="hint">Questions and ideas you explore together will show up here.</p>}
     </nav></details>
     <details className="conversation-workflow">
-      <summary><Settings2 size={16}/> Workflow settings</summary>
+      <summary title="Conversation settings" aria-label="Conversation settings"><Settings2 size={16}/><span>Settings</span></summary>
       <div className="conversation-workflow-body">
         {props.autonomy === 'autonomous' && <div className="workflow-scope"><span className="eyebrow">MAY AUTO-SAVE</span>
           {([

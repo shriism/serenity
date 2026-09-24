@@ -1,6 +1,6 @@
 import type { FormEvent } from 'react'
 import type { Autonomy, Conversation, Provider } from '../../shared/types'
-import { FileText, Link2 } from 'lucide-react'
+import { ArrowUp, ChevronDown, FileText, Link2, MoreHorizontal } from 'lucide-react'
 
 interface Props {
   conversation?: Conversation
@@ -22,10 +22,10 @@ interface Props {
 
 export function ConversationPanel(props: Props) {
   return <section className="conversation-panel">
-    <div className="conversation-header">
-      <div><span className="eyebrow">HUMAN + AI</span><h2>{props.conversation?.title ?? 'New conversation'}</h2></div>
-      {props.conversation && <button className="text-button" onClick={props.onDelete}>Delete conversation</button>}
-    </div>
+    {props.conversation && <div className="conversation-header">
+      <h2 title={props.conversation.title}>{props.conversation.title}</h2>
+      <details className="conversation-menu"><summary title="Conversation actions" aria-label="Conversation actions"><MoreHorizontal size={18}/></summary><div><button onClick={props.onDelete}>Delete conversation</button></div></details>
+    </div>}
     {props.activeFile && <div className="ai-context-strip" title={props.activeFile.path}>
       {props.activeFile.kind === 'entity' ? <Link2 size={14}/> : <FileText size={14}/>}
       <span><strong>{props.activeFile.name}</strong><small>{props.activeFile.allowed ? `${props.activeFile.path} · prioritized for relevant questions${props.openFileCount > 1 ? ` · ${props.openFileCount - 1} other open` : ''}` : 'Not in this conversation’s selected read scope'}</small></span>
@@ -33,8 +33,8 @@ export function ConversationPanel(props: Props) {
     {!props.activeFile && props.openFileCount > 0 && <div className="ai-context-strip"><FileText size={14}/><span><strong>{props.openFileCount} open {props.openFileCount === 1 ? 'file' : 'files'}</strong><small>Permitted open files can inform relevant answers</small></span></div>}
     <div className="messages">
       {!props.conversation && <div className="conversation-intro">
-        <span className="welcome-symbol">✳</span><h1>Think together.</h1>
-        <p>Ask about anything in your workspace. Changes to your knowledge arrive as proposals for review.</p>
+        <h1>Think together.</h1>
+        <p>Ask about what’s here. Suggested changes come to you for review.</p>
       </div>}
       {props.conversation?.messages.map((item) => <article key={item.id} className={`message ${item.role}`}>
         <small>{item.role === 'assistant' ? item.provider : 'You'}</small><p>{item.text}</p>
@@ -54,20 +54,24 @@ export function ConversationPanel(props: Props) {
       {props.busy && <p className="hint">{props.provider} is thinking…</p>}
     </div>
     <form className="compose" onSubmit={props.onSend}>
-      <div className="compose-settings">
-        <label>Provider <select value={props.provider} onChange={(event) => props.onProviderChange(event.target.value as Provider)}>
-          <option value="copilot">GitHub Copilot</option><option value="codex">OpenAI Codex</option>
-        </select></label>
-        <label>Autonomy <select value={props.autonomy} onChange={(event) => props.onAutonomyChange(event.target.value as Autonomy)}>
-          <option value="ask">Ask first</option><option value="propose">Read & propose</option><option value="autonomous">Auto-save permitted proposals</option>
-        </select></label>
-        <label className="retention"><input type="checkbox" checked={props.retained} onChange={(event) => props.onRetentionChange(event.target.checked)}/> Save history</label>
-      </div>
       <div className="compose-input">
-        <textarea value={props.message} onChange={(event) => props.onMessageChange(event.target.value)} placeholder="Ask a question or share something to remember..." disabled={props.busy} aria-label="Message"/>
-        {props.busy && <button type="button" className="secondary" onClick={props.onCancel}>Cancel</button>}
-        <button type="submit" className="primary" disabled={props.busy || !props.message.trim()}>Send ↗</button>
+        <textarea value={props.message} onChange={(event) => props.onMessageChange(event.target.value)} placeholder="Ask Serenity…" disabled={props.busy} aria-label="Message"/>
+        <div className="compose-actions">
+          {props.busy && <button type="button" className="text-button" onClick={props.onCancel}>Cancel</button>}
+          <button type="submit" className="primary" disabled={props.busy || !props.message.trim()} aria-label="Send message" title="Send message"><ArrowUp size={18}/></button>
+        </div>
       </div>
+      <details className="compose-options"><summary>{props.provider === 'copilot' ? 'GitHub Copilot' : 'OpenAI Codex'} <span>·</span> {props.autonomy === 'propose' ? 'Read & propose' : props.autonomy === 'ask' ? 'Ask first' : 'Auto-save permitted'} <ChevronDown size={13}/></summary>
+        <div className="compose-settings">
+          <label>Provider <select value={props.provider} onChange={(event) => props.onProviderChange(event.target.value as Provider)}>
+            <option value="copilot">GitHub Copilot</option><option value="codex">OpenAI Codex</option>
+          </select></label>
+          <label>Autonomy <select value={props.autonomy} onChange={(event) => props.onAutonomyChange(event.target.value as Autonomy)}>
+            <option value="ask">Ask first</option><option value="propose">Read & propose</option><option value="autonomous">Auto-save permitted proposals</option>
+          </select></label>
+          <label className="retention"><input type="checkbox" checked={props.retained} onChange={(event) => props.onRetentionChange(event.target.checked)}/> Save history</label>
+        </div>
+      </details>
     </form>
   </section>
 }

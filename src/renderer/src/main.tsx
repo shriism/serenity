@@ -22,6 +22,7 @@ import { DocumentPreview } from './document-preview'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import './style.css'
+import './studio.css'
 
 const serenityIcon = new URL('../../../assets/icon.svg', import.meta.url).href
 function storedPanel(key: string, fallback: boolean): boolean {
@@ -40,7 +41,7 @@ function App() {
   const [claimTarget, setClaimTarget] = useState('')
   const [mergeTarget, setMergeTarget] = useState('')
   const [view, setView] = useState<View>('home')
-  const [leftOpen, setLeftOpen] = useState(() => storedPanel('serenity.left-open', !window.matchMedia('(max-width: 1020px)').matches))
+  const [leftOpen, setLeftOpen] = useState(() => storedPanel('serenity.left-open', false))
   const [rightOpen, setRightOpen] = useState(() => storedPanel('serenity.right-open', true))
   const [aiExpanded, setAIExpanded] = useState(false)
   const [tabs, setTabs] = useState<WorkspaceTab[]>([])
@@ -119,11 +120,21 @@ function App() {
         event.preventDefault()
         if (paletteOpen) closePalette()
         else setPaletteOpen(true)
-      } else if (event.key === 'Escape') closePalette()
+      } else if ((event.metaKey || event.ctrlKey) && !event.repeat && !(event.target instanceof HTMLElement && event.target.closest('input, textarea, select, [contenteditable="true"]')) && event.key.toLowerCase() === 'b') {
+        event.preventDefault()
+        setLeftOpen((open) => !open)
+      } else if ((event.metaKey || event.ctrlKey) && !event.repeat && !(event.target instanceof HTMLElement && event.target.closest('input, textarea, select, [contenteditable="true"]')) && event.key.toLowerCase() === 'j') {
+        event.preventDefault()
+        setRightOpen((open) => !open)
+        setAIExpanded(false)
+      } else if (event.key === 'Escape') {
+        if (paletteOpen) closePalette()
+        else if (leftOpen) setLeftOpen(false)
+      }
     }
     window.addEventListener('keydown', onShortcut)
     return () => window.removeEventListener('keydown', onShortcut)
-  }, [closePalette, paletteOpen])
+  }, [closePalette, paletteOpen, leftOpen])
 
   async function chooseWorkspace() {
     try {
@@ -302,6 +313,7 @@ function App() {
     if (destination === 'calendar') setFocusedEventId(null)
     if (destination === 'tasks') setFocusedTaskId(null)
     setView(destination)
+    if (leftOpen) setLeftOpen(false)
     if (destination === 'activity') void refresh()
   }
 
@@ -483,10 +495,11 @@ function App() {
     allowed: readScope.mode === 'workspace' || (currentTab.kind === 'entity' ? readScope.entityIds.includes(currentTab.id) : readScope.documentNames.includes(currentTab.id))
   } : undefined
 
-  return <div className={`app three-pane ${leftOpen ? '' : 'left-collapsed'} ${rightOpen ? '' : 'right-collapsed'} ${aiExpanded && rightOpen ? 'ai-expanded' : ''}`}>
+  return <div className={`app serenity-studio ${leftOpen ? 'dock-open' : 'left-collapsed'} ${rightOpen ? '' : 'right-collapsed'} ${aiExpanded && rightOpen ? 'ai-expanded' : ''}`}>
     <aside className="sidebar" aria-label="Workspace sidebar">
+      <div className="sidebar-inner">
       <div className="brand"><img className="brand-icon" src={serenityIcon} alt=""/><div><strong>Serenity</strong></div></div>
-      <button className="left-rail-toggle" onClick={() => setLeftOpen(!leftOpen)} aria-label={leftOpen ? 'Collapse navigation' : 'Expand navigation'} title={leftOpen ? 'Collapse navigation' : 'Expand navigation'}>{leftOpen ? <PanelLeftClose size={17}/> : <PanelLeftOpen size={19}/>}</button>
+      <button className="left-rail-toggle" onClick={() => setLeftOpen(!leftOpen)} aria-label={leftOpen ? 'Collapse navigation' : 'Expand navigation'} aria-keyshortcuts={navigator.platform.includes('Mac') ? 'Meta+B' : 'Control+B'} title={`${leftOpen ? 'Collapse' : 'Expand'} navigation (${navigator.platform.includes('Mac') ? '⌘B' : 'Ctrl+B'})`}>{leftOpen ? <PanelLeftClose size={17}/> : <PanelLeftOpen size={19}/>}</button>
       <div className="workspace-control">
         <button className="workspace-button" onClick={() => void chooseWorkspace()} title={workspace?.path ?? 'Choose a workspace'}>
           <span className="workspace-avatar">{workspace ? workspace.path.split(/[\\/]/).filter(Boolean).at(-1)?.slice(0, 1).toUpperCase() : '+'}</span>
@@ -498,24 +511,27 @@ function App() {
       {workspace && <div className="sidebar-scroller">
         <AppNavigation workspace={workspace} view={view} pendingCount={pending.length} onNavigate={navigate}/>
       </div>}
-      <div className="sidebar-footer">
+      <div className="sidebar-footer" inert={!leftOpen}>
         {workspace && <button className="footer-folder" onClick={() => void window.serenity.openWorkspaceFolder().catch((cause) => setError(String(cause)))}><FolderOpen size={16}/> Open workspace folder</button>}
         <ThemeControl preference={theme} onChange={setTheme}/>
       </div>
+      </div>
     </aside>
+    <div className="workbench">
     <main className="main" id="workspace-main">
       <header className="topbar">
         <div className="breadcrumbs"><strong>{workspace ? title[view] : 'Welcome'}</strong></div>
         {workspace && <div className="topbar-actions">
           <button className="topbar-search" onClick={() => setPaletteOpen(true)} title={`Search workspace (${navigator.platform.includes('Mac') ? '⌘K' : 'Ctrl+K'})`} aria-label="Search workspace"><Search size={18}/></button>
           <details className="topbar-more"><summary aria-label="Workspace actions" title="Workspace actions"><MoreHorizontal size={19}/></summary><div className="topbar-menu"><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); newEntity() }}><Plus size={15}/> New entity</button><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); void refresh() }}><RotateCw size={15}/> Refresh files</button></div></details>
-          {!rightOpen && <button className="topbar-icon show-ai" onClick={() => setRightOpen(true)} title="Show AI sidebar" aria-label="Show AI sidebar"><PanelRightOpen size={18}/></button>}
+          {!rightOpen && <button className="topbar-icon show-ai" onClick={() => setRightOpen(true)} title={`Show AI assistant (${navigator.platform.includes('Mac') ? '⌘J' : 'Ctrl+J'})`} aria-label="Show AI sidebar" aria-keyshortcuts={navigator.platform.includes('Mac') ? 'Meta+J' : 'Control+J'}><PanelRightOpen size={18}/></button>}
         </div>}
       </header>
       {workspace && <WorkspaceTabs tabs={tabs} active={activeTab} onSelect={activateTab} onClose={closeTab}/>}
       {error && <div className="notice error" role="alert">{error}</div>}
       {workspace?.errors.map((item) => <div key={item} className="notice warning" role="alert">Could not read {item}</div>)}
       {view === 'review' && workspace?.proposals.some((item) => item.status === 'pending' && item.reviewReason) && <div className="notice warning" role="status">Some proposals involve similar entities. Verify the identity before accepting them.</div>}
+      <div className="workspace-body" key={`${view}:${activeTab ?? ''}`}>
       {!workspace ? <section className="welcome-screen"><div className="welcome-visual"><img src={serenityIcon} alt=""/><span className="visual-orbit orbit-one"/><span className="visual-orbit orbit-two"/><span className="visual-dot dot-one"/><span className="visual-dot dot-two"/><span className="visual-dot dot-three"/></div><div className="welcome-copy"><span className="eyebrow">A SPACE FOR EVERYTHING THAT MATTERS</span><h1>Your world,<br/><em>more connected.</em></h1><p>A private workspace for your knowledge, relationships, plans, and the ideas in between. Choose a folder on your device to begin.</p><button className="primary welcome-action" onClick={() => void chooseWorkspace()}><FolderOpen size={18}/> Choose a workspace <ArrowRight size={17}/></button><small>Your files stay in a folder you control.</small></div></section>
          : view === 'home' ? <HomePanel workspace={workspace} onNavigate={navigate} onSelectEntity={selectEntity} onNewEntity={newEntity} onImport={() => { setView('documents'); void importDocuments() }} onOpenEvent={openEvent} onOpenTask={openTask} />
         : view === 'calendar' && workspace.modules.calendar ? <CalendarModule workspace={workspace} onUpdate={setWorkspace} onError={setError} focusEventId={focusedEventId} focusVersion={focusVersion} />
@@ -555,19 +571,21 @@ function App() {
                 {selected && <form className="claim-form" onSubmit={(event) => void addClaim(event)}><h3>Add a claim</h3><label htmlFor="claim-key">About or relationship</label><input id="claim-key" placeholder="e.g. birthday, friend of" required value={claim.key} onChange={(event) => setClaim({ ...claim, key: event.target.value })}/><label htmlFor="claim-value">Value</label><input id="claim-value" placeholder="e.g. September 7" required={!claimTarget} value={claim.value} onChange={(event) => setClaim({ ...claim, value: event.target.value })} disabled={Boolean(claimTarget)}/><label htmlFor="claim-target">Or link another entity</label><select id="claim-target" value={claimTarget} onChange={(event) => setClaimTarget(event.target.value)}><option value="">No entity linked</option>{workspace.entities.filter((entity) => entity.id !== selected).map((entity) => <option key={entity.id} value={entity.id}>{entity.title}</option>)}</select><label htmlFor="claim-source">Source</label><input id="claim-source" required value={claim.source} onChange={(event) => setClaim({ ...claim, source: event.target.value })}/><button type="submit" className="secondary">Add claim +</button></form>}
                 {selected && workspace.entities.length > 1 && <div className="merge-form"><h3>Same as another entity?</h3><p>Archive this entity and resolve its links to the selected entity. Its original file and history remain available.</p><select aria-label="Merge into" value={mergeTarget} onChange={(event) => setMergeTarget(event.target.value)}><option value="">Choose the surviving entity</option>{workspace.entities.filter((entity) => entity.id !== selected).map((entity) => <option key={entity.id} value={entity.id}>{entity.title}</option>)}</select><button className="secondary" disabled={!mergeTarget} onClick={() => void mergeSelected()}>Merge into selected entity</button></div>}
                  {selected && workspace.merges.filter((item) => item.target === selected).map((item) => <div className="merge-form" key={item.id}><h3>Archived as {draft.title}</h3><p>{item.title} was merged here. Its original file and links can be restored without deleting the merge history.</p><button className="secondary" onClick={() => void undoMerge(item.id)}>Restore {item.title}</button></div>)}
-               </div></details></section>
-            </div>}
+                </div></details></section>
+             </div>}
+      </div>
     </main>
     {workspace && (rightOpen ? <aside className="assistant-sidebar" aria-label="AI assistant">
       <div className="assistant-toolbar"><div><Sparkles size={18}/><span>Assistant</span><small>WITH YOUR WORKSPACE</small></div><div className="assistant-toolbar-actions">
         <button onClick={() => setAIExpanded(!aiExpanded)} aria-label={aiExpanded ? 'Return AI to sidebar' : 'Expand AI over workspace'} title={aiExpanded ? 'Return AI to sidebar' : 'Expand AI over workspace'}>{aiExpanded ? <Minimize2 size={17}/> : <Maximize2 size={17}/>}</button>
-        <button onClick={() => { setRightOpen(false); setAIExpanded(false) }} aria-label="Collapse AI sidebar" title="Collapse AI sidebar"><PanelRightClose size={17}/></button>
+        <button onClick={() => { setRightOpen(false); setAIExpanded(false) }} aria-label="Collapse AI sidebar" aria-keyshortcuts={navigator.platform.includes('Mac') ? 'Meta+J' : 'Control+J'} title={`Collapse AI sidebar (${navigator.platform.includes('Mac') ? '⌘J' : 'Ctrl+J'})`}><PanelRightClose size={17}/></button>
       </div></div>
       <ConversationList workspace={workspace} conversationId={conversationId} autonomy={autonomy} permissions={permissions} readScope={readScope} busy={busy}
         onNew={() => startConversation()} onSelect={selectConversation} onPermissionsChange={setPermissions} onReadScopeChange={setReadScope} onSaveSettings={() => void saveWorkflowSettings()} />
       {readScope.mode === 'selected' && <div className="ai-scope-note" role="status">Selected knowledge only · review allowed files in Workflow settings</div>}
       <ConversationPanel conversation={conversation} provider={provider} onProviderChange={setProvider} autonomy={autonomy} onAutonomyChange={setAutonomy} retained={retained} onRetentionChange={setRetained} message={message} onMessageChange={setMessage} busy={busy} onSend={(event) => void sendMessage(event)} onCancel={() => void cancelMessage()} onDelete={() => void deleteConversation()} activeFile={activeFile} openFileCount={tabs.length} />
     </aside> : <aside className="assistant-rail" aria-label="AI assistant collapsed"><button onClick={() => setRightOpen(true)} title="Open AI assistant" aria-label="Open AI assistant"><Sparkles size={20}/></button><span>AI</span></aside>)}
+    </div>
     <CommandPalette open={paletteOpen && Boolean(workspace)} query={query} results={results} searching={searching} provider={provider} savedIndexEnabled={Boolean(workspace?.modules.semanticIndex)} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult} onAISearch={() => void searchSemantically()} onSavedSearch={() => void searchSavedConcepts()} />
   </div>
 }

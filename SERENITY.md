@@ -789,8 +789,11 @@ silently attach evidence based on a name match.
 
 ## Desktop Interface Direction
 
-Use a three-pane desktop workspace with compact, independently
-collapsible navigation and AI sidebars around a focused central canvas.
+Use one continuous desktop workbench with a compact icon dock, a
+focused central canvas, and a contextual AI collaborator. The dock
+reveals its labels horizontally over the canvas without shifting its
+logo or icons. Home should surface real knowledge, plans, recent
+changes, and review proposals rather than a metrics dashboard.
 Conversations, workflow controls, and provider selection belong in the
 right AI pane; its focus mode can expand over the center while leaving
 the navigation available. Open entities and supported documents remain

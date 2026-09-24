@@ -1,4 +1,4 @@
-import type { FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import type { Autonomy, Conversation, Provider } from '../../shared/types'
 import { ArrowUp, ChevronDown, FileText, Link2, MoreHorizontal } from 'lucide-react'
 
@@ -21,6 +21,14 @@ interface Props {
 }
 
 export function ConversationPanel(props: Props) {
+  const [thinkingPhase, setThinkingPhase] = useState(0)
+  useEffect(() => {
+    if (!props.busy) return
+    setThinkingPhase(0)
+    const timer = window.setInterval(() => setThinkingPhase((phase) => (phase + 1) % 3), 3200)
+    return () => window.clearInterval(timer)
+  }, [props.busy])
+  const thinkingText = ['Thinking…', 'Finding connections…', 'Putting it together…'][thinkingPhase]
   return <section className="conversation-panel">
     {props.conversation && <div className="conversation-header">
       <h2 title={props.conversation.title}>{props.conversation.title}</h2>
@@ -28,13 +36,13 @@ export function ConversationPanel(props: Props) {
     </div>}
     {props.activeFile && <div className="ai-context-strip" title={props.activeFile.path}>
       {props.activeFile.kind === 'entity' ? <Link2 size={14}/> : <FileText size={14}/>}
-      <span><strong>{props.activeFile.name}</strong><small>{props.activeFile.allowed ? `${props.activeFile.path} · prioritized for relevant questions${props.openFileCount > 1 ? ` · ${props.openFileCount - 1} other open` : ''}` : 'Not in this conversation’s selected read scope'}</small></span>
+      <span><strong>{props.activeFile.name}</strong><small>{props.activeFile.allowed ? `Current ${props.activeFile.kind} · available when relevant${props.openFileCount > 1 ? ` · ${props.openFileCount - 1} other open` : ''}` : 'Not in this conversation’s selected read scope'}</small></span>
     </div>}
     {!props.activeFile && props.openFileCount > 0 && <div className="ai-context-strip"><FileText size={14}/><span><strong>{props.openFileCount} open {props.openFileCount === 1 ? 'file' : 'files'}</strong><small>Permitted open files can inform relevant answers</small></span></div>}
     <div className="messages">
       {!props.conversation && <div className="conversation-intro">
-        <h1>Think together.</h1>
-        <p>Ask about what’s here. Suggested changes come to you for review.</p>
+        <h1>{props.activeFile ? `Explore ${props.activeFile.name}.` : 'Think together.'}</h1>
+        <p>{props.activeFile?.allowed ? 'This file can inform your next question.' : 'Ask about what’s here. Suggested changes come to you for review.'}</p>
       </div>}
       {props.conversation?.messages.map((item) => <article key={item.id} className={`message ${item.role}`}>
         <small>{item.role === 'assistant' ? item.provider : 'You'}</small><p>{item.text}</p>
@@ -51,7 +59,7 @@ export function ConversationPanel(props: Props) {
           </div>)}
         </details>)}
       </article>)}
-      {props.busy && <p className="hint">{props.provider} is thinking…</p>}
+      {props.busy && <div className="ai-thinking" role="status" aria-label={`${props.provider} is responding`}><span className="thinking-mark" aria-hidden="true"><i/><i/><i/></span><span aria-hidden="true">{thinkingText}</span></div>}
     </div>
     <form className="compose" onSubmit={props.onSend}>
       <div className="compose-input">

@@ -523,8 +523,8 @@ function App() {
         <div className="breadcrumbs"><strong>{workspace ? title[view] : 'Welcome'}</strong></div>
         {workspace && <div className="topbar-actions">
           <button className="topbar-search" onClick={() => setPaletteOpen(true)} title={`Search workspace (${navigator.platform.includes('Mac') ? '⌘K' : 'Ctrl+K'})`} aria-label="Search workspace"><Search size={18}/></button>
-          <details className="topbar-more"><summary aria-label="Workspace actions" title="Workspace actions"><MoreHorizontal size={19}/></summary><div className="topbar-menu"><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); newEntity() }}><Plus size={15}/> New entity</button><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); void refresh() }}><RotateCw size={15}/> Refresh files</button></div></details>
           {!rightOpen && <button className="topbar-icon show-ai" onClick={() => setRightOpen(true)} title={`Show AI assistant (${navigator.platform.includes('Mac') ? '⌘J' : 'Ctrl+J'})`} aria-label="Show AI sidebar" aria-keyshortcuts={navigator.platform.includes('Mac') ? 'Meta+J' : 'Control+J'}><PanelRightOpen size={18}/></button>}
+          <details className="topbar-more"><summary aria-label="Workspace actions" title="Workspace actions"><MoreHorizontal size={19}/></summary><div className="topbar-menu"><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); newEntity() }}><Plus size={15}/> New entity</button><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); void refresh() }}><RotateCw size={15}/> Refresh files</button></div></details>
         </div>}
       </header>
       {workspace && <WorkspaceTabs tabs={tabs} active={activeTab} onSelect={activateTab} onClose={closeTab}/>}
@@ -584,7 +584,7 @@ function App() {
         onNew={() => startConversation()} onSelect={selectConversation} onPermissionsChange={setPermissions} onReadScopeChange={setReadScope} onSaveSettings={() => void saveWorkflowSettings()} />
       {readScope.mode === 'selected' && <div className="ai-scope-note" role="status">Selected knowledge only · review allowed files in Workflow settings</div>}
       <ConversationPanel conversation={conversation} provider={provider} onProviderChange={setProvider} autonomy={autonomy} onAutonomyChange={setAutonomy} retained={retained} onRetentionChange={setRetained} message={message} onMessageChange={setMessage} busy={busy} onSend={(event) => void sendMessage(event)} onCancel={() => void cancelMessage()} onDelete={() => void deleteConversation()} activeFile={activeFile} openFileCount={tabs.length} />
-    </aside> : <aside className="assistant-rail" aria-label="AI assistant collapsed"><button onClick={() => setRightOpen(true)} title="Open AI assistant" aria-label="Open AI assistant"><Sparkles size={20}/></button><span>AI</span></aside>)}
+    </aside> : <aside className="assistant-rail" aria-label="AI assistant collapsed"><button onClick={() => setRightOpen(true)} title="Expand AI sidebar" aria-label="Expand AI sidebar"><PanelRightOpen size={20}/></button><span>AI</span></aside>)}
     </div>
     <CommandPalette open={paletteOpen && Boolean(workspace)} query={query} results={results} searching={searching} provider={provider} savedIndexEnabled={Boolean(workspace?.modules.semanticIndex)} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult} onAISearch={() => void searchSemantically()} onSavedSearch={() => void searchSavedConcepts()} />
   </div>

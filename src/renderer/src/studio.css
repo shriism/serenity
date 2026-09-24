@@ -72,8 +72,10 @@
 .serenity-studio.ai-expanded .main { display: none; }
 .serenity-studio .topbar { height: 56px; min-height: 56px; padding: 0 clamp(23px, 4vw, 57px); border: 0; background: transparent; }
 .serenity-studio .breadcrumbs strong { font-size: 11px; color: var(--subtle); font-weight: 550; }
-.serenity-studio .topbar-search, .serenity-studio .topbar-icon, .serenity-studio .topbar-more > summary { border: 0; background: transparent; color: var(--subtle); }
+.serenity-studio .topbar-actions { flex: none; gap: 6px; }
+.serenity-studio .topbar-search, .serenity-studio .topbar-icon, .serenity-studio .topbar-more > summary { display: grid; place-items: center; width: 34px; min-width: 34px; height: 34px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--subtle); }
 .serenity-studio .topbar-search:hover, .serenity-studio .topbar-icon:hover, .serenity-studio .topbar-more > summary:hover { background: var(--surface-hover); color: var(--text); }
+.serenity-studio .topbar-more { order: 3; }
 .serenity-studio .workspace-tabs { min-height: 36px; padding-left: clamp(23px, 4vw, 57px); gap: 3px; border-color: transparent; background: transparent; }
 .serenity-studio .workspace-tab.active { border-radius: 7px; background: var(--surface-hover); }
 .serenity-studio .workspace-tab-label { font-size: 10px; }
@@ -174,6 +176,8 @@
 .serenity-studio button:active:not(:disabled) { transform: scale(.975); }
 .serenity-studio .navigation button:active:not(:disabled) { transform: scale(.985); }
 .serenity-studio .topbar-menu, .serenity-studio .conversation-menu > div { background: var(--surface); }
+.serenity-studio .palette-backdrop { align-items: center; padding: 24px; background: rgb(8 9 12 / 62%); }
+.serenity-studio .command-palette { width: min(100%, 640px); max-height: calc(100vh - 48px); border-radius: 14px; box-shadow: 0 26px 90px rgb(0 0 0 / 38%); }
 .serenity-studio .command-palette { animation: studio-palette-in 220ms var(--studio-ease) both; }
 @keyframes studio-view-in { from { opacity: .65; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes studio-aside-in { from { opacity: .8; transform: translateX(8px); } to { opacity: 1; transform: translateX(0); } }

@@ -121,6 +121,8 @@ try {
   assert.equal(path, workspace)
   const home = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const heading = document.querySelector('.home-page h1'); if (heading) return heading.textContent; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`) as string | null
   assert.match(home ?? '', /^Good /)
+  const paneControls = await evaluate(pageUrl, `(async () => { const shell = document.querySelector('.three-pane'); const initial = Boolean(shell && document.querySelector('.assistant-sidebar') && document.querySelector('#workspace-main')); document.querySelector('[aria-label="Collapse navigation"]')?.click(); await new Promise((resolve) => setTimeout(resolve, 50)); const left = shell?.classList.contains('left-collapsed') && Boolean(document.querySelector('[aria-label="Expand navigation"]')); document.querySelector('[aria-label="Expand navigation"]')?.click(); document.querySelector('[aria-label="Collapse AI sidebar"]')?.click(); await new Promise((resolve) => setTimeout(resolve, 50)); const right = shell?.classList.contains('right-collapsed') && Boolean(document.querySelector('.assistant-rail button')); document.querySelector('.assistant-rail button')?.click(); await new Promise((resolve) => setTimeout(resolve, 50)); document.querySelector('[aria-label="Expand AI over workspace"]')?.click(); await new Promise((resolve) => setTimeout(resolve, 50)); const expanded = shell?.classList.contains('ai-expanded') && getComputedStyle(document.querySelector('#workspace-main')).display === 'none'; document.querySelector('[aria-label="Return AI to sidebar"]')?.click(); await new Promise((resolve) => setTimeout(resolve, 50)); return { initial, left, right, expanded, restored: Boolean(document.querySelector('.assistant-sidebar')) && !shell?.classList.contains('ai-expanded') } })()`)
+  assert.deepEqual(paneControls, { initial: true, left: true, right: true, expanded: true, restored: true }, 'Both rails and the assistant focus view should be reversible')
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-home.png'), await captureScreenshot(pageUrl))
   const theme = await evaluate(pageUrl, `(async () => { const select = document.querySelector('.theme-control select'); select.value = 'dark'; select.dispatchEvent(new Event('change', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 100)); const changed = document.documentElement.dataset.theme; select.value = 'system'; select.dispatchEvent(new Event('change', { bubbles: true })); return changed })()`) as string
   assert.equal(theme, 'dark')
@@ -153,6 +155,8 @@ try {
   assert.match(await readFile(join(workspace, 'entities', `${entityId}.md`), 'utf8'), /AI Club/)
   const preview = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const button = [...document.querySelectorAll('.entity-link, .knowledge-tiles button')].find((item) => item.textContent?.includes('Alex')); if (button) { button.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.markdown-preview strong')?.textContent ?? null } await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
   assert.equal(preview, 'AI Club')
+  const activeEntityTab = await evaluate(pageUrl, `document.querySelector('.workspace-tab.active')?.textContent ?? null`)
+  assert.match(String(activeEntityTab), /Alex/, 'Opened entities should remain available as workspace tabs')
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-knowledge.png'), await captureScreenshot(pageUrl))
   const review = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Review')); button?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.review-identity select')?.textContent ?? null })()`)
   assert.match(String(review), /Alex/)
@@ -177,6 +181,10 @@ try {
   assert.match(unsupported.label ?? '', /No text extraction/)
   assert.equal(unsupported.canAnalyze, false)
   assert.equal(unsupported.canOpen, true)
+  const documentText = await evaluate(pageUrl, `window.serenity.readDocument('research.pdf').then((text) => text?.includes('QuarterlyCometResearch'))`)
+  assert.equal(documentText, true, 'Extractable documents should be readable inside the workspace')
+  const documentTab = await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Documents'))?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); [...document.querySelectorAll('.document-row')].find((item) => item.textContent?.includes('research.pdf'))?.querySelector('button')?.click(); for (let i = 0; i < 30; i++) { if (document.querySelector('.document-text')?.textContent?.includes('QuarterlyCometResearch')) return document.querySelector('.workspace-tab.active')?.textContent; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
+  assert.match(String(documentTab), /research.pdf/, 'Reading a document should open a contextual tab')
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-documents.png'), await captureScreenshot(pageUrl))
   const invalidOpen = await evaluate(pageUrl, `window.serenity.openDocument('../outside').then(() => 'allowed', (error) => String(error))`) as string
   assert.match(invalidOpen, /Invalid document name/)
@@ -202,7 +210,7 @@ try {
   const tasksView = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Tasks')); button?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.module-page h1')?.textContent ?? null })()`)
   assert.equal(tasksView, 'Tasks')
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-tasks.png'), await captureScreenshot(pageUrl))
-  const chatView = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Conversations')); button?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return Boolean(document.querySelector('.conversation-panel')) })()`)
+  const chatView = await evaluate(pageUrl, `Boolean(document.querySelector('.assistant-sidebar .conversation-panel'))`)
   assert.equal(chatView, true)
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-conversation.png'), await captureScreenshot(pageUrl))
   const disabled = await evaluate(pageUrl, `window.serenity.setModule('calendar', false).then((snapshot) => snapshot.modules.calendar)`)
@@ -214,10 +222,13 @@ try {
     privateId = await evaluate(pageUrl, `window.serenity.saveEntity({ id: '', title: 'Private Project', type: 'project', body: 'SecretAstralToken' }).then((snapshot) => snapshot.entities.find((entity) => entity.title === 'Private Project').id)`) as string
   }
   if (provider === 'copilot' || provider === 'codex') {
+    const activeContext = await evaluate(pageUrl, `(async () => { document.querySelector('.workspace-tab-label')?.click(); for (let i = 0; i < 30; i++) { if (document.querySelector('.ai-context-strip')?.textContent?.includes('entities/')) return document.querySelector('.ai-context-strip')?.textContent; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
+    assert.match(String(activeContext), /entities\//, 'The assistant should show the currently open file before sending')
     const scope = privateId ? `, readScope: { mode: 'selected', entityIds: ['${entityId}'], documentNames: [], includeOtherConversations: false, includeCalendarAndTasks: false }` : ''
     const answer = await evaluate(pageUrl, `window.serenity.sendMessage({ text: 'According to the sourced claim about Alex, what is his birthday? Include the date. Do not propose any changes.', provider: '${provider}', autonomy: 'propose', retained: true${scope} }).then((snapshot) => ({ id: snapshot.conversations[0].id, text: snapshot.conversations[0].messages.at(-1)?.text, shared: snapshot.conversations[0].messages[0].sharedContext?.length, sharedRecords: snapshot.conversations[0].messages[0].sharedContext?.flatMap((entry) => entry.records.map((record) => record.ref)), readScope: snapshot.conversations[0].readScope, permissions: snapshot.conversations[0].permissions, activity: snapshot.providerActivity.find((entry) => entry.provider === '${provider}') }))`) as { id: string; text: string; shared: number; sharedRecords: string[]; readScope: { mode: string }; permissions: { claims: boolean; tasks: boolean }; activity: { status: string; operation: string; refs: string[] } }
     assert.match(answer.text, /September 7/i)
     assert.ok(answer.shared > 0)
+    assert.ok(answer.sharedRecords.includes(`entity:${entityId}`), 'The open entity should be available in the context sent to AI')
     assert.equal(answer.activity?.status, 'completed')
     assert.equal(answer.activity?.operation, 'conversation')
     assert.ok(answer.activity?.refs.some((ref) => ref.startsWith('claim:')))
@@ -282,6 +293,13 @@ try {
   await writeFile(join(workspace, '.serenity', 'modules.yaml'), YAML.stringify({ calendar: false, tasks: false, semanticIndex: false, documentAnalysis: false }))
   const watched = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 50; i++) { const names = [...document.querySelectorAll('.navigation button')].map((item) => item.textContent ?? ''); if (!names.some((name) => name.includes('Tasks'))) return true; await new Promise((resolve) => setTimeout(resolve, 100)) } return false })()`)
   assert.equal(watched, true, 'Outside edits to module settings should update the desktop UI')
+  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) {
+    const narrow = await evaluate(pageUrl, `(async () => { window.resizeTo(900, 760); await new Promise((resolve) => setTimeout(resolve, 250)); return { width: innerWidth, main: document.querySelector('#workspace-main')?.getBoundingClientRect().width, right: Boolean(document.querySelector('.assistant-sidebar')), rail: document.querySelector('.three-pane')?.classList.contains('left-collapsed') } })()`) as { width: number; main: number; right: boolean; rail: boolean }
+    if (narrow.width <= 1020) {
+      assert.ok(narrow.main > 250 && narrow.right && narrow.rail, `The compact workspace should keep navigation, main, and AI usable: ${JSON.stringify(narrow)}`)
+      await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-compact.png'), await captureScreenshot(pageUrl))
+    }
+  }
   console.log('Electron workspace, entity, claim, PDF/DOCX search, reversible merges/tasks/calendar, and preload IPC passed.')
 } finally {
   child.kill()

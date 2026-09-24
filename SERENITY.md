@@ -789,11 +789,15 @@ silently attach evidence based on a name match.
 
 ## Desktop Interface Direction
 
-Use a balanced modern desktop workspace: persistent navigation and
-fast search, a calm space for reading and editing knowledge, and an
-integrated Home overview of upcoming items, review proposals, and
-connections. The interface follows the operating system's light or
-dark appearance by default and allows a manual override. Its visual
-identity uses near-black and muted periwinkle/indigo in dark mode,
-with a coordinated light palette. Browsing knowledge and conversations
-should retain visible context panes alongside the main content.
+Use a three-pane desktop workspace with compact, independently
+collapsible navigation and AI sidebars around a focused central canvas.
+Conversations, workflow controls, and provider selection belong in the
+right AI pane; its focus mode can expand over the center while leaving
+the navigation available. Open entities and supported documents remain
+in central tabs. The assistant knows the active file path and may read
+its content when permitted; it prioritizes relevant open files and
+discloses the records actually sent with each response. Keep fast search
+and an integrated Home overview of upcoming items, review proposals,
+and connections. Follow the operating system's light or dark appearance
+by default, with manual overrides and a near-black / muted periwinkle
+identity plus a coordinated light palette.

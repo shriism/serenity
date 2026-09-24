@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ArrowRight, FolderOpen, Link2, Plus, RotateCw, Search } from 'lucide-react'
+import { ArrowRight, FolderOpen, Link2, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, RotateCw, Search, Sparkles } from 'lucide-react'
 import type { Autonomy, Conversation, Entity, Provider, ReadScope, SearchResult, WorkflowPermissions, WorkspaceSnapshot } from '../../shared/types'
 import { CalendarModule, TasksModule } from './module-views'
 import { ConversationPanel } from './conversation-panel'
@@ -17,11 +17,17 @@ import { HomePanel } from './home-panel'
 import { CommandPalette } from './command-palette'
 import { ThemeControl, useTheme } from './theme'
 import type { View } from './views'
+import { WorkspaceTabs, tabRef, type WorkspaceTab } from './workspace-tabs'
+import { DocumentPreview } from './document-preview'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import './style.css'
 
 const serenityIcon = new URL('../../../assets/icon.svg', import.meta.url).href
+function storedPanel(key: string, fallback: boolean): boolean {
+  try { const stored = localStorage.getItem(key); return stored === null ? fallback : stored === 'true' }
+  catch { return fallback }
+}
 
 function App() {
   const [workspace, setWorkspace] = useState<WorkspaceSnapshot | null>(null)
@@ -34,6 +40,11 @@ function App() {
   const [claimTarget, setClaimTarget] = useState('')
   const [mergeTarget, setMergeTarget] = useState('')
   const [view, setView] = useState<View>('home')
+  const [leftOpen, setLeftOpen] = useState(() => storedPanel('serenity.left-open', !window.matchMedia('(max-width: 1020px)').matches))
+  const [rightOpen, setRightOpen] = useState(() => storedPanel('serenity.right-open', true))
+  const [aiExpanded, setAIExpanded] = useState(false)
+  const [tabs, setTabs] = useState<WorkspaceTab[]>([])
+  const [activeTab, setActiveTab] = useState<string | null>(null)
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [provider, setProvider] = useState<Provider>('copilot')
   const [autonomy, setAutonomy] = useState<Autonomy>('propose')
@@ -51,6 +62,16 @@ function App() {
   const [focusVersion, setFocusVersion] = useState(0)
   const [theme, setTheme] = useTheme()
   const searchSequence = useRef(0)
+  const loadedConversationWorkspace = useRef<string | null>(null)
+  useEffect(() => { try { localStorage.setItem('serenity.left-open', String(leftOpen)) } catch { /* Still works for this session. */ } }, [leftOpen])
+  useEffect(() => { try { localStorage.setItem('serenity.right-open', String(rightOpen)) } catch { /* Still works for this session. */ } }, [rightOpen])
+  useEffect(() => {
+    const narrow = window.matchMedia('(max-width: 1020px)')
+    const onChange = (): void => { if (narrow.matches) setLeftOpen(false) }
+    onChange()
+    narrow.addEventListener('change', onChange)
+    return () => narrow.removeEventListener('change', onChange)
+  }, [])
 
   const closePalette = useCallback(() => {
     searchSequence.current++
@@ -77,6 +98,21 @@ function App() {
   useEffect(() => window.serenity.setEditorDirty(dirty), [dirty])
   useEffect(() => window.serenity.onIndexError((message) => setError(`Background AI: ${message}`)), [])
   useEffect(() => {
+    if (!workspace || loadedConversationWorkspace.current === workspace.path) return
+    loadedConversationWorkspace.current = workspace.path
+    const lastId = (() => { try { return localStorage.getItem(`serenity.conversation.${workspace.path}`) } catch { return null } })()
+    const last = workspace.conversations.find((item) => item.id === lastId) ?? workspace.conversations.at(-1)
+    setConversationId(last?.id ?? null)
+    setAutonomy(last?.autonomy ?? 'propose')
+    setPermissions(last?.permissions ?? { ...defaultWorkflowPermissions })
+    setReadScope(last?.readScope ?? { ...defaultReadScope, entityIds: [], documentNames: [] })
+    setRetained(last?.retained ?? true)
+  }, [workspace?.path])
+  useEffect(() => {
+    if (!workspace || !conversationId) return
+    try { localStorage.setItem(`serenity.conversation.${workspace.path}`, conversationId) } catch { /* Selection remains available this session. */ }
+  }, [workspace?.path, conversationId])
+  useEffect(() => {
     const onShortcut = (event: globalThis.KeyboardEvent): void => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
@@ -99,6 +135,9 @@ function App() {
       setBodyMode('edit')
       setError('')
       setView('home')
+      setTabs([])
+      setActiveTab(null)
+      setAIExpanded(false)
       setConversationId(null)
       setPermissions({ ...defaultWorkflowPermissions })
       setReadScope({ ...defaultReadScope, entityIds: [], documentNames: [] })
@@ -118,6 +157,9 @@ function App() {
     setBodyMode('preview')
     setError('')
     setView('knowledge')
+    const tab: WorkspaceTab = { kind: 'entity', id: entity.id, title: entity.title }
+    setTabs((existing) => existing.some((item) => tabRef(item) === tabRef(tab)) ? existing.map((item) => tabRef(item) === tabRef(tab) ? tab : item) : [...existing, tab])
+    setActiveTab(tabRef(tab))
     return true
   }
 
@@ -129,6 +171,7 @@ function App() {
     setBodyMode('edit')
     setError('')
     setView('knowledge')
+    setActiveTab(null)
   }
 
   function startConversation(prompt = '') {
@@ -139,7 +182,8 @@ function App() {
     setReadScope({ ...defaultReadScope, entityIds: [], documentNames: [] })
     setRetained(true)
     setMessage(prompt)
-    setView('conversation')
+    setRightOpen(true)
+    setAIExpanded(false)
   }
 
   function selectConversation(item: Conversation) {
@@ -150,7 +194,7 @@ function App() {
     setPermissions(item.permissions ?? { ...defaultWorkflowPermissions })
     setReadScope(item.readScope ?? { ...defaultReadScope, entityIds: [], documentNames: [] })
     setMessage('')
-    setView('conversation')
+    setRightOpen(true)
   }
 
   async function saveEntity(event: FormEvent) {
@@ -163,6 +207,11 @@ function App() {
         next.entities.find((entity) => !workspace?.entities.some((existing) => existing.id === entity.id))
       setSelected(saved?.id ?? null)
       setDraft(saved ?? null)
+      if (saved) {
+        const tab: WorkspaceTab = { kind: 'entity', id: saved.id, title: saved.title }
+        setTabs((existing) => existing.some((item) => tabRef(item) === tabRef(tab)) ? existing.map((item) => tabRef(item) === tabRef(tab) ? tab : item) : [...existing, tab])
+        setActiveTab(tabRef(tab))
+      }
       setDirty(false)
       setError('')
     } catch (cause) {
@@ -221,7 +270,7 @@ function App() {
       if (selectEntity(entity)) closePalette()
       return
     }
-    if (result.kind === 'document') setView('documents')
+    if (result.kind === 'document') openDocumentTab(result.id)
     if (result.kind === 'task' && workspace?.modules.tasks) openTask(result.id)
     if (result.kind === 'event' && workspace?.modules.calendar) openEvent(result.id)
     closePalette()
@@ -240,6 +289,15 @@ function App() {
   }
 
   function navigate(destination: View) {
+    if (destination === 'knowledge') {
+      if (view === 'knowledge' && selected) {
+        if (dirty && !window.confirm('Discard your unsaved changes?')) return
+        setSelected(null)
+        setDraft(null)
+        setDirty(false)
+        setActiveTab(null)
+      } else setActiveTab(selected ? `entity:${selected}` : null)
+    } else setActiveTab(null)
     if (destination === 'calendar') setFocusedEventId(null)
     if (destination === 'tasks') setFocusedTaskId(null)
     setView(destination)
@@ -286,13 +344,48 @@ function App() {
     catch (cause) { setError(String(cause)) }
   }
 
+  function openDocumentTab(name: string) {
+    const item = workspace?.documents.find((document) => document.name === name)
+    if (!item) return
+    if (!item.extractable) { void openDocument(name); return }
+    if (dirty && !window.confirm('Discard your unsaved changes?')) return
+    const tab: WorkspaceTab = { kind: 'document', id: name, title: name }
+    setTabs((existing) => existing.some((entry) => tabRef(entry) === tabRef(tab)) ? existing : [...existing, tab])
+    setActiveTab(tabRef(tab))
+    setView('documents')
+    setDirty(false)
+  }
+
+  function activateTab(tab: WorkspaceTab) {
+    if (tab.kind === 'entity') {
+      const entity = workspace?.entities.find((item) => item.id === tab.id)
+      if (entity) selectEntity(entity)
+      return
+    }
+    openDocumentTab(tab.id)
+  }
+
+  function closeTab(tab: WorkspaceTab) {
+    const remaining = tabs.filter((item) => tabRef(item) !== tabRef(tab))
+    if (activeTab === tabRef(tab) && dirty && !window.confirm('Discard your unsaved changes?')) return
+    setTabs(remaining)
+    if (activeTab === tabRef(tab)) {
+      setActiveTab(null)
+      setSelected(null)
+      setDraft(null)
+      setDirty(false)
+      setView(tab.kind === 'document' ? 'documents' : 'knowledge')
+    }
+  }
+
   async function sendMessage(event: FormEvent) {
     event.preventDefault()
     if (!message.trim() || busy) return
     if (autonomy === 'ask' && !window.confirm(`Allow ${provider} to read this workspace for this request? No knowledge changes will be saved without separate approval.`)) return
     setBusy(true)
     try {
-      const next = await window.serenity.sendMessage({ conversationId: conversationId ?? undefined, text: message, provider, autonomy, retained, permissions, readScope })
+      const next = await window.serenity.sendMessage({ conversationId: conversationId ?? undefined, text: message, provider, autonomy, retained, permissions, readScope,
+        activeRef: activeTab ?? undefined, openRefs: tabs.map(tabRef) })
       if (!conversationId) {
         const created = next.conversations.find((item) => !workspace?.conversations.some((old) => old.id === item.id))
         setConversationId(created?.id ?? null)
@@ -380,11 +473,19 @@ function App() {
     ...(workspace?.proposals.map((item) => ({ id: item.id, at: item.recordedAt, title: `Proposal ${item.status}`, detail: `${item.kind === 'claim' ? `${item.key}: ${item.value}` : item.title} · ${item.provider}` })) ?? []),
     ...(workspace?.conversations.flatMap((item) => item.messages.map((message) => ({ id: message.id, at: message.recordedAt, title: message.role === 'user' ? 'You' : `${message.provider} replied`, detail: message.text.slice(0, 180) }))) ?? [])]
     .sort((a, b) => b.at.localeCompare(a.at))
-  const title: Record<View, string> = { home: 'Home', knowledge: 'Knowledge', conversation: 'Conversations', review: 'Review', documents: 'Documents', calendar: 'Calendar', tasks: 'Tasks', activity: 'Activity', settings: 'Settings' }
+  const title: Record<View, string> = { home: 'Home', knowledge: 'Knowledge', review: 'Review', documents: 'Documents', calendar: 'Calendar', tasks: 'Tasks', activity: 'Activity', settings: 'Settings' }
+  const currentTab = tabs.find((item) => tabRef(item) === activeTab)
+  const activeFile = currentTab && workspace ? {
+    name: currentTab.title,
+    path: `${currentTab.kind === 'entity' ? 'entities' : 'documents'}/${currentTab.id}${currentTab.kind === 'entity' ? '.md' : ''}`,
+    kind: currentTab.kind,
+    allowed: readScope.mode === 'workspace' || (currentTab.kind === 'entity' ? readScope.entityIds.includes(currentTab.id) : readScope.documentNames.includes(currentTab.id))
+  } : undefined
 
-  return <div className="app">
-    <aside className="sidebar">
+  return <div className={`app three-pane ${leftOpen ? '' : 'left-collapsed'} ${rightOpen ? '' : 'right-collapsed'} ${aiExpanded && rightOpen ? 'ai-expanded' : ''}`}>
+    <aside className="sidebar" aria-label="Workspace sidebar">
       <div className="brand"><img className="brand-icon" src={serenityIcon} alt=""/><div><strong>Serenity</strong><small>PERSONAL KNOWLEDGE</small></div></div>
+      <button className="left-rail-toggle" onClick={() => setLeftOpen(!leftOpen)} aria-label={leftOpen ? 'Collapse navigation' : 'Expand navigation'} title={leftOpen ? 'Collapse navigation' : 'Expand navigation'}>{leftOpen ? <PanelLeftClose size={17}/> : <PanelLeftOpen size={19}/>}</button>
       <div className="workspace-control">
         <button className="workspace-button" onClick={() => void chooseWorkspace()} title={workspace?.path ?? 'Choose a workspace'}>
           <span className="workspace-avatar">{workspace ? workspace.path.split(/[\\/]/).filter(Boolean).at(-1)?.slice(0, 1).toUpperCase() : '+'}</span>
@@ -402,30 +503,26 @@ function App() {
         <div className="local-status"><span/> On this device</div>
       </div>
     </aside>
-    <main className="main">
+    <main className="main" id="workspace-main">
       <header className="topbar">
-        <div className="breadcrumbs"><span>Workspace</span><span className="breadcrumb-divider">/</span><strong>{workspace ? title[view] : 'Welcome'}</strong></div>
+        <div className="breadcrumbs"><span>Workspace</span><span className="breadcrumb-divider">/</span><strong>{workspace ? currentTab?.title ?? title[view] : 'Welcome'}</strong></div>
         {workspace && <div className="topbar-actions">
           <button className="topbar-search" onClick={() => setPaletteOpen(true)}><Search size={16}/><span>Search anything</span><kbd>{navigator.platform.includes('Mac') ? '⌘ K' : 'Ctrl K'}</kbd></button>
           <button className="topbar-icon" onClick={() => void refresh()} title="Refresh files" aria-label="Refresh files"><RotateCw size={17}/></button>
           <button className="primary topbar-create" onClick={newEntity}><Plus size={16}/> New entity</button>
+          <button className="topbar-icon show-ai" onClick={() => { setRightOpen(!rightOpen); setAIExpanded(false) }} title={rightOpen ? 'Hide AI sidebar' : 'Show AI sidebar'} aria-label={rightOpen ? 'Hide AI sidebar' : 'Show AI sidebar'}>{rightOpen ? <PanelRightClose size={18}/> : <PanelRightOpen size={18}/>}</button>
         </div>}
       </header>
+      {workspace && <WorkspaceTabs tabs={tabs} active={activeTab} onSelect={activateTab} onClose={closeTab}/>}
       {error && <div className="notice error" role="alert">{error}</div>}
       {workspace?.errors.map((item) => <div key={item} className="notice warning" role="alert">Could not read {item}</div>)}
-      {view === 'conversation' && readScope.mode === 'selected' && <div className="notice warning" role="status">Selected read scope: AI only receives chosen knowledge and this conversation. The accessible records are shown with each response.</div>}
       {view === 'review' && workspace?.proposals.some((item) => item.status === 'pending' && item.reviewReason) && <div className="notice warning" role="status">Some proposals involve similar entities. Verify the identity before accepting them.</div>}
       {!workspace ? <section className="welcome-screen"><div className="welcome-visual"><img src={serenityIcon} alt=""/><span className="visual-orbit orbit-one"/><span className="visual-orbit orbit-two"/><span className="visual-dot dot-one"/><span className="visual-dot dot-two"/><span className="visual-dot dot-three"/></div><div className="welcome-copy"><span className="eyebrow">A SPACE FOR EVERYTHING THAT MATTERS</span><h1>Your world,<br/><em>more connected.</em></h1><p>A private workspace for your knowledge, relationships, plans, and the ideas in between. Choose a folder on your device to begin.</p><button className="primary welcome-action" onClick={() => void chooseWorkspace()}><FolderOpen size={18}/> Choose a workspace <ArrowRight size={17}/></button><small>Your files stay in a folder you control.</small></div></section>
         : view === 'home' ? <HomePanel workspace={workspace} onNavigate={navigate} onSelectEntity={selectEntity} onNewEntity={newEntity} onAsk={() => startConversation()} onImport={() => { setView('documents'); void importDocuments() }} onOpenEvent={openEvent} onOpenTask={openTask} />
         : view === 'calendar' && workspace.modules.calendar ? <CalendarModule workspace={workspace} onUpdate={setWorkspace} onError={setError} focusEventId={focusedEventId} focusVersion={focusVersion} />
         : view === 'tasks' && workspace.modules.tasks ? <TasksModule workspace={workspace} onUpdate={setWorkspace} onError={setError} focusTaskId={focusedTaskId} focusVersion={focusVersion} />
-        : view === 'conversation' ? <div className="conversation-layout">
-          <ConversationList workspace={workspace} conversationId={conversationId} autonomy={autonomy} permissions={permissions} readScope={readScope} busy={busy}
-            onNew={() => startConversation()} onSelect={selectConversation} onPermissionsChange={setPermissions} onReadScopeChange={setReadScope} onSaveSettings={() => void saveWorkflowSettings()} />
-          <ConversationPanel conversation={conversation} provider={provider} onProviderChange={setProvider} autonomy={autonomy} onAutonomyChange={setAutonomy} retained={retained} onRetentionChange={setRetained} message={message} onMessageChange={setMessage} busy={busy} onSend={(event) => void sendMessage(event)} onCancel={() => void cancelMessage()} onDelete={() => void deleteConversation()} />
-        </div>
         : view === 'review' ? <ReviewPanel workspace={workspace} onResolve={(id, accept) => void resolveProposal(id, accept)} onAttach={(id, entityId) => void attachProposal(id, entityId)} onOpenSource={(name) => void openDocument(name)} />
-        : view === 'documents' ? <DocumentsPanel workspace={workspace} onImport={() => void importDocuments()} onOpen={(name) => void openDocument(name)} onAnalyze={(name) => startConversation(`Analyze the imported document ${name}. Summarize it, identify useful knowledge about existing entities, and suggest claims with precise sources. Ask me to clarify any ambiguous identities.`)} />
+        : view === 'documents' ? currentTab?.kind === 'document' ? <DocumentPreview name={currentTab.id} onOpen={(name) => void openDocument(name)} onError={setError}/> : <DocumentsPanel workspace={workspace} onImport={() => void importDocuments()} onOpen={openDocumentTab} onAnalyze={(name) => { openDocumentTab(name); startConversation(`Analyze the imported document ${name}. Summarize it, identify useful knowledge about existing entities, and suggest claims with precise sources. Ask me to clarify any ambiguous identities.`) }} />
         : view === 'activity' ? <ActivityPanel workspace={workspace} activity={activity} />
         : view === 'settings' ? <SettingsPanel workspace={workspace} onUpdate={setWorkspace} onError={setError} />
         : !draft ? <section className="page knowledge-index"><div className="knowledge-index-header"><div><span className="eyebrow">YOUR WORLD</span><h1>Knowledge</h1><p>People, places, projects, ideas—whatever matters to you. Everything can connect.</p></div><button className="primary" onClick={newEntity}><Plus size={16}/> New entity</button></div>{workspace.entities.length ? <div className="knowledge-tiles">{[...workspace.entities].sort((a, b) => a.title.localeCompare(b.title)).map((entity) => <button key={entity.id} onClick={() => selectEntity(entity)}><span className="knowledge-tile-icon">{entity.title.slice(0, 1).toUpperCase()}</span><span><strong>{entity.title}</strong><small>{entity.type}</small></span><ArrowRight size={16}/></button>)}</div> : <div className="knowledge-blank"><Link2 size={25}/><h2>Start with what you know.</h2><p>Create a person, project, idea, or anything else meaningful to you. Categories are yours to define.</p><button className="primary" onClick={newEntity}>Create your first entity <ArrowRight size={16}/></button></div>}</section>
@@ -453,7 +550,7 @@ function App() {
               </section>
               <aside className="details"><span className="eyebrow">CLAIMS & SOURCES</span><h2>What we know</h2><p className="detail-intro">Individual facts stay connected to their source. Conflicting claims remain visible.</p>
                 {resolvedKeys.map((key) => { const choice = activeClaims.find((item) => item.key === key && item.isCurrent)!; const decision = [...workspace.resolutions].reverse().find((item) => item.subject === selected && item.key === key && item.currentClaimId === choice.id); return <div className="current-banner" key={key}><strong>Current {key}: {workspace.entities.find((entity) => entity.id === choice.value)?.title ?? choice.value}</strong><small>{decision?.reason ?? 'Selected by the user'} · earlier claims remain below.</small><button onClick={() => void clearCurrent(key)}>Undo designation</button></div> })}
-                {conflicts.map((key) => { const possible = activeClaims.filter((item) => item.key === key); const humanClaims = possible.filter((item) => item.origin === 'human'); const likely = humanClaims.length === 1 ? humanClaims[0] : null; return <div className="conflict" key={key}><strong>Conflicting {key}</strong><small>{likely ? `A direct statement suggests ${workspace.entities.find((entity) => entity.id === likely.value)?.title ?? likely.value}. This is not resolved.` : 'No clear answer from the available sources. Please clarify.'}</small><button onClick={() => { setConversationId(null); setMessage(`I have conflicting information about ${draft.title}'s ${key}. What do the sources say, and what should I clarify?`); setView('conversation') }}>Discuss this ↗</button></div> })}
+                 {conflicts.map((key) => { const possible = activeClaims.filter((item) => item.key === key); const humanClaims = possible.filter((item) => item.origin === 'human'); const likely = humanClaims.length === 1 ? humanClaims[0] : null; return <div className="conflict" key={key}><strong>Conflicting {key}</strong><small>{likely ? `A direct statement suggests ${workspace.entities.find((entity) => entity.id === likely.value)?.title ?? likely.value}. This is not resolved.` : 'No clear answer from the available sources. Please clarify.'}</small><button onClick={() => startConversation(`I have conflicting information about ${draft.title}'s ${key}. What do the sources say, and what should I clarify?`)}>Discuss this ↗</button></div> })}
                 {claims.map((item) => <ClaimCard key={item.id} claim={item} target={workspace.entities.find((entity) => entity.id === item.value)} mergedFrom={workspace.merges.find((merge) => merge.id === item.mergedFrom)} conflicting={conflicts.includes(item.key)} previousAlternative={resolvedKeys.includes(item.key)} sourceIsDocument={workspace.documents.some((document) => document.name === item.source)} onOpenSource={(name) => void openDocument(name)} onSelectTarget={selectEntity} onMarkCurrent={(id) => void markCurrent(id)} onRetract={(id) => void retractClaim(id)} />)}
                 {claims.length === 0 && <p className="hint">No claims recorded yet.</p>}
                 {incoming.length > 0 && <div className="incoming"><h3>Connected from elsewhere</h3>{incoming.map((link) => { const source = workspace.entities.find((entity) => entity.id === link.subject); return source && <button key={link.id} onClick={() => selectEntity(source)}>{source.title} · {link.key} ↗</button> })}</div>}
@@ -463,6 +560,16 @@ function App() {
               </aside>
             </div>}
     </main>
+    {workspace && (rightOpen ? <aside className="assistant-sidebar" aria-label="AI assistant">
+      <div className="assistant-toolbar"><div><Sparkles size={18}/><span>Assistant</span><small>WITH YOUR WORKSPACE</small></div><div className="assistant-toolbar-actions">
+        <button onClick={() => setAIExpanded(!aiExpanded)} aria-label={aiExpanded ? 'Return AI to sidebar' : 'Expand AI over workspace'} title={aiExpanded ? 'Return AI to sidebar' : 'Expand AI over workspace'}>{aiExpanded ? <Minimize2 size={17}/> : <Maximize2 size={17}/>}</button>
+        <button onClick={() => { setRightOpen(false); setAIExpanded(false) }} aria-label="Collapse AI sidebar" title="Collapse AI sidebar"><PanelRightClose size={17}/></button>
+      </div></div>
+      <ConversationList workspace={workspace} conversationId={conversationId} autonomy={autonomy} permissions={permissions} readScope={readScope} busy={busy}
+        onNew={() => startConversation()} onSelect={selectConversation} onPermissionsChange={setPermissions} onReadScopeChange={setReadScope} onSaveSettings={() => void saveWorkflowSettings()} />
+      {readScope.mode === 'selected' && <div className="ai-scope-note" role="status">Selected knowledge only · review allowed files in Workflow settings</div>}
+      <ConversationPanel conversation={conversation} provider={provider} onProviderChange={setProvider} autonomy={autonomy} onAutonomyChange={setAutonomy} retained={retained} onRetentionChange={setRetained} message={message} onMessageChange={setMessage} busy={busy} onSend={(event) => void sendMessage(event)} onCancel={() => void cancelMessage()} onDelete={() => void deleteConversation()} activeFile={activeFile} openFileCount={tabs.length} />
+    </aside> : <aside className="assistant-rail" aria-label="AI assistant collapsed"><button onClick={() => setRightOpen(true)} title="Open AI assistant" aria-label="Open AI assistant"><Sparkles size={20}/></button><span>AI</span></aside>)}
     <CommandPalette open={paletteOpen && Boolean(workspace)} query={query} results={results} searching={searching} provider={provider} savedIndexEnabled={Boolean(workspace?.modules.semanticIndex)} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult} onAISearch={() => void searchSemantically()} onSavedSearch={() => void searchSavedConcepts()} />
   </div>
 }

@@ -35,3 +35,14 @@ test('selected read scope excludes other entities and documents even when search
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
+
+test('an open permitted document is sent first when the workspace needs retrieval', () => {
+  const records = [
+    { ref: 'document:notes.md', title: 'notes.md', text: 'Open notes about the robotics club' },
+    { ref: 'entity:other', title: 'Archive', text: 'Unrelated text. '.repeat(15000) }
+  ]
+  const prepared = prepareContext(records, 'What should I do next?', [], ['document:notes.md'])
+  assert.equal(prepared.shared.mode, 'retrieved')
+  assert.equal(prepared.shared.records[0].ref, 'document:notes.md')
+  assert.match(prepared.text, /robotics club/)
+})

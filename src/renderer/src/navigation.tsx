@@ -1,4 +1,4 @@
-import { Activity, CalendarDays, Files, House, Inbox, Link2, ListTodo, MessageCircle, Settings2 } from 'lucide-react'
+import { Activity, CalendarDays, Files, House, Inbox, Link2, ListTodo, Settings2 } from 'lucide-react'
 import type { WorkspaceSnapshot } from '../../shared/types'
 import type { View } from './views'
 
@@ -13,7 +13,6 @@ export function AppNavigation({ workspace, view, pendingCount, onNavigate }: Pro
   const main = [
     { id: 'home' as const, label: 'Home', icon: House },
     { id: 'knowledge' as const, label: 'Knowledge', icon: Link2 },
-    { id: 'conversation' as const, label: 'Conversations', icon: MessageCircle },
     { id: 'review' as const, label: 'Review', icon: Inbox, count: pendingCount }
   ]
   const organize = [
@@ -24,15 +23,15 @@ export function AppNavigation({ workspace, view, pendingCount, onNavigate }: Pro
 
   return <nav className="navigation" aria-label="Main navigation">
     <span className="nav-heading">WORKSPACE</span>
-    {main.map(({ id, label, icon: Icon, ...rest }) => <button key={id} className={view === id ? 'active' : ''} onClick={() => onNavigate(id)}>
+    {main.map(({ id, label, icon: Icon, ...rest }) => <button key={id} className={view === id ? 'active' : ''} onClick={() => onNavigate(id)} title={label} aria-label={label} aria-current={view === id ? 'page' : undefined}>
       <Icon size={18} strokeWidth={1.9}/><span>{label}</span>{typeof rest.count === 'number' && rest.count > 0 && <span className="nav-count">{rest.count}</span>}
     </button>)}
     <span className="nav-heading spaced">ORGANIZE</span>
-    {organize.map(({ id, label, icon: Icon }) => <button key={id} className={view === id ? 'active' : ''} onClick={() => onNavigate(id)}>
+    {organize.map(({ id, label, icon: Icon }) => <button key={id} className={view === id ? 'active' : ''} onClick={() => onNavigate(id)} title={label} aria-label={label} aria-current={view === id ? 'page' : undefined}>
       <Icon size={18} strokeWidth={1.9}/><span>{label}</span>
     </button>)}
     <span className="nav-heading spaced">SYSTEM</span>
-    <button className={view === 'activity' ? 'active' : ''} onClick={() => onNavigate('activity')}><Activity size={18} strokeWidth={1.9}/><span>Activity</span></button>
-    <button className={view === 'settings' ? 'active' : ''} onClick={() => onNavigate('settings')}><Settings2 size={18} strokeWidth={1.9}/><span>Settings</span></button>
+    <button className={view === 'activity' ? 'active' : ''} onClick={() => onNavigate('activity')} title="Activity" aria-label="Activity" aria-current={view === 'activity' ? 'page' : undefined}><Activity size={18} strokeWidth={1.9}/><span>Activity</span></button>
+    <button className={view === 'settings' ? 'active' : ''} onClick={() => onNavigate('settings')} title="Settings" aria-label="Settings" aria-current={view === 'settings' ? 'page' : undefined}><Settings2 size={18} strokeWidth={1.9}/><span>Settings</span></button>
   </nav>
 }

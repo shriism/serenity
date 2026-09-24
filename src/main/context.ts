@@ -70,7 +70,7 @@ function evidence(record: ContextRecord, text: string, startCharacter = 0) {
 
 export function prepareContext(records: ContextRecord[], question: string, matches: SearchResult[], requested: string[] = [], offsets: Record<string, number> = {}): PreparedContext {
   const full = JSON.stringify(records)
-  if (full.length <= maxContext && !requested.length) {
+  if (full.length <= maxContext) {
     return { text: full, shared: { mode: 'full', records: records.map((item) => evidence(item, item.text)),
       availableCount: records.length, catalogShown: records.length, sentCharacters: full.length } }
   }

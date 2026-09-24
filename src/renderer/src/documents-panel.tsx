@@ -16,7 +16,7 @@ export function DocumentsPanel({ workspace, onImport, onAnalyze, onOpen }: Props
       {workspace.documents.map((item) => <div key={item.name} className="document-row">
         <span>▤</span><strong>{item.name}</strong>
         <small>{Math.round(item.size / 1024)} KB · {item.extractable ? 'Text format supported' : 'No text extraction for this format'}</small>
-        <button className="text-button" onClick={() => onOpen(item.name)}>Open ↗</button>
+        <button className="text-button" onClick={() => onOpen(item.name)}>{item.extractable ? 'Read' : 'Open'} ↗</button>
         {item.extractable && <button className="text-button" onClick={() => onAnalyze(item.name)}>Analyze ↗</button>}
       </div>)}
     </div>

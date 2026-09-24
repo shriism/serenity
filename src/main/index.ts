@@ -8,6 +8,7 @@ import { semanticSearch } from './semantic'
 import { buildSemanticIndex, rankSemanticIndex } from './semantic-index'
 import { askProvider } from './providers'
 import { analyzeChangedDocument } from './document-analysis'
+import { extractDocument } from './documents'
 import { basename, dirname, join, sep } from 'node:path'
 import type { Autonomy, CalendarEvent, Claim, Entity, Provider, ReadScope, TaskItem, WorkflowPermissions, WorkspaceSnapshot } from '../shared/types'
 import type { ModuleId } from '../shared/modules'
@@ -229,10 +230,16 @@ app.whenReady().then(async () => {
     const error = await shell.openPath(join(selected.directories[2], name))
     if (error) throw new Error(error)
   })
+  ipcMain.handle('document:read', async (_event, name: string) => {
+    if (typeof name !== 'string' || !name || basename(name) !== name || name === '.' || name === '..') throw new Error('Invalid document name')
+    const selected = currentWorkspace()
+    if (!(await selected.snapshot()).documents.some((item) => item.name === name && item.extractable)) throw new Error('Readable document not found in this workspace')
+    return extractDocument(join(selected.directories[2], name))
+  })
   ipcMain.handle('workspace:search', (_event, query: string) => currentWorkspace().search(query))
   ipcMain.handle('workspace:semantic-search', (_event, query: string, provider: Provider) => withActiveRequest(() => semanticSearch(currentWorkspace(), query, provider)))
   ipcMain.handle('workspace:cached-semantic-search', (_event, query: string) => rankSemanticIndex(currentWorkspace(), query))
-  ipcMain.handle('conversation:send', async (_event, input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean; permissions?: WorkflowPermissions; readScope?: ReadScope }) => {
+  ipcMain.handle('conversation:send', async (_event, input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean; permissions?: WorkflowPermissions; readScope?: ReadScope; activeRef?: string; openRefs?: string[] }) => {
     if (conversationAbort) throw new Error('Another conversation request is still running')
     const controller = new AbortController()
     conversationAbort = controller

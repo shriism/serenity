@@ -1,5 +1,6 @@
 import type { FormEvent } from 'react'
 import type { Autonomy, Conversation, Provider } from '../../shared/types'
+import { FileText, Link2 } from 'lucide-react'
 
 interface Props {
   conversation?: Conversation
@@ -15,6 +16,8 @@ interface Props {
   onSend(event: FormEvent): void
   onCancel(): void
   onDelete(): void
+  activeFile?: { name: string; path: string; kind: 'entity' | 'document'; allowed: boolean }
+  openFileCount: number
 }
 
 export function ConversationPanel(props: Props) {
@@ -23,6 +26,11 @@ export function ConversationPanel(props: Props) {
       <div><span className="eyebrow">HUMAN + AI</span><h2>{props.conversation?.title ?? 'New conversation'}</h2></div>
       {props.conversation && <button className="text-button" onClick={props.onDelete}>Delete conversation</button>}
     </div>
+    {props.activeFile && <div className="ai-context-strip" title={props.activeFile.path}>
+      {props.activeFile.kind === 'entity' ? <Link2 size={14}/> : <FileText size={14}/>}
+      <span><strong>{props.activeFile.name}</strong><small>{props.activeFile.allowed ? `${props.activeFile.path} · prioritized for relevant questions${props.openFileCount > 1 ? ` · ${props.openFileCount - 1} other open` : ''}` : 'Not in this conversation’s selected read scope'}</small></span>
+    </div>}
+    {!props.activeFile && props.openFileCount > 0 && <div className="ai-context-strip"><FileText size={14}/><span><strong>{props.openFileCount} open {props.openFileCount === 1 ? 'file' : 'files'}</strong><small>Permitted open files can inform relevant answers</small></span></div>}
     <div className="messages">
       {!props.conversation && <div className="conversation-intro">
         <span className="welcome-symbol">✳</span><h1>Think together.</h1>

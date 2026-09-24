@@ -1,7 +1,7 @@
 import { ArrowRight, CalendarDays, CircleCheck, FileText, Inbox, Link2, MessageCircle, Plus, Sparkles } from 'lucide-react'
 import type { Entity, WorkspaceSnapshot } from '../../shared/types'
 
-type Destination = 'knowledge' | 'conversation' | 'review' | 'documents' | 'calendar' | 'tasks'
+type Destination = 'knowledge' | 'review' | 'documents' | 'calendar' | 'tasks'
 
 interface Props {
   workspace: WorkspaceSnapshot

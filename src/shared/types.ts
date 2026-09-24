@@ -201,10 +201,11 @@ export interface SerenityAPI {
   clearCurrentClaim(subject: string, key: string): Promise<WorkspaceSnapshot>
   importDocuments(): Promise<WorkspaceSnapshot | null>
   openDocument(name: string): Promise<void>
+  readDocument(name: string): Promise<string | null>
   search(query: string): Promise<SearchResult[]>
   semanticSearch(query: string, provider: Provider): Promise<SearchResult[]>
   searchSemanticIndex(query: string): Promise<SearchResult[]>
-  sendMessage(input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean; permissions?: WorkflowPermissions; readScope?: ReadScope }): Promise<WorkspaceSnapshot>
+  sendMessage(input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean; permissions?: WorkflowPermissions; readScope?: ReadScope; activeRef?: string; openRefs?: string[] }): Promise<WorkspaceSnapshot>
   cancelMessage(): Promise<boolean>
   updateConversationSettings(id: string, settings: { autonomy: Autonomy; permissions: WorkflowPermissions; retained: boolean; readScope?: ReadScope }): Promise<WorkspaceSnapshot>
   resolveProposal(id: string, accept: boolean): Promise<WorkspaceSnapshot>

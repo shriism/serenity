@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { createRoot } from 'react-dom/client'
-import type { Autonomy, Entity, Provider, ReadScope, SearchResult, WorkflowPermissions, WorkspaceSnapshot } from '../../shared/types'
+import { ArrowRight, FolderOpen, Link2, Plus, RotateCw, Search } from 'lucide-react'
+import type { Autonomy, Conversation, Entity, Provider, ReadScope, SearchResult, WorkflowPermissions, WorkspaceSnapshot } from '../../shared/types'
 import { CalendarModule, TasksModule } from './module-views'
 import { ConversationPanel } from './conversation-panel'
+import { ConversationList } from './conversation-list'
 import { ReviewPanel } from './review-panel'
 import { ClaimCard } from './claim-card'
 import { DocumentsPanel } from './documents-panel'
@@ -10,9 +12,16 @@ import { ActivityPanel } from './activity-panel'
 import { SettingsPanel } from './settings-panel'
 import { identityCandidates } from '../../shared/identity'
 import { defaultReadScope, defaultWorkflowPermissions } from '../../shared/workflow'
+import { AppNavigation } from './navigation'
+import { HomePanel } from './home-panel'
+import { CommandPalette } from './command-palette'
+import { ThemeControl, useTheme } from './theme'
+import type { View } from './views'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import './style.css'
+
+const serenityIcon = new URL('../../../assets/icon.svg', import.meta.url).href
 
 function App() {
   const [workspace, setWorkspace] = useState<WorkspaceSnapshot | null>(null)
@@ -24,7 +33,7 @@ function App() {
   const [claim, setClaim] = useState({ key: '', value: '', source: 'Me' })
   const [claimTarget, setClaimTarget] = useState('')
   const [mergeTarget, setMergeTarget] = useState('')
-  const [view, setView] = useState<'knowledge' | 'conversation' | 'review' | 'documents' | 'activity' | 'settings' | 'calendar' | 'tasks'>('knowledge')
+  const [view, setView] = useState<View>('home')
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [provider, setProvider] = useState<Provider>('copilot')
   const [autonomy, setAutonomy] = useState<Autonomy>('propose')
@@ -36,6 +45,19 @@ function App() {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[] | null>(null)
   const [searching, setSearching] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [focusedEventId, setFocusedEventId] = useState<string | null>(null)
+  const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null)
+  const [focusVersion, setFocusVersion] = useState(0)
+  const [theme, setTheme] = useTheme()
+  const searchSequence = useRef(0)
+
+  const closePalette = useCallback(() => {
+    searchSequence.current++
+    setPaletteOpen(false)
+    setQuery('')
+    setResults(null)
+  }, [])
 
   const refresh = useCallback(async () => {
     try {
@@ -54,6 +76,17 @@ function App() {
   useEffect(() => { void window.serenity.refresh().then(setWorkspace).catch((cause) => setError(String(cause))) }, [])
   useEffect(() => window.serenity.setEditorDirty(dirty), [dirty])
   useEffect(() => window.serenity.onIndexError((message) => setError(`Background AI: ${message}`)), [])
+  useEffect(() => {
+    const onShortcut = (event: globalThis.KeyboardEvent): void => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
+        event.preventDefault()
+        if (paletteOpen) closePalette()
+        else setPaletteOpen(true)
+      } else if (event.key === 'Escape') closePalette()
+    }
+    window.addEventListener('keydown', onShortcut)
+    return () => window.removeEventListener('keydown', onShortcut)
+  }, [closePalette, paletteOpen])
 
   async function chooseWorkspace() {
     try {
@@ -65,24 +98,27 @@ function App() {
       setDirty(false)
       setBodyMode('edit')
       setError('')
-      setView('knowledge')
+      setView('home')
       setConversationId(null)
       setPermissions({ ...defaultWorkflowPermissions })
       setReadScope({ ...defaultReadScope, entityIds: [], documentNames: [] })
-      setResults(null)
+      closePalette()
+      setFocusedEventId(null)
+      setFocusedTaskId(null)
     } catch (cause) {
       setError(String(cause))
     }
   }
 
-  function selectEntity(entity: Entity) {
-    if (dirty && !window.confirm('Discard your unsaved changes?')) return
+  function selectEntity(entity: Entity): boolean {
+    if (dirty && !window.confirm('Discard your unsaved changes?')) return false
     setSelected(entity.id)
     setDraft({ ...entity })
     setDirty(false)
     setBodyMode('preview')
     setError('')
     setView('knowledge')
+    return true
   }
 
   function newEntity() {
@@ -93,6 +129,28 @@ function App() {
     setBodyMode('edit')
     setError('')
     setView('knowledge')
+  }
+
+  function startConversation(prompt = '') {
+    if (message.trim() && !window.confirm('Discard your unsent message?')) return
+    setConversationId(null)
+    setAutonomy('propose')
+    setPermissions({ ...defaultWorkflowPermissions })
+    setReadScope({ ...defaultReadScope, entityIds: [], documentNames: [] })
+    setRetained(true)
+    setMessage(prompt)
+    setView('conversation')
+  }
+
+  function selectConversation(item: Conversation) {
+    if (busy || (message.trim() && item.id !== conversationId && !window.confirm('Discard your unsent message?'))) return
+    setConversationId(item.id)
+    setRetained(item.retained)
+    setAutonomy(item.autonomy ?? 'propose')
+    setPermissions(item.permissions ?? { ...defaultWorkflowPermissions })
+    setReadScope(item.readScope ?? { ...defaultReadScope, entityIds: [], documentNames: [] })
+    setMessage('')
+    setView('conversation')
   }
 
   async function saveEntity(event: FormEvent) {
@@ -145,21 +203,58 @@ function App() {
     catch (cause) { setError(String(cause)) }
   }
 
-  async function search(event: FormEvent) {
-    event.preventDefault()
-    if (!query.trim()) { setResults(null); return }
-    try { setResults(await window.serenity.search(query)); setError('') }
-    catch (cause) { setError(String(cause)) }
+  async function searchText(value: string) {
+    setQuery(value)
+    const request = ++searchSequence.current
+    if (!value.trim()) { setResults(null); return }
+    try {
+      const matches = await window.serenity.search(value)
+      if (request === searchSequence.current) setResults(matches)
+      setError('')
+    } catch (cause) { setError(String(cause)) }
+  }
+
+  function openSearchResult(result: SearchResult) {
+    const entity = workspace?.entities.find((item) => item.id === result.id ||
+      (result.kind === 'claim' && item.id === workspace.claims.find((claim) => claim.id === result.id)?.subject))
+    if (entity) {
+      if (selectEntity(entity)) closePalette()
+      return
+    }
+    if (result.kind === 'document') setView('documents')
+    if (result.kind === 'task' && workspace?.modules.tasks) openTask(result.id)
+    if (result.kind === 'event' && workspace?.modules.calendar) openEvent(result.id)
+    closePalette()
+  }
+
+  function openEvent(id: string) {
+    setFocusedEventId(id)
+    setFocusVersion((version) => version + 1)
+    setView('calendar')
+  }
+
+  function openTask(id: string) {
+    setFocusedTaskId(id)
+    setFocusVersion((version) => version + 1)
+    setView('tasks')
+  }
+
+  function navigate(destination: View) {
+    if (destination === 'calendar') setFocusedEventId(null)
+    if (destination === 'tasks') setFocusedTaskId(null)
+    setView(destination)
+    if (destination === 'activity') void refresh()
   }
 
   async function searchSemantically() {
     if (!query.trim() || searching) return
     setSearching(true)
+    const request = ++searchSequence.current
     try {
       const [lexical, semantic] = await Promise.all([
         window.serenity.search(query), window.serenity.semanticSearch(query, provider)
       ])
-      setResults([...semantic, ...lexical.filter((entry) => !semantic.some((match) =>
+      if (request === searchSequence.current) setResults([...semantic, ...lexical.filter((entry) => !semantic.some((match) =>
         match.kind === entry.kind && match.id === entry.id && match.title === entry.title))])
       await refresh()
       setError('')
@@ -169,9 +264,10 @@ function App() {
 
   async function searchSavedConcepts() {
     if (!query.trim()) return
+    const request = ++searchSequence.current
     try {
       const [indexed, lexical] = await Promise.all([window.serenity.searchSemanticIndex(query), window.serenity.search(query)])
-      setResults([...indexed, ...lexical.filter((entry) => !indexed.some((match) =>
+      if (request === searchSequence.current) setResults([...indexed, ...lexical.filter((entry) => !indexed.some((match) =>
         match.kind === entry.kind && match.id === entry.id && match.title === entry.title))])
       setError('')
     } catch (cause) { setError(String(cause)) }
@@ -284,71 +380,59 @@ function App() {
     ...(workspace?.proposals.map((item) => ({ id: item.id, at: item.recordedAt, title: `Proposal ${item.status}`, detail: `${item.kind === 'claim' ? `${item.key}: ${item.value}` : item.title} · ${item.provider}` })) ?? []),
     ...(workspace?.conversations.flatMap((item) => item.messages.map((message) => ({ id: message.id, at: message.recordedAt, title: message.role === 'user' ? 'You' : `${message.provider} replied`, detail: message.text.slice(0, 180) }))) ?? [])]
     .sort((a, b) => b.at.localeCompare(a.at))
+  const title: Record<View, string> = { home: 'Home', knowledge: 'Knowledge', conversation: 'Conversations', review: 'Review', documents: 'Documents', calendar: 'Calendar', tasks: 'Tasks', activity: 'Activity', settings: 'Settings' }
 
   return <div className="app">
     <aside className="sidebar">
-      <div className="brand"><span className="brand-mark">✳</span><div><strong>serenity</strong><small>your knowledge, connected</small></div></div>
+      <div className="brand"><img className="brand-icon" src={serenityIcon} alt=""/><div><strong>Serenity</strong><small>PERSONAL KNOWLEDGE</small></div></div>
       <div className="workspace-control">
-        <span className="eyebrow">WORKSPACE</span>
         <button className="workspace-button" onClick={() => void chooseWorkspace()} title={workspace?.path ?? 'Choose a workspace'}>
-          <span className="workspace-name">{workspace ? workspace.path.split(/[\\/]/).filter(Boolean).at(-1) : 'Choose a folder'}</span><span>↗</span>
+          <span className="workspace-avatar">{workspace ? workspace.path.split(/[\\/]/).filter(Boolean).at(-1)?.slice(0, 1).toUpperCase() : '+'}</span>
+          <span className="workspace-info"><strong>{workspace ? workspace.path.split(/[\\/]/).filter(Boolean).at(-1) : 'Choose a folder'}</strong><small>{workspace ? 'Local workspace' : 'Start here'}</small></span>
+          <span className="workspace-chevron">⌄</span>
         </button>
-        {workspace && <small className="path" title={workspace.path}>{workspace.path}</small>}
-        {workspace && <button className="open-workspace" onClick={() => void window.serenity.openWorkspaceFolder().catch((cause) => setError(String(cause)))}>Open workspace folder ↗</button>}
+        {workspace && <small className="workspace-path" title={workspace.path}>{workspace.path}</small>}
       </div>
-      {workspace && <>
-        <div className="navigation">
-          <button className={view === 'knowledge' ? 'active' : ''} onClick={() => setView('knowledge')}>◇ <span>Knowledge</span></button>
-          <button className={view === 'conversation' ? 'active' : ''} onClick={() => setView('conversation')}>✳ <span>Conversations</span></button>
-          <button className={view === 'review' ? 'active' : ''} onClick={() => setView('review')}>◉ <span>Review {pending.length ? `(${pending.length})` : ''}</span></button>
-          <button className={view === 'documents' ? 'active' : ''} onClick={() => setView('documents')}>▤ <span>Documents</span></button>
-          {workspace.modules.calendar && <button className={view === 'calendar' ? 'active' : ''} onClick={() => setView('calendar')}>▦ <span>Calendar</span></button>}
-          {workspace.modules.tasks && <button className={view === 'tasks' ? 'active' : ''} onClick={() => setView('tasks')}>☑ <span>Tasks</span></button>}
-          <button className={view === 'activity' ? 'active' : ''} onClick={() => { setView('activity'); void refresh() }}>◷ <span>Activity</span></button>
-          <button className={view === 'settings' ? 'active' : ''} onClick={() => setView('settings')}>⚙ <span>Connections</span></button>
-        </div>
-        {view === 'knowledge' && <>
-        <form className="sidebar-search" onSubmit={(event) => void search(event)}><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search workspace..." aria-label="Search workspace"/><button type="submit" aria-label="Search">⌕</button></form>
-        <button className="semantic-button" disabled={!query.trim() || searching} onClick={() => void searchSemantically()}>{searching ? 'Searching with AI…' : `Search meaning with ${provider} ✳`}</button>
-        {workspace.modules.semanticIndex && <button className="semantic-button" disabled={!query.trim()} onClick={() => void searchSavedConcepts()}>Search saved concepts · offline</button>}
-        {results && <div className="search-results"><span className="eyebrow">RESULTS · {results.length}</span>{results.map((result, index) => <button key={`${result.kind}-${result.id}-${index}`} onClick={() => {
-          const entity = workspace.entities.find((item) => item.id === result.id)
-          if (entity) selectEntity(entity)
-          else if (result.kind === 'document') setView('documents')
-          else if (result.kind === 'task' && workspace.modules.tasks) setView('tasks')
-          else if (result.kind === 'event' && workspace.modules.calendar) setView('calendar')
-        }}><strong>{result.title}</strong><small>{result.detail}</small></button>)}<button className="clear-results" onClick={() => setResults(null)}>Clear results</button></div>}
-        <div className="list-heading"><span className="eyebrow">KNOWLEDGE <span className="count">{workspace.entities.length}</span></span><button className="icon-button" onClick={newEntity} title="New entity" aria-label="New entity">+</button></div>
-        <nav className="entity-list" aria-label="Entities">
-          {workspace.entities.map((entity) => <button key={entity.id} className={`entity-link ${selected === entity.id ? 'active' : ''}`} onClick={() => selectEntity(entity)}><span className="entity-icon">◇</span><span><strong>{entity.title}</strong><small>{entity.type}</small></span></button>)}
-          {workspace.entities.length === 0 && <p className="hint">Your workspace is ready. Create an entity to begin.</p>}
-        </nav>
-        </>}
-        {view === 'conversation' && <nav className="entity-list" aria-label="Conversations"><button className="entity-link" onClick={() => { setConversationId(null); setRetained(true); setAutonomy('propose'); setPermissions({ ...defaultWorkflowPermissions }); setReadScope({ ...defaultReadScope, entityIds: [], documentNames: [] }) }}>+ New conversation</button>{workspace.conversations.map((item) => <button key={item.id} className={`entity-link ${conversationId === item.id ? 'active' : ''}`} onClick={() => { setConversationId(item.id); setRetained(item.retained); setAutonomy(item.autonomy ?? 'propose'); setPermissions(item.permissions ?? { ...defaultWorkflowPermissions }); setReadScope(item.readScope ?? { ...defaultReadScope, entityIds: [], documentNames: [] }) }}><span><strong>{item.title}</strong><small>{item.messages.length} messages {item.retained ? '' : '· not retained'}</small></span></button>)}</nav>}
-        {view === 'conversation' && autonomy === 'autonomous' && <div className="workflow-scope"><span className="eyebrow">THIS WORKFLOW MAY AUTO-SAVE</span>{([
-          ['claims', 'Sourced claims'], ['entities', 'Existing-category entities'], ['tasks', 'Tasks'], ['events', 'Calendar events']
-        ] as const).map(([key, label]) => <label key={key}><input type="checkbox" checked={permissions[key]} onChange={(event) => setPermissions({ ...permissions, [key]: event.target.checked })}/>{label}</label>)}<small>New categories and ambiguous identities still need your review.</small></div>}
-        {view === 'conversation' && <div className="read-scope"><span className="eyebrow">WHAT AI MAY READ</span><select aria-label="AI read scope" value={readScope.mode} onChange={(event) => setReadScope({ ...readScope, mode: event.target.value as ReadScope['mode'] })}><option value="workspace">Entire workspace</option><option value="selected">Selected knowledge</option></select>{readScope.mode === 'selected' && <div className="read-scope-items"><strong>Entities</strong>{workspace.entities.map((entity) => <label key={entity.id}><input type="checkbox" checked={readScope.entityIds.includes(entity.id)} onChange={(event) => setReadScope({ ...readScope, entityIds: event.target.checked ? [...readScope.entityIds, entity.id] : readScope.entityIds.filter((id) => id !== entity.id) })}/>{entity.title}</label>)}<strong>Documents</strong>{workspace.documents.map((document) => <label key={document.name}><input type="checkbox" checked={readScope.documentNames.includes(document.name)} onChange={(event) => setReadScope({ ...readScope, documentNames: event.target.checked ? [...readScope.documentNames, document.name] : readScope.documentNames.filter((name) => name !== document.name) })}/>{document.name}</label>)}<label><input type="checkbox" checked={readScope.includeOtherConversations} onChange={(event) => setReadScope({ ...readScope, includeOtherConversations: event.target.checked })}/>Other conversations</label><label><input type="checkbox" checked={readScope.includeCalendarAndTasks} onChange={(event) => setReadScope({ ...readScope, includeCalendarAndTasks: event.target.checked })}/>Calendar and tasks</label></div>}<small>Current conversation messages are included. Background AI modules have separate workspace settings.</small></div>}
-        {view === 'conversation' && conversationId && <button className="workflow-save" onClick={() => void saveWorkflowSettings()}>Save workflow settings</button>}
-      </>}
-      <div className="sidebar-footer">On-device workspace · AI connections coming next</div>
+      {workspace && <div className="sidebar-scroller">
+        <AppNavigation workspace={workspace} view={view} pendingCount={pending.length} onNavigate={navigate}/>
+      </div>}
+      <div className="sidebar-footer">
+        {workspace && <button className="footer-folder" onClick={() => void window.serenity.openWorkspaceFolder().catch((cause) => setError(String(cause)))}><FolderOpen size={16}/> Open workspace folder</button>}
+        <ThemeControl preference={theme} onChange={setTheme}/>
+        <div className="local-status"><span/> On this device</div>
+      </div>
     </aside>
     <main className="main">
-      <header className="topbar"><span>{workspace ? 'Knowledge workspace' : 'Welcome to Serenity'}</span>{workspace && <button className="text-button" onClick={() => void refresh()}>Refresh files ↻</button>}</header>
+      <header className="topbar">
+        <div className="breadcrumbs"><span>Workspace</span><span className="breadcrumb-divider">/</span><strong>{workspace ? title[view] : 'Welcome'}</strong></div>
+        {workspace && <div className="topbar-actions">
+          <button className="topbar-search" onClick={() => setPaletteOpen(true)}><Search size={16}/><span>Search anything</span><kbd>{navigator.platform.includes('Mac') ? '⌘ K' : 'Ctrl K'}</kbd></button>
+          <button className="topbar-icon" onClick={() => void refresh()} title="Refresh files" aria-label="Refresh files"><RotateCw size={17}/></button>
+          <button className="primary topbar-create" onClick={newEntity}><Plus size={16}/> New entity</button>
+        </div>}
+      </header>
       {error && <div className="notice error" role="alert">{error}</div>}
       {workspace?.errors.map((item) => <div key={item} className="notice warning" role="alert">Could not read {item}</div>)}
       {view === 'conversation' && readScope.mode === 'selected' && <div className="notice warning" role="status">Selected read scope: AI only receives chosen knowledge and this conversation. The accessible records are shown with each response.</div>}
       {view === 'review' && workspace?.proposals.some((item) => item.status === 'pending' && item.reviewReason) && <div className="notice warning" role="status">Some proposals involve similar entities. Verify the identity before accepting them.</div>}
-      {!workspace ? <section className="welcome"><div className="welcome-symbol">✳</div><span className="eyebrow">A PLACE TO CONNECT WHAT MATTERS</span><h1>Your world,<br/><em>within reach.</em></h1><p>Choose a folder on your device for Serenity's knowledge files. You can read and edit them with any text editor.</p><button className="primary" onClick={() => void chooseWorkspace()}>Choose a workspace <span>↗</span></button></section>
-        : view === 'calendar' && workspace.modules.calendar ? <CalendarModule workspace={workspace} onUpdate={setWorkspace} onError={setError} />
-        : view === 'tasks' && workspace.modules.tasks ? <TasksModule workspace={workspace} onUpdate={setWorkspace} onError={setError} />
-        : view === 'conversation' ? <ConversationPanel conversation={conversation} provider={provider} onProviderChange={setProvider} autonomy={autonomy} onAutonomyChange={setAutonomy} retained={retained} onRetentionChange={setRetained} message={message} onMessageChange={setMessage} busy={busy} onSend={(event) => void sendMessage(event)} onCancel={() => void cancelMessage()} onDelete={() => void deleteConversation()} />
+      {!workspace ? <section className="welcome-screen"><div className="welcome-visual"><img src={serenityIcon} alt=""/><span className="visual-orbit orbit-one"/><span className="visual-orbit orbit-two"/><span className="visual-dot dot-one"/><span className="visual-dot dot-two"/><span className="visual-dot dot-three"/></div><div className="welcome-copy"><span className="eyebrow">A SPACE FOR EVERYTHING THAT MATTERS</span><h1>Your world,<br/><em>more connected.</em></h1><p>A private workspace for your knowledge, relationships, plans, and the ideas in between. Choose a folder on your device to begin.</p><button className="primary welcome-action" onClick={() => void chooseWorkspace()}><FolderOpen size={18}/> Choose a workspace <ArrowRight size={17}/></button><small>Your files stay in a folder you control.</small></div></section>
+        : view === 'home' ? <HomePanel workspace={workspace} onNavigate={navigate} onSelectEntity={selectEntity} onNewEntity={newEntity} onAsk={() => startConversation()} onImport={() => { setView('documents'); void importDocuments() }} onOpenEvent={openEvent} onOpenTask={openTask} />
+        : view === 'calendar' && workspace.modules.calendar ? <CalendarModule workspace={workspace} onUpdate={setWorkspace} onError={setError} focusEventId={focusedEventId} focusVersion={focusVersion} />
+        : view === 'tasks' && workspace.modules.tasks ? <TasksModule workspace={workspace} onUpdate={setWorkspace} onError={setError} focusTaskId={focusedTaskId} focusVersion={focusVersion} />
+        : view === 'conversation' ? <div className="conversation-layout">
+          <ConversationList workspace={workspace} conversationId={conversationId} autonomy={autonomy} permissions={permissions} readScope={readScope} busy={busy}
+            onNew={() => startConversation()} onSelect={selectConversation} onPermissionsChange={setPermissions} onReadScopeChange={setReadScope} onSaveSettings={() => void saveWorkflowSettings()} />
+          <ConversationPanel conversation={conversation} provider={provider} onProviderChange={setProvider} autonomy={autonomy} onAutonomyChange={setAutonomy} retained={retained} onRetentionChange={setRetained} message={message} onMessageChange={setMessage} busy={busy} onSend={(event) => void sendMessage(event)} onCancel={() => void cancelMessage()} onDelete={() => void deleteConversation()} />
+        </div>
         : view === 'review' ? <ReviewPanel workspace={workspace} onResolve={(id, accept) => void resolveProposal(id, accept)} onAttach={(id, entityId) => void attachProposal(id, entityId)} onOpenSource={(name) => void openDocument(name)} />
-        : view === 'documents' ? <DocumentsPanel workspace={workspace} onImport={() => void importDocuments()} onOpen={(name) => void openDocument(name)} onAnalyze={(name) => { setConversationId(null); setMessage(`Analyze the imported document ${name}. Summarize it, identify useful knowledge about existing entities, and suggest claims with precise sources. Ask me to clarify any ambiguous identities.`); setView('conversation') }} />
+        : view === 'documents' ? <DocumentsPanel workspace={workspace} onImport={() => void importDocuments()} onOpen={(name) => void openDocument(name)} onAnalyze={(name) => startConversation(`Analyze the imported document ${name}. Summarize it, identify useful knowledge about existing entities, and suggest claims with precise sources. Ask me to clarify any ambiguous identities.`)} />
         : view === 'activity' ? <ActivityPanel workspace={workspace} activity={activity} />
         : view === 'settings' ? <SettingsPanel workspace={workspace} onUpdate={setWorkspace} onError={setError} />
-        : !draft ? <section className="empty"><span className="empty-symbol">◇</span><h1>Start with what you know.</h1><p>Create a person, project, idea, place, or anything else meaningful to you. Categories are yours to define.</p><button className="primary" onClick={newEntity}>Create an entity <span>+</span></button></section>
+        : !draft ? <section className="page knowledge-index"><div className="knowledge-index-header"><div><span className="eyebrow">YOUR WORLD</span><h1>Knowledge</h1><p>People, places, projects, ideas—whatever matters to you. Everything can connect.</p></div><button className="primary" onClick={newEntity}><Plus size={16}/> New entity</button></div>{workspace.entities.length ? <div className="knowledge-tiles">{[...workspace.entities].sort((a, b) => a.title.localeCompare(b.title)).map((entity) => <button key={entity.id} onClick={() => selectEntity(entity)}><span className="knowledge-tile-icon">{entity.title.slice(0, 1).toUpperCase()}</span><span><strong>{entity.title}</strong><small>{entity.type}</small></span><ArrowRight size={16}/></button>)}</div> : <div className="knowledge-blank"><Link2 size={25}/><h2>Start with what you know.</h2><p>Create a person, project, idea, or anything else meaningful to you. Categories are yours to define.</p><button className="primary" onClick={newEntity}>Create your first entity <ArrowRight size={16}/></button></div>}</section>
           : <div className="content">
+              <aside className="knowledge-list-panel"><div className="list-heading"><span className="eyebrow">LIBRARY <span className="count">{workspace.entities.length}</span></span><button className="icon-button" onClick={newEntity} aria-label="New entity" title="New entity"><Plus size={15}/></button></div>
+                <nav className="entity-list" aria-label="Entities">{workspace.entities.map((entity) => <button key={entity.id} className={`entity-link ${selected === entity.id ? 'active' : ''}`} onClick={() => selectEntity(entity)}><span className="entity-icon">{entity.title.slice(0, 1).toUpperCase()}</span><span><strong>{entity.title}</strong><small>{entity.type}</small></span></button>)}</nav>
+              </aside>
               <section className="editor">
                 <span className="eyebrow">{draft.id ? 'ENTITY' : 'NEW ENTITY'}</span>
                 <form onSubmit={(event) => void saveEntity(event)}>
@@ -379,6 +463,7 @@ function App() {
               </aside>
             </div>}
     </main>
+    <CommandPalette open={paletteOpen && Boolean(workspace)} query={query} results={results} searching={searching} provider={provider} savedIndexEnabled={Boolean(workspace?.modules.semanticIndex)} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult} onAISearch={() => void searchSemantically()} onSavedSearch={() => void searchSavedConcepts()} />
   </div>
 }
 

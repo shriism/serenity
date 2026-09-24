@@ -38,6 +38,7 @@ export function SettingsPanel({ workspace, onUpdate, onError }: Props) {
 
   return <section className="page">
     <span className="eyebrow">WORKSPACE SETTINGS</span><h1>Modules & connections</h1>
+    <div className="settings-workspace"><span className="eyebrow">ON THIS DEVICE</span><strong>{workspace.path}</strong><small>Use the workspace switcher in the sidebar to choose a different location.</small></div>
     <p>Turn modules off without removing their files. Calendar and tasks belong to Serenity and connect to the same knowledge workspace. Background AI modules are off by default.</p>
     <div className="document-list">
       {modules.map((item) => <label key={item.id} className="module-toggle"><span>

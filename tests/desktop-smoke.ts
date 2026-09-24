@@ -28,6 +28,13 @@ if (packaged) {
   assert.ok((await stat(codex)).isFile(), 'The packaged Codex runtime must be available')
 }
 const workspace = await mkdtemp(join(tmpdir(), 'serenity-desktop-smoke-'))
+const futureDate = (days: number): string => {
+  const day = new Date()
+  day.setDate(day.getDate() + days)
+  return day.toLocaleDateString('en-CA')
+}
+const taskDue = futureDate(7)
+const eventDate = futureDate(8)
 await mkdir(join(workspace, 'documents'))
 await mkdir(join(workspace, 'proposals'))
 const proposalId = '123e4567-e89b-42d3-a456-426614174092'
@@ -76,6 +83,22 @@ async function evaluate(url: string, expression: string): Promise<unknown> {
   })
 }
 
+async function captureScreenshot(url: string): Promise<Buffer> {
+  const socket = new WebSocket(url)
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => { socket.close(); reject(new Error('UI screenshot timed out')) }, 10000)
+    socket.addEventListener('open', () => socket.send(JSON.stringify({ id: 2, method: 'Page.captureScreenshot', params: { format: 'png' } })))
+    socket.addEventListener('message', (event) => {
+      const result = JSON.parse(String(event.data)) as { id?: number; result?: { data?: string } }
+      if (result.id !== 2) return
+      clearTimeout(timeout)
+      socket.close()
+      result.result?.data ? resolve(Buffer.from(result.result.data, 'base64')) : reject(new Error('Screenshot contained no image data'))
+    })
+    socket.addEventListener('error', () => { clearTimeout(timeout); reject(new Error('Could not capture the desktop UI')) })
+  })
+}
+
 try {
   let pageUrl = ''
   let observed: unknown = null
@@ -96,8 +119,27 @@ try {
 
   const path = await evaluate(pageUrl, 'window.serenity.refresh().then((snapshot) => snapshot?.path)')
   assert.equal(path, workspace)
-  const providers = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Connections')); if (button) { button.click(); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const select = document.querySelector('#index-provider'); if (select) return [...select.options].map((option) => option.value); await new Promise((resolve) => setTimeout(resolve, 100)) } return [] })()`) as string[]
+  const home = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const heading = document.querySelector('.home-page h1'); if (heading) return heading.textContent; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`) as string | null
+  assert.match(home ?? '', /^Good /)
+  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-home.png'), await captureScreenshot(pageUrl))
+  const theme = await evaluate(pageUrl, `(async () => { const select = document.querySelector('.theme-control select'); select.value = 'dark'; select.dispatchEvent(new Event('change', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 100)); const changed = document.documentElement.dataset.theme; select.value = 'system'; select.dispatchEvent(new Event('change', { bubbles: true })); return changed })()`) as string
+  assert.equal(theme, 'dark')
+  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) {
+    await evaluate(pageUrl, `(async () => { const select = document.querySelector('.theme-control select'); select.value = 'light'; select.dispatchEvent(new Event('change', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 120)) })()`)
+    await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-home-light.png'), await captureScreenshot(pageUrl))
+    await evaluate(pageUrl, `(async () => { const select = document.querySelector('.theme-control select'); select.value = 'system'; select.dispatchEvent(new Event('change', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 120)) })()`)
+  }
+  const palette = await evaluate(pageUrl, `(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', [navigator.platform.includes('Mac') ? 'metaKey' : 'ctrlKey']: true, bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 100)); return Boolean(document.querySelector('.command-palette')) })()`) as boolean
+  assert.equal(palette, true)
+  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-search.png'), await captureScreenshot(pageUrl))
+  await evaluate(pageUrl, `window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))`)
+  const providers = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Settings')); if (button) { button.click(); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const select = document.querySelector('#index-provider'); if (select) return [...select.options].map((option) => option.value); await new Promise((resolve) => setTimeout(resolve, 100)) } return [] })()`) as string[]
   assert.deepEqual(providers, ['copilot', 'codex'])
+  const displayedPath = await evaluate(pageUrl, `document.querySelector('.settings-workspace strong')?.textContent`)
+  assert.equal(displayedPath, workspace)
+  const settingsError = await evaluate(pageUrl, `(async () => { await new Promise((resolve) => setTimeout(resolve, 250)); return document.querySelector('.notice.error')?.textContent ?? null })()`)
+  assert.equal(settingsError, null, `Settings should load credentials without an error: ${settingsError}`)
+  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-settings.png'), await captureScreenshot(pageUrl))
   await evaluate(pageUrl, `[...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Knowledge'))?.click()`)
   if (process.env.SERENITY_SMOKE_CREDENTIALS === '1') {
     const connected = await evaluate(pageUrl, `window.serenity.saveCredential('codex', 'test-session-only-key').then((status) => status.codex)`)
@@ -109,18 +151,24 @@ try {
   const entityId = await evaluate(pageUrl, `window.serenity.saveEntity({ id: '', title: 'Alex', type: 'person', body: '# Alex\\nFrom **AI Club**.' }).then((snapshot) => snapshot.entities[0].id)`) as string
   assert.match(entityId, /^[a-f0-9-]{36}$/)
   assert.match(await readFile(join(workspace, 'entities', `${entityId}.md`), 'utf8'), /AI Club/)
-  const preview = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const button = [...document.querySelectorAll('.entity-link')].find((item) => item.textContent?.includes('Alex')); if (button) { button.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.markdown-preview strong')?.textContent ?? null } await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
+  const preview = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const button = [...document.querySelectorAll('.entity-link, .knowledge-tiles button')].find((item) => item.textContent?.includes('Alex')); if (button) { button.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.markdown-preview strong')?.textContent ?? null } await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
   assert.equal(preview, 'AI Club')
+  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-knowledge.png'), await captureScreenshot(pageUrl))
   const review = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Review')); button?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.review-identity select')?.textContent ?? null })()`)
   assert.match(String(review), /Alex/)
+  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-review.png'), await captureScreenshot(pageUrl))
   const attached = await evaluate(pageUrl, `window.serenity.attachEntityProposal('${proposalId}', '${entityId}').then((snapshot) => ({ entities: snapshot.entities.length, source: snapshot.claims.find((item) => item.key === 'context')?.source, target: snapshot.proposals.find((item) => item.id === '${proposalId}')?.resolvedInto }))`) as { entities: number; source: string; target: string }
   assert.deepEqual(attached, { entities: 1, source: 'Smoke document', target: entityId })
-  const attachedContext = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Knowledge')); button?.click(); for (let i = 0; i < 30; i++) { const summary = document.querySelector('.claim-context summary'); if (summary) { summary.click(); return document.querySelector('.claim-context strong')?.textContent ?? null } await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
-  assert.equal(attachedContext, 'robotics club')
+  const attachedContext = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Knowledge')); button?.click(); for (let i = 0; i < 40; i++) { const rich = document.querySelector('.claim-context strong'); if (rich) { document.querySelector('.claim-context summary')?.click(); return { text: rich.textContent, view: 'knowledge' } } await new Promise((resolve) => setTimeout(resolve, 100)) } return { text: null, view: document.querySelector('.main')?.textContent?.slice(0, 200) } })()`) as { text: string | null; view: string }
+  assert.equal(attachedContext.text, 'robotics club', attachedContext.view)
   const claimCount = await evaluate(pageUrl, `window.serenity.addClaim({ subject: '${entityId}', key: 'birthday', value: 'September 7', source: 'Alex' }).then((snapshot) => snapshot.claims.length)`)
   assert.equal(claimCount, 2)
   const results = await evaluate(pageUrl, `window.serenity.search('birthday').then((items) => items.map((item) => item.kind))`) as string[]
   assert.ok(results.includes('claim'))
+  const paletteResults = await evaluate(pageUrl, `(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', [navigator.platform.includes('Mac') ? 'metaKey' : 'ctrlKey']: true, bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 80)); const input = document.querySelector('.palette-input input'); const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(input, 'birthday'); input.dispatchEvent(new Event('input', { bubbles: true })); for (let i = 0; i < 30; i++) { const match = [...document.querySelectorAll('.palette-results button')].find((item) => item.textContent?.includes('birthday')); if (match) { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return true } await new Promise((resolve) => setTimeout(resolve, 100)) } window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return false })()`) as boolean
+  assert.equal(paletteResults, true, 'The command palette should search workspace claims')
+  const openedClaim = await evaluate(pageUrl, `(async () => { await new Promise((resolve) => setTimeout(resolve, 150)); [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Home'))?.click(); await new Promise((resolve) => setTimeout(resolve, 150)); document.querySelector('.topbar-search')?.click(); for (let i = 0; i < 30; i++) { const input = document.querySelector('.palette-input input'); if (input) { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(input, 'birthday'); input.dispatchEvent(new Event('input', { bubbles: true })); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const match = [...document.querySelectorAll('.palette-results button')].find((item) => item.textContent?.includes('birthday')); if (match) { match.click(); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const title = document.querySelector('.editor #title')?.value; if (title === 'Alex') return title; await new Promise((resolve) => setTimeout(resolve, 100)) } return { view: document.querySelector('.main')?.textContent?.slice(0, 150), palette: Boolean(document.querySelector('.command-palette')) } })()`)
+  assert.equal(openedClaim, 'Alex', 'Selecting a claim search result should open its entity')
   const pdfResults = await evaluate(pageUrl, `window.serenity.search('QuarterlyCometResearch').then((items) => items.map((item) => item.kind))`) as string[]
   assert.ok(pdfResults.includes('document'), 'PDF text should be searchable in the desktop app')
   const docxResults = await evaluate(pageUrl, `window.serenity.search('DocxSyllabusDeadline').then((items) => items.map((item) => item.kind))`) as string[]
@@ -129,11 +177,12 @@ try {
   assert.match(unsupported.label ?? '', /No text extraction/)
   assert.equal(unsupported.canAnalyze, false)
   assert.equal(unsupported.canOpen, true)
+  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-documents.png'), await captureScreenshot(pageUrl))
   const invalidOpen = await evaluate(pageUrl, `window.serenity.openDocument('../outside').then(() => 'allowed', (error) => String(error))`) as string
   assert.match(invalidOpen, /Invalid document name/)
-  const taskCount = await evaluate(pageUrl, `window.serenity.saveTask({ id: '', title: 'Call Alex', due: '2026-10-03', completed: false, notes: '', relatedEntityIds: ['${entityId}'] }).then((snapshot) => snapshot.tasks.length)`)
+  const taskCount = await evaluate(pageUrl, `window.serenity.saveTask({ id: '', title: 'Call Alex', due: '${taskDue}', completed: false, notes: '', relatedEntityIds: ['${entityId}'] }).then((snapshot) => snapshot.tasks.length)`)
   assert.equal(taskCount, 1)
-  const eventCount = await evaluate(pageUrl, `window.serenity.saveEvent({ id: '', title: 'Meet Alex', start: '2026-10-04T10:00', notes: '', relatedEntityIds: ['${entityId}'] }).then((snapshot) => snapshot.events.length)`)
+  const eventCount = await evaluate(pageUrl, `window.serenity.saveEvent({ id: '', title: 'Meet Alex', start: '${eventDate}T10:00', notes: '', relatedEntityIds: ['${entityId}'] }).then((snapshot) => snapshot.events.length)`)
   assert.equal(eventCount, 1)
   const archivedEventCount = await evaluate(pageUrl, `window.serenity.refresh().then((snapshot) => window.serenity.archiveEvent(snapshot.events[0].id, snapshot.events[0].revision)).then((snapshot) => snapshot.archivedEvents.length)`)
   assert.equal(archivedEventCount, 1)
@@ -143,10 +192,19 @@ try {
   assert.equal(archivedTaskCount, 1)
   const restoredTaskCount = await evaluate(pageUrl, `window.serenity.refresh().then((snapshot) => window.serenity.restoreTask(snapshot.archivedTasks[0].id)).then((snapshot) => snapshot.tasks.length)`)
   assert.equal(restoredTaskCount, 1)
+  const focusedEvent = await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Home'))?.click(); for (let i = 0; i < 30; i++) { const item = [...document.querySelectorAll('.home-list button')].find((button) => button.textContent?.includes('Meet Alex')); if (item) { item.click(); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const selected = document.querySelector('.module-aside .module-form input')?.value; if (selected === 'Meet Alex') return selected; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
+  assert.equal(focusedEvent, 'Meet Alex', 'Home should open the selected event on its calendar date')
+  const focusedTask = await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Home'))?.click(); for (let i = 0; i < 30; i++) { const item = [...document.querySelectorAll('.home-list button')].find((button) => button.textContent?.includes('Call Alex')); if (item) { item.click(); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const selected = document.querySelector('.module-aside .module-form input')?.value; if (selected === 'Call Alex') return selected; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
+  assert.equal(focusedTask, 'Call Alex', 'Home should open the selected task')
   const calendarView = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Calendar')); if (button) { button.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.module-page h1')?.textContent ?? null } await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
   assert.equal(calendarView, 'Calendar')
+  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-calendar.png'), await captureScreenshot(pageUrl))
   const tasksView = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Tasks')); button?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.module-page h1')?.textContent ?? null })()`)
   assert.equal(tasksView, 'Tasks')
+  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-tasks.png'), await captureScreenshot(pageUrl))
+  const chatView = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Conversations')); button?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return Boolean(document.querySelector('.conversation-panel')) })()`)
+  assert.equal(chatView, true)
+  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-conversation.png'), await captureScreenshot(pageUrl))
   const disabled = await evaluate(pageUrl, `window.serenity.setModule('calendar', false).then((snapshot) => snapshot.modules.calendar)`)
   assert.equal(disabled, false)
 
@@ -174,6 +232,11 @@ try {
     const settings = await evaluate(pageUrl, `window.serenity.updateConversationSettings('${answer.id}', { autonomy: 'autonomous', permissions: { claims: true, entities: false, tasks: true, events: false }, retained: true }).then((snapshot) => snapshot.conversations[0])`) as { autonomy: string; permissions: { tasks: boolean } }
     assert.equal(settings.autonomy, 'autonomous')
     assert.equal(settings.permissions.tasks, true)
+    if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) {
+      const shown = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const button = document.querySelector('.conversation-history-list button'); if (button) { button.click(); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const count = document.querySelectorAll('.message').length; if (count >= 2) return count; await new Promise((resolve) => setTimeout(resolve, 100)) } return document.querySelectorAll('.message').length })()`)
+      assert.ok(Number(shown) >= 2)
+      await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-conversation-reply.png'), await captureScreenshot(pageUrl))
+    }
     console.log(`${provider} conversation completed through Electron IPC.`)
     if (process.env.SERENITY_SMOKE_CANCEL === '1') {
       await evaluate(pageUrl, `window.__cancelledRun = window.serenity.sendMessage({ text: 'Write a thorough multi-page plan about the history of robotics and include many detailed examples.', provider: '${provider}', autonomy: 'propose', retained: true }).then(() => ({ status: 'completed' }), (error) => ({ status: 'cancelled', error: String(error) })); 'started'`)
@@ -212,6 +275,10 @@ try {
   assert.equal(merged.archived, 1)
   const reversed = await evaluate(pageUrl, `window.serenity.unmergeEntities('${duplicateId}', 'Different Alex').then((snapshot) => ({ active: snapshot.merges.length, history: snapshot.mergeHistory.length, restored: snapshot.entities.some((entity) => entity.id === '${duplicateId}') }))`) as { active: number; history: number; restored: boolean }
   assert.deepEqual(reversed, { active: 0, history: 1, restored: true })
+  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) {
+    await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Activity')); button?.click(); await new Promise((resolve) => setTimeout(resolve, 120)) })()`)
+    await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-activity.png'), await captureScreenshot(pageUrl))
+  }
   await writeFile(join(workspace, '.serenity', 'modules.yaml'), YAML.stringify({ calendar: false, tasks: false, semanticIndex: false, documentAnalysis: false }))
   const watched = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 50; i++) { const names = [...document.querySelectorAll('.navigation button')].map((item) => item.textContent ?? ''); if (!names.some((name) => name.includes('Tasks'))) return true; await new Promise((resolve) => setTimeout(resolve, 100)) } return false })()`)
   assert.equal(watched, true, 'Outside edits to module settings should update the desktop UI')

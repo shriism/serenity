@@ -17,6 +17,8 @@ The selected directory is the knowledge source of truth. Provider credentials ar
 
 Use **Open workspace folder** in the sidebar to inspect or back up your files. Unsaved entity edits prompt before you switch workspaces or close the window.
 
+The desktop UI opens to a Home overview. Use **⌘K** on macOS or **Ctrl+K** on Windows/Linux to search across the workspace, and choose System, Light, or Dark in the sidebar's Appearance control.
+
 To check the project:
 
 ```sh

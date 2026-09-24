@@ -1,10 +1,13 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import type { CalendarEvent, TaskItem, WorkspaceSnapshot } from '../../shared/types'
 
 type Props = {
   workspace: WorkspaceSnapshot
   onUpdate(snapshot: WorkspaceSnapshot): void
   onError(error: string): void
+  focusEventId?: string | null
+  focusTaskId?: string | null
+  focusVersion?: number
 }
 
 function today(): string { return new Date().toLocaleDateString('en-CA') }
@@ -25,18 +28,28 @@ function EntityLinks({ workspace, selected, onChange }: {
   </fieldset>
 }
 
-export function CalendarModule({ workspace, onUpdate, onError }: Props) {
+export function CalendarModule({ workspace, onUpdate, onError, focusEventId, focusVersion }: Props) {
   const [month, setMonth] = useState(today().slice(0, 7))
   const [selectedDay, setSelectedDay] = useState(today())
   const [draft, setDraft] = useState<CalendarEvent>({ id: '', title: '', start: today(), notes: '', relatedEntityIds: [] })
   const [time, setTime] = useState('')
   const [endTime, setEndTime] = useState('')
   const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    const event = workspace.events.find((item) => item.id === focusEventId)
+    if (!event) return
+    setMonth(event.start.slice(0, 7))
+    setSelectedDay(event.start.slice(0, 10))
+    setDraft(event)
+    setTime(event.start.slice(11, 16))
+    setEndTime(event.end?.slice(11, 16) ?? '')
+  }, [focusEventId, focusVersion])
   const [year, number] = month.split('-').map(Number)
   const firstDay = new Date(year, number - 1, 1).getDay()
   const dayCount = new Date(year, number, 0).getDate()
-  const days = Array.from({ length: firstDay + dayCount }, (_, index) =>
-    index < firstDay ? null : `${month}-${String(index - firstDay + 1).padStart(2, '0')}`)
+  const cells = Math.ceil((firstDay + dayCount) / 7) * 7
+  const days = Array.from({ length: cells }, (_, index) =>
+    index < firstDay || index >= firstDay + dayCount ? null : `${month}-${String(index - firstDay + 1).padStart(2, '0')}`)
 
   function changeMonth(offset: number): void {
     const next = new Date(year, number - 1 + offset, 1)
@@ -126,9 +139,13 @@ export function CalendarModule({ workspace, onUpdate, onError }: Props) {
   </section>
 }
 
-export function TasksModule({ workspace, onUpdate, onError }: Props) {
+export function TasksModule({ workspace, onUpdate, onError, focusTaskId, focusVersion }: Props) {
   const [draft, setDraft] = useState<TaskItem>({ id: '', title: '', completed: false, notes: '', relatedEntityIds: [] })
   const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    const task = workspace.tasks.find((item) => item.id === focusTaskId)
+    if (task) setDraft(task)
+  }, [focusTaskId, focusVersion])
   const clearDraft = (): void => setDraft({ id: '', title: '', completed: false, notes: '', relatedEntityIds: [] })
 
   async function save(event: FormEvent): Promise<void> {

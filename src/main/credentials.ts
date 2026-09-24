@@ -9,7 +9,9 @@ const credentialPath = (): string => join(app.getPath('userData'), 'provider-cre
 const sessionKeys = new Map<Provider, string>()
 
 function canStorePersistently(): boolean {
-  return safeStorage.isEncryptionAvailable() && safeStorage.getSelectedStorageBackend() !== 'basic_text'
+  if (!safeStorage.isEncryptionAvailable()) return false
+  if (process.platform !== 'linux') return true
+  return typeof safeStorage.getSelectedStorageBackend === 'function' && safeStorage.getSelectedStorageBackend() !== 'basic_text'
 }
 
 async function stored(): Promise<Partial<Record<Provider, string>>> {

@@ -786,3 +786,14 @@ When AI suggests a new entity resembling existing knowledge, the review
 interface presents likely matches and lets the human attach the sourced
 information to an existing entity or create a separate entity. Do not
 silently attach evidence based on a name match.
+
+## Desktop Interface Direction
+
+Use a balanced modern desktop workspace: persistent navigation and
+fast search, a calm space for reading and editing knowledge, and an
+integrated Home overview of upcoming items, review proposals, and
+connections. The interface follows the operating system's light or
+dark appearance by default and allows a manual override. Its visual
+identity uses near-black and muted periwinkle/indigo in dark mode,
+with a coordinated light palette. Browsing knowledge and conversations
+should retain visible context panes alongside the main content.

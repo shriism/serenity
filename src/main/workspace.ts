@@ -1,10 +1,13 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { copyFile, mkdir, readFile, readdir, rename, stat, unlink, writeFile } from 'node:fs/promises'
-import { basename, extname, join } from 'node:path'
+import { copyFile, lstat, mkdir, readFile, readdir, realpath, rename, unlink, writeFile } from 'node:fs/promises'
+import { basename, extname, isAbsolute, join, relative, sep } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import YAML from 'yaml'
-import type { Autonomy, CalendarEvent, Claim, ClaimResolution, Conversation, DocumentInfo, Entity, MergeRecord, Proposal, Provider, ProviderActivity, ReadScope, SearchResult, TaskItem, WorkflowPermissions, WorkspaceSnapshot } from '../shared/types'
+import type { Autonomy, CalendarEvent, Claim, ClaimResolution, Conversation, DocumentInfo, Entity, MergeRecord, Proposal, Provider, ProviderActivity, ReadScope, SearchResult, TaskItem, WorkflowPermissions, WorkbenchConfig, WorkbenchSession, WorkspacePage, WorkspaceSnapshot } from '../shared/types'
+import { parseResourceUri, workspaceResources } from '../shared/resources'
 import { modules, type ModuleId } from '../shared/modules'
+import { defaultHome } from '../shared/default-home'
+import { defaultWorkbench } from '../shared/default-workbench'
 import { validateReadScope, validateWorkflowPermissions } from '../shared/workflow'
 import { canExtractText, extractDocument } from './documents'
 
@@ -103,6 +106,16 @@ function parseEntity(text: string): Entity {
   }
 }
 
+function parsePage(text: string, path: string): WorkspacePage {
+  const match = frontmatter.exec(text)
+  if (!match) throw new Error('Page needs YAML frontmatter')
+  const metadata: unknown = YAML.parse(match[1])
+  if (!record(metadata) || metadata.kind !== 'page' || typeof metadata.id !== 'string' ||
+    !/^[a-z][a-z0-9-]{0,63}$/.test(metadata.id)) throw new Error('Invalid page metadata')
+  return { id: metadata.id, title: requiredText(metadata.title, 'Title'), path,
+    body: text.slice(match[0].length), text, revision: checksum(text) }
+}
+
 function parseClaim(text: string): Claim {
   const data: unknown = YAML.parse(text)
   if (!record(data)) throw new Error('Invalid claim')
@@ -148,20 +161,64 @@ export class Workspace {
     return ['entities', 'claims', 'documents', 'conversations', 'proposals', 'calendar', 'tasks', 'resolutions', 'activity'].map((name) => join(this.path, name))
   }
 
+  get pagesDirectory(): string { return join(this.path, 'pages') }
+
   async initialize(): Promise<void> {
-    for (const directory of this.directories) await mkdir(directory, { recursive: true })
-    await mkdir(join(this.path, '.serenity'), { recursive: true })
-    await mkdir(join(this.path, 'archive', 'entities'), { recursive: true })
-    await mkdir(join(this.path, 'archive', 'merges'), { recursive: true })
-    await mkdir(join(this.path, 'archive', 'merges', 'history'), { recursive: true })
-    await mkdir(join(this.path, 'archive', 'calendar'), { recursive: true })
-    await mkdir(join(this.path, 'archive', 'tasks'), { recursive: true })
+    await mkdir(this.path, { recursive: true })
+    if ((await lstat(this.path)).isSymbolicLink()) throw new Error('Choose an actual workspace directory, not a linked directory')
+    for (const directory of [...this.directories, this.pagesDirectory, join(this.path, '.serenity'),
+      ...['entities', 'merges/history', 'calendar', 'tasks'].map((name) => join(this.path, 'archive', name))]) {
+      let current = this.path
+      for (const part of relative(this.path, directory).split(sep)) {
+        current = join(current, part)
+        try { await mkdir(current) }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
+        const info = await lstat(current)
+        if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`Workspace directory must be an actual directory: ${current}`)
+      }
+    }
+    await this.verifyDirectories()
+    try { await writeFile(join(this.pagesDirectory, 'Home.md'), defaultHome, { flag: 'wx' }) }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
+    try { await writeFile(join(this.path, '.serenity', 'workbench.yaml'), YAML.stringify(defaultWorkbench), { flag: 'wx' }) }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
+  }
+
+  private async verifyDirectories(): Promise<void> {
+    for (const directory of [...this.directories, this.pagesDirectory, join(this.path, '.serenity'), join(this.path, 'archive'),
+      ...['entities', 'merges', 'merges/history', 'calendar', 'tasks'].map((name) => join(this.path, 'archive', name))]) {
+      const info = await lstat(directory)
+      if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`Workspace directory must be an actual directory: ${directory}`)
+    }
+  }
+
+  private async ownedFile(path: string): Promise<string> {
+    const info = await lstat(path)
+    if (!info.isFile() || info.isSymbolicLink()) throw new Error('Workspace file must be a regular file inside this workspace')
+    const within = relative(await realpath(this.path), await realpath(path))
+    if (!within || within === '..' || within.startsWith(`..${sep}`) || isAbsolute(within)) throw new Error('File is outside this workspace')
+    return path
+  }
+
+  private async readOwnedText(path: string): Promise<string> { return readFile(await this.ownedFile(path), 'utf8') }
+
+  async readSettingsFile(name: 'semantic-index.yaml' | 'analyzed-documents.yaml' | 'session.yaml'): Promise<string> {
+    await this.verifyDirectories()
+    return this.readOwnedText(join(this.path, '.serenity', name))
+  }
+
+  async documentPath(name: string): Promise<string> {
+    if (typeof name !== 'string' || !name || name === '.' || name === '..' || name.includes('/') || name.includes('\\') || basename(name) !== name) throw new Error('Invalid document name')
+    await this.verifyDirectories()
+    return this.ownedFile(join(this.directories[2], name))
   }
 
   markDirty(): void { this.indexDirty = true }
   close(): void { this.index?.close(); this.index = null; this.indexDirty = true }
 
   async snapshot(): Promise<WorkspaceSnapshot> {
+    await this.verifyDirectories()
+    const pages: WorkspacePage[] = []
     const entities: Entity[] = []
     const claims: Claim[] = []
     const resolutions: ClaimResolution[] = []
@@ -177,12 +234,30 @@ export class Workspace {
     const mergeHistory: MergeRecord[] = []
     const archivedEntities: Entity[] = []
     const errors: string[] = []
+    for (const name of (await readdir(this.pagesDirectory)).filter((item) => item.endsWith('.md')).sort()) {
+      try {
+        const path = `pages/${name}`
+        const page = parsePage(await this.readOwnedText(join(this.pagesDirectory, name)), path)
+        if (pages.some((item) => item.id === page.id)) throw new Error('Duplicate page ID')
+        pages.push(page)
+      } catch (error) { errors.push(`pages/${name}: ${String(error)}`) }
+    }
+    let workbench: WorkbenchConfig = defaultWorkbench
+    try {
+      const raw: unknown = YAML.parse(await this.readOwnedText(join(this.path, '.serenity', 'workbench.yaml')))
+      if (!record(raw) || typeof raw.homePage !== 'string' || !/^[a-z][a-z0-9-]{0,63}$/.test(raw.homePage) ||
+        !Array.isArray(raw.navigation) || raw.navigation.some((group: unknown) => !record(group) ||
+          typeof group.group !== 'string' || !group.group.trim() || !Array.isArray(group.commands) ||
+          group.commands.some((command: unknown) => typeof command !== 'string' || !/^[a-z0-9.-]+$/.test(command))) ||
+        !pages.some((page) => page.id === raw.homePage)) throw new Error('Invalid workbench configuration or missing Home page')
+      workbench = { homePage: raw.homePage, navigation: raw.navigation as WorkbenchConfig['navigation'] }
+    } catch (error) { errors.push(`.serenity/workbench.yaml: ${String(error)}`) }
     const enabled: Record<ModuleId, boolean> = { calendar: true, tasks: true, semanticIndex: false, documentAnalysis: false }
     let semanticProvider: Provider = 'copilot'
     let backgroundProviderNeedsChoice = false
     let semanticIndex: WorkspaceSnapshot['semanticIndex'] = null
     try {
-      const raw: unknown = YAML.parse(await readFile(join(this.path, '.serenity', 'modules.yaml'), 'utf8'))
+      const raw: unknown = YAML.parse(await this.readOwnedText(join(this.path, '.serenity', 'modules.yaml')))
       if (!record(raw)) throw new Error('Invalid module settings')
       for (const module of modules) {
         if (typeof raw[module.id] === 'boolean') enabled[module.id] = raw[module.id] as boolean
@@ -191,7 +266,7 @@ export class Workspace {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') errors.push(`.serenity/modules.yaml: ${String(error)}`)
     }
     try {
-      const raw: unknown = YAML.parse(await readFile(join(this.path, '.serenity', 'semantic-provider.yaml'), 'utf8'))
+      const raw: unknown = YAML.parse(await this.readOwnedText(join(this.path, '.serenity', 'semantic-provider.yaml')))
       if (!record(raw) || !['copilot', 'codex'].includes(String(raw.provider))) throw new Error('Invalid provider setting')
       semanticProvider = raw.provider as Provider
     } catch (error) {
@@ -205,7 +280,7 @@ export class Workspace {
       enabled.documentAnalysis = false
     }
     try {
-      const raw: unknown = YAML.parse(await readFile(join(this.path, '.serenity', 'semantic-index.yaml'), 'utf8'))
+      const raw: unknown = YAML.parse(await this.readOwnedText(join(this.path, '.serenity', 'semantic-index.yaml')))
       if (!record(raw) || !Array.isArray(raw.entries) || typeof raw.generatedAt !== 'string') throw new Error('Invalid semantic index')
       semanticIndex = { generatedAt: raw.generatedAt, count: raw.entries.length }
     } catch (error) {
@@ -215,14 +290,14 @@ export class Workspace {
     const archivedDirectory = join(this.path, 'archive', 'entities')
     for (const name of (await readdir(archivedDirectory)).filter((entry) => entry.endsWith('.md'))) {
       try {
-        const archived = parseEntity(await readFile(join(archivedDirectory, name), 'utf8'))
+        const archived = parseEntity(await this.readOwnedText(join(archivedDirectory, name)))
         if (`${archived.id}.md` !== name) throw new Error('Filename does not match archived entity ID')
         archivedEntities.push(archived)
       } catch (error) { errors.push(`archive/entities/${name}: ${String(error)}`) }
     }
     for (const name of (await readdir(mergesDirectory)).filter((entry) => entry.endsWith('.yaml'))) {
       try {
-        const data: unknown = YAML.parse(await readFile(join(mergesDirectory, name), 'utf8'))
+        const data: unknown = YAML.parse(await this.readOwnedText(join(mergesDirectory, name)))
         if (!record(data) || id(data.id) !== name.slice(0, -5)) throw new Error('Invalid merge record')
         const merge: MergeRecord = { id: id(data.id), target: id(data.target), title: requiredText(data.title, 'Title'),
           recordedAt: requiredText(data.recordedAt, 'Recorded at'), undoneAt: typeof data.undoneAt === 'string' ? data.undoneAt : undefined,
@@ -234,10 +309,12 @@ export class Workspace {
     const historyDirectory = join(mergesDirectory, 'history')
     for (const directory of await readdir(historyDirectory)) {
       const previousMerges = join(historyDirectory, directory)
-      if (!(await stat(previousMerges)).isDirectory()) continue
+      const info = await lstat(previousMerges)
+      if (info.isSymbolicLink()) { errors.push(`archive/merges/history/${directory}: linked directories are not workspace content`); continue }
+      if (!info.isDirectory()) continue
       for (const name of (await readdir(previousMerges)).filter((entry) => entry.endsWith('.yaml'))) {
         try {
-          const data: unknown = YAML.parse(await readFile(join(previousMerges, name), 'utf8'))
+          const data: unknown = YAML.parse(await this.readOwnedText(join(previousMerges, name)))
           if (!record(data) || id(data.id) !== directory) throw new Error('Invalid past merge')
           mergeHistory.push({ id: id(data.id), target: id(data.target), title: requiredText(data.title, 'Title'),
             recordedAt: requiredText(data.recordedAt, 'Recorded at'), undoneAt: requiredText(data.undoneAt, 'Undo time'),
@@ -256,7 +333,7 @@ export class Workspace {
     }
     for (const name of (await readdir(this.directories[7])).filter((entry) => entry.endsWith('.yaml')).sort()) {
       try {
-        const data: unknown = YAML.parse(await readFile(join(this.directories[7], name), 'utf8'))
+        const data: unknown = YAML.parse(await this.readOwnedText(join(this.directories[7], name)))
         if (!record(data) || id(data.id) !== name.slice(0, -5)) throw new Error('Invalid resolution record')
         resolutions.push({ id: id(data.id), subject: resolve(id(data.subject)), key: requiredText(data.key, 'Key'),
           currentClaimId: data.currentClaimId === null ? null : id(data.currentClaimId),
@@ -266,7 +343,7 @@ export class Workspace {
     }
     for (const name of (await readdir(this.directories[8])).filter((entry) => entry.endsWith('.yaml')).sort()) {
       try {
-        const data: unknown = YAML.parse(await readFile(join(this.directories[8], name), 'utf8'))
+        const data: unknown = YAML.parse(await this.readOwnedText(join(this.directories[8], name)))
         if (!record(data) || id(data.id) !== name.slice(0, -5) || !Array.isArray(data.refs) ||
           typeof data.provider !== 'string' || !data.provider.trim() ||
           !['running', 'completed', 'failed'].includes(String(data.status))) throw new Error('Invalid provider activity')
@@ -280,7 +357,7 @@ export class Workspace {
       const names = await readdir(directory)
       for (const name of names.filter((name) => name.endsWith(extension)).sort()) {
         try {
-          const parsed = parse(await readFile(join(directory, name), 'utf8'))
+          const parsed = parse(await this.readOwnedText(join(directory, name)))
           if (`${parsed.id}${extension}` !== name) throw new Error('Filename does not match record ID')
           // The two lists have different element types; each parser is paired with its list above.
           if (extension === '.md') entities.push(parsed as Entity)
@@ -293,7 +370,7 @@ export class Workspace {
     for (const [directory, target] of [[this.directories[3], conversations], [this.directories[4], proposals]] as const) {
       for (const name of (await readdir(directory)).filter((entry) => entry.endsWith('.yaml')).sort()) {
         try {
-          const text = await readFile(join(directory, name), 'utf8')
+          const text = await this.readOwnedText(join(directory, name))
           const data: unknown = YAML.parse(text)
           if (!record(data) || id(data.id) !== name.slice(0, -5)) throw new Error('Invalid record or mismatched filename')
           if (directory === this.directories[3]) {
@@ -320,7 +397,7 @@ export class Workspace {
     ] as const) {
       for (const name of (await readdir(directory)).filter((entry) => entry.endsWith('.yaml')).sort()) {
         try {
-          const text = await readFile(join(directory, name), 'utf8')
+          const text = await this.readOwnedText(join(directory, name))
           const parsed = parse(YAML.parse(text))
           if (`${parsed.id}.yaml` !== name) throw new Error('Filename does not match record ID')
           if (parse === parseEvent) (archived ? archivedEvents : events).push({ ...parsed as CalendarEvent, revision: checksum(text) })
@@ -330,8 +407,10 @@ export class Workspace {
     }
     for (const name of await readdir(this.directories[2])) {
       try {
-        const info = await stat(join(this.directories[2], name))
-        if (info.isFile()) documents.push({ name, size: info.size, extractable: canExtractText(name) })
+        const info = await lstat(join(this.directories[2], name))
+        if (info.isFile() && name.includes('\\')) errors.push(`documents/${name}: filename is not portable within this workspace`)
+        else if (info.isFile()) documents.push({ name, size: info.size, extractable: canExtractText(name) })
+        else if (info.isSymbolicLink()) errors.push(`documents/${name}: linked files are not part of this workspace; import a copy instead`)
       } catch { /* A document was moved while reading the directory. */ }
     }
     for (const claim of claims) {
@@ -356,7 +435,7 @@ export class Workspace {
     for (const event of archivedEvents) event.relatedEntityIds = event.relatedEntityIds.map(resolve)
     for (const task of tasks) task.relatedEntityIds = task.relatedEntityIds.map(resolve)
     for (const task of archivedTasks) task.relatedEntityIds = task.relatedEntityIds.map(resolve)
-    return { path: this.path, entities, archivedEntities, claims, resolutions, conversations, proposals, documents,
+    return { path: this.path, pages, workbench, entities, archivedEntities, claims, resolutions, conversations, proposals, documents,
       events, archivedEvents, tasks, archivedTasks, merges, mergeHistory, modules: enabled, semanticProvider,
       backgroundProviderNeedsChoice, semanticIndex, providerActivity, errors }
   }
@@ -366,7 +445,7 @@ export class Workspace {
     const title = requiredText(input.title, 'Title')
     const type = requiredText(input.type, 'Type')
     const path = join(this.directories[0], `${entityId}.md`)
-    const previous = await readFile(path, 'utf8').catch((error: NodeJS.ErrnoException) => {
+    const previous = await this.readOwnedText(path).catch((error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') return null
       throw error
     })
@@ -384,10 +463,56 @@ export class Workspace {
     return this.snapshot()
   }
 
+  async savePage(input: Pick<WorkspacePage, 'id' | 'path' | 'text' | 'revision'>): Promise<WorkspaceSnapshot> {
+    const page = (await this.snapshot()).pages.find((item) => item.id === input.id && item.path === input.path)
+    if (!page) throw new Error('Page not found in this workspace')
+    if (typeof input.text !== 'string') throw new Error('Page must contain text')
+    const next = parsePage(input.text, page.path)
+    if (next.id !== page.id) throw new Error('Page ID cannot change during an edit')
+    const path = await this.ownedFile(join(this.pagesDirectory, basename(page.path)))
+    if (checksum(await this.readOwnedText(path)) !== input.revision) throw new Error('This page changed on disk. Refresh before saving to avoid overwriting it.')
+    await atomicWrite(path, input.text)
+    this.markDirty()
+    return this.snapshot()
+  }
+
+  async createPage(): Promise<WorkspaceSnapshot> {
+    await this.verifyDirectories()
+    const pageId = `page-${randomUUID()}`
+    const text = `---\nid: ${pageId}\ntitle: Untitled page\nkind: page\n---\n# Untitled page\n\nStart writing here.\n`
+    await writeFile(join(this.pagesDirectory, `${pageId}.md`), text, { flag: 'wx' })
+    this.markDirty()
+    return this.snapshot()
+  }
+
+  async loadSession(): Promise<WorkbenchSession | null> {
+    try {
+      const raw: unknown = YAML.parse(await this.readSettingsFile('session.yaml'))
+      return this.validatedSession(raw)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
+      throw error
+    }
+  }
+
+  async saveSession(session: WorkbenchSession): Promise<void> {
+    const validated = await this.validatedSession(session)
+    await atomicWrite(join(this.path, '.serenity', 'session.yaml'), YAML.stringify(validated))
+  }
+
+  private async validatedSession(value: unknown): Promise<WorkbenchSession> {
+    if (!record(value) || typeof value.view !== 'string' || !['home', 'knowledge', 'review', 'documents', 'calendar', 'tasks', 'activity', 'settings'].includes(value.view) ||
+      !Array.isArray(value.openUris) || value.openUris.length > 30 || value.openUris.some((uri: unknown) => typeof uri !== 'string' || !parseResourceUri(uri)) ||
+      (value.activeUri !== undefined && (typeof value.activeUri !== 'string' || !parseResourceUri(value.activeUri)))) throw new Error('Invalid workspace session')
+    const available = new Set(workspaceResources(await this.snapshot()).map((item) => item.uri))
+    return { view: value.view, openUris: [...new Set((value.openUris as string[]).filter((uri) => available.has(uri)))],
+      activeUri: typeof value.activeUri === 'string' && available.has(value.activeUri) ? value.activeUri : undefined }
+  }
+
   async addClaim(input: Pick<Claim, 'subject' | 'key' | 'value' | 'source'>): Promise<WorkspaceSnapshot> {
     const subject = id(input.subject)
     const entityPath = join(this.directories[0], `${subject}.md`)
-    const entity = parseEntity(await readFile(entityPath, 'utf8'))
+    const entity = parseEntity(await this.readOwnedText(entityPath))
     if (entity.id !== subject) throw new Error('Claim subject does not match entity')
     const claim: Claim = {
       id: randomUUID(), subject,
@@ -405,13 +530,13 @@ export class Workspace {
   async retractClaim(claimId: string, reason: string): Promise<WorkspaceSnapshot> {
     const selected = (await this.snapshot()).claims.find((item) => item.id === claimId)
     const path = join(this.directories[1], `${id(claimId)}.yaml`)
-    const original = await readFile(path, 'utf8')
+    const original = await this.readOwnedText(path)
     const claim = parseClaim(original)
     if (claim.id !== claimId || claim.status !== 'confirmed') throw new Error('Only confirmed claims can be retracted')
     claim.status = 'retracted'
     claim.retractedAt = new Date().toISOString()
     claim.retractionReason = requiredText(reason, 'Reason')
-    if (checksum(await readFile(path, 'utf8')) !== checksum(original)) throw new Error('Claim changed on disk. Refresh before retracting it.')
+    if (checksum(await this.readOwnedText(path)) !== checksum(original)) throw new Error('Claim changed on disk. Refresh before retracting it.')
     await atomicWrite(path, updateYaml(original, { status: claim.status, retractedAt: claim.retractedAt,
       retractionReason: claim.retractionReason }))
     this.markDirty()
@@ -459,7 +584,7 @@ export class Workspace {
     const record: MergeRecord = { id: source, target, title: original.title, recordedAt: new Date().toISOString() }
     const history = join(this.path, 'archive', 'merges', `${source}.yaml`)
     for (const path of [archived, history]) {
-      try { await stat(path); throw new Error(`A prior merge file already exists: ${basename(path)}`) }
+      try { await lstat(path); throw new Error(`A prior merge file already exists: ${basename(path)}`) }
       catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     }
     await rename(from, archived)
@@ -475,9 +600,9 @@ export class Workspace {
     const archived = join(this.path, 'archive', 'entities', `${source}.md`)
     const active = join(this.directories[0], `${source}.md`)
     const recordPath = join(this.path, 'archive', 'merges', `${source}.yaml`)
-    const previous = await readFile(recordPath, 'utf8')
-    if (parseEntity(await readFile(archived, 'utf8')).id !== source) throw new Error('Archived entity ID does not match the merge')
-    try { await stat(active); throw new Error('An active entity already uses this ID') }
+    const previous = await this.readOwnedText(recordPath)
+    if (parseEntity(await this.readOwnedText(archived)).id !== source) throw new Error('Archived entity ID does not match the merge')
+    try { await lstat(active); throw new Error('An active entity already uses this ID') }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     const historyDirectory = join(this.path, 'archive', 'merges', 'history', source)
     await mkdir(historyDirectory, { recursive: true })
@@ -499,8 +624,9 @@ export class Workspace {
 
   async importDocument(sourcePath: string): Promise<void> {
     const name = basename(sourcePath)
+    if (name.includes('\\')) throw new Error('Document filename is not portable within this workspace')
     const extension = extname(name)
-    const base = name.slice(0, name.length - extension.length)
+    const base = extension ? name.slice(0, -extension.length) : name
     let candidate = name
     let count = 2
     while (true) {
@@ -520,6 +646,8 @@ export class Workspace {
     if (!this.index) {
       const path = join(this.path, '.serenity', 'index.sqlite')
       try {
+        try { await this.ownedFile(path) }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
         this.index = new DatabaseSync(path)
         this.index.exec('CREATE VIRTUAL TABLE IF NOT EXISTS records USING fts5(id UNINDEXED, kind UNINDEXED, title, detail, content)')
       } catch (error) {
@@ -539,6 +667,7 @@ export class Workspace {
       this.index.exec('BEGIN TRANSACTION')
       try {
         this.index.exec('DELETE FROM records')
+        for (const page of snapshot.pages) insert.run(page.id, 'page', page.title, 'Workspace page', page.body)
         for (const entity of snapshot.entities) insert.run(entity.id, 'entity', entity.title, entity.type, `${entity.body} ${JSON.stringify(entity.metadata ?? {})}`)
         for (const claim of snapshot.claims.filter((item) => item.status !== 'retracted')) {
           const targetName = snapshot.entities.find((entity) => entity.id === claim.value)?.title ?? claim.value
@@ -553,7 +682,7 @@ export class Workspace {
         }
         for (const document of snapshot.documents) {
           let text = ''
-          try { text = await extractDocument(join(this.directories[2], document.name)) ?? '' } catch { /* unsupported or unreadable document remains in the list */ }
+          try { text = await extractDocument(await this.documentPath(document.name)) ?? '' } catch { /* unsupported or unreadable document remains in the list */ }
           insert.run(document.name, 'document', document.name, 'Imported document', text)
         }
         this.index.exec('COMMIT')
@@ -572,7 +701,7 @@ export class Workspace {
   async saveConversation(conversation: Conversation): Promise<void> {
     const path = join(this.directories[3], `${id(conversation.id)}.yaml`)
     if (conversation.retained) {
-      const previous = await readFile(path, 'utf8').catch((error: NodeJS.ErrnoException) => {
+      const previous = await this.readOwnedText(path).catch((error: NodeJS.ErrnoException) => {
         if (error.code === 'ENOENT') return null
         throw error
       })
@@ -618,14 +747,14 @@ export class Workspace {
 
   async resolveProposal(proposalId: string, accept: boolean): Promise<WorkspaceSnapshot> {
     const path = join(this.directories[4], `${id(proposalId)}.yaml`)
-    const data: unknown = YAML.parse(await readFile(path, 'utf8'))
+    const data: unknown = YAML.parse(await this.readOwnedText(path))
     if (!record(data) || data.id !== proposalId || data.status !== 'pending') throw new Error('Proposal no longer pending. Refresh to see the current state.')
     const proposal = { ...data, kind: data.kind ?? 'claim' } as unknown as Proposal
     if (accept) {
       if (proposal.kind === 'claim') {
         const active = (await this.snapshot()).proposals.find((item) => item.id === proposalId)
         if (!active || active.kind !== 'claim') throw new Error('Claim proposal not found')
-        const entity = parseEntity(await readFile(join(this.directories[0], `${id(active.subject)}.md`), 'utf8'))
+        const entity = parseEntity(await this.readOwnedText(join(this.directories[0], `${id(active.subject)}.md`)))
         const claim: Claim = {
           id: randomUUID(), subject: entity.id, key: requiredText(proposal.key, 'Key'),
           value: requiredText(proposal.value, 'Value'), source: requiredText(proposal.source, 'Source'),
@@ -655,13 +784,13 @@ export class Workspace {
 
   async attachEntityProposal(proposalId: string, entityId: string): Promise<WorkspaceSnapshot> {
     const path = join(this.directories[4], `${id(proposalId)}.yaml`)
-    const original = await readFile(path, 'utf8')
+    const original = await this.readOwnedText(path)
     const data: unknown = YAML.parse(original)
     if (!record(data) || data.id !== proposalId || data.kind !== 'entity' || data.status !== 'pending') {
       throw new Error('Entity proposal is no longer pending. Refresh before attaching it.')
     }
     const subject = id(entityId)
-    const entity = parseEntity(await readFile(join(this.directories[0], `${subject}.md`), 'utf8'))
+    const entity = parseEntity(await this.readOwnedText(join(this.directories[0], `${subject}.md`)))
     if (entity.id !== subject) throw new Error('Selected entity has changed on disk')
     const source = requiredText(data.source, 'Source')
     const type = requiredText(data.type, 'Type')
@@ -677,7 +806,7 @@ export class Workspace {
     const claimPath = join(this.directories[1], `${claim.id}.yaml`)
     if (!existing) await writeFile(claimPath, YAML.stringify(claim), { flag: 'wx' })
     try {
-      if (checksum(await readFile(path, 'utf8')) !== checksum(original)) throw new Error('Proposal changed on disk. Refresh before attaching it.')
+      if (checksum(await this.readOwnedText(path)) !== checksum(original)) throw new Error('Proposal changed on disk. Refresh before attaching it.')
       await atomicWrite(path, updateYaml(original, { status: 'accepted', resolvedInto: subject }))
     }
     catch (error) { if (!existing) await unlink(claimPath).catch(() => undefined); throw error }
@@ -707,7 +836,7 @@ export class Workspace {
   private async saveModuleRecord(directory: string, value: CalendarEvent | TaskItem): Promise<WorkspaceSnapshot> {
     const recordId = value.id ? id(value.id) : randomUUID()
     const path = join(directory, `${recordId}.yaml`)
-    const previous = await readFile(path, 'utf8').catch((error: NodeJS.ErrnoException) => {
+    const previous = await this.readOwnedText(path).catch((error: NodeJS.ErrnoException) => {
       if (error.code === 'ENOENT') return null
       throw error
     })
@@ -738,9 +867,9 @@ export class Workspace {
     const file = `${id(recordId)}.yaml`
     const source = join(directory, file)
     const destination = join(this.path, 'archive', category, file)
-    const current = await readFile(source, 'utf8')
+    const current = await this.readOwnedText(source)
     if (checksum(current) !== revision) throw new Error('This item changed on disk. Refresh before archiving it.')
-    try { await stat(destination); throw new Error('This item is already archived.') }
+    try { await lstat(destination); throw new Error('This item is already archived.') }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     await rename(source, destination)
     this.markDirty()
@@ -752,7 +881,7 @@ export class Workspace {
     const file = `${id(recordId)}.yaml`
     const source = join(this.path, 'archive', category, file)
     const destination = join(directory, file)
-    try { await stat(destination); throw new Error('An active item already uses this ID.') }
+    try { await lstat(destination); throw new Error('An active item already uses this ID.') }
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
     await rename(source, destination)
     this.markDirty()

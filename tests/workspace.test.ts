@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import YAML from 'yaml'
@@ -9,6 +9,45 @@ import { buildSemanticIndex, rankSemanticIndex, readSemanticIndex } from '../src
 import { analyzeChangedDocument } from '../src/main/document-analysis'
 import { contextRecords, prepareContext } from '../src/main/context'
 import { defaultWorkflowPermissions } from '../src/shared/workflow'
+
+test('imports own document bytes and never treats external links as workspace files', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-owned-'))
+  const outside = await mkdtemp(join(tmpdir(), 'serenity-outside-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const source = join(outside, 'research.md')
+    await writeFile(source, 'An original research note')
+    await workspace.importDocument(source)
+    await writeFile(source, 'Changed outside Serenity')
+    assert.equal(await readFile(await workspace.documentPath('research.md'), 'utf8'), 'An original research note')
+    if (process.platform !== 'win32') {
+      await symlink(source, join(directory, 'documents', 'external.md'))
+      const snapshot = await workspace.snapshot()
+      assert.equal(snapshot.documents.some((document) => document.name === 'external.md'), false)
+      assert.ok(snapshot.errors.some((error) => error.includes('documents/external.md')))
+      await assert.rejects(workspace.documentPath('external.md'), /regular file inside this workspace/)
+      await assert.rejects(workspace.documentPath('../research.md'), /Invalid document name/)
+    }
+    workspace.close()
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+    await rm(outside, { recursive: true, force: true })
+  }
+})
+
+test('rejects a linked workspace directory before creating records', { skip: process.platform === 'win32' }, async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-linked-dir-'))
+  const outside = await mkdtemp(join(tmpdir(), 'serenity-outside-dir-'))
+  try {
+    await symlink(outside, join(directory, 'documents'))
+    await assert.rejects(new Workspace(directory).initialize(), /actual directory/)
+    assert.deepEqual(await readdir(outside), [])
+  } finally {
+    await rm(directory, { recursive: true, force: true })
+    await rm(outside, { recursive: true, force: true })
+  }
+})
 
 test('workspace preserves file edits and prevents stale saves', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
@@ -268,23 +307,23 @@ test('opt-in semantic indexing sends changed records only and retains a rebuilda
     assert.equal(sent, 0)
     await workspace.setModule('semanticIndex', true)
     await buildSemanticIndex(workspace, ask)
-    assert.equal(sent, 1)
-    assert.equal((await readSemanticIndex(workspace))?.entries.length, 1)
+    assert.equal(sent, 2, 'the editable Home page is also a workspace resource')
+    assert.equal((await readSemanticIndex(workspace))?.entries.length, 2)
     assert.equal((await rankSemanticIndex(workspace, 'engineering'))[0].title, 'Robotics')
     await buildSemanticIndex(workspace, ask)
-    assert.equal(sent, 1)
+    assert.equal(sent, 2)
     const entity = (await workspace.snapshot()).entities[0]
     await workspace.saveEntity({ ...entity, body: 'New context about robots.' })
     await buildSemanticIndex(workspace, ask)
-    assert.equal(sent, 2)
-    assert.equal((await workspace.snapshot()).semanticIndex?.count, 1)
+    assert.equal(sent, 3)
+    assert.equal((await workspace.snapshot()).semanticIndex?.count, 2)
     const expanded = (await workspace.snapshot()).entities[0]
     await workspace.saveEntity({ ...expanded, body: 'Robotics '.repeat(11000) })
     await buildSemanticIndex(workspace, ask)
-    assert.equal(sent, 5, 'large records should be summarized in several provider calls')
-    assert.equal((await readSemanticIndex(workspace))?.entries.length, 1)
+    assert.equal(sent, 6, 'large records should be summarized in several provider calls')
+    assert.equal((await readSemanticIndex(workspace))?.entries.length, 2)
     await buildSemanticIndex(workspace, ask)
-    assert.equal(sent, 5, 'unchanged long records should reuse their generated index')
+    assert.equal(sent, 6, 'unchanged long records should reuse their generated index')
     await workspace.setModule('semanticIndex', false)
     assert.deepEqual(await rankSemanticIndex(workspace, 'engineering'), [])
     workspace.close()
@@ -457,7 +496,7 @@ test('oversized workspaces retain an inspectable catalog and retrieve further ex
     assert.equal(first.shared.mode, 'retrieved')
     assert.equal(first.shared.records[0].ref, `entity:${entity.id}`)
     assert.ok(first.shared.records[0].sentCharacters < first.shared.records[0].totalCharacters)
-    assert.equal(first.shared.availableCount, 1)
+    assert.equal(first.shared.availableCount, 2)
     const second = prepareContext(records, 'quasar observation', [], [`entity:${entity.id}`], { [`entity:${entity.id}`]: first.shared.records[0].startCharacter + 9000 })
     assert.ok(second.shared.records[0].startCharacter > first.shared.records[0].startCharacter)
     assert.notEqual(second.shared.records[0].checksum, first.shared.records[0].checksum)

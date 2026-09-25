@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
 import type { Autonomy, Conversation, Message, Proposal, Provider, ReadScope, SearchResult, WorkflowPermissions, WorkspaceSnapshot } from '../shared/types'
 import { askProvider } from './providers'
 import { Workspace } from './workspace'
@@ -73,16 +72,17 @@ export async function sendMessage(
   for (const document of snapshot.documents) {
     if (readScope.mode === 'selected' && !readScope.documentNames.includes(document.name)) continue
     try {
-      const text = await extractDocument(join(workspace.directories[2], document.name))
+      const text = await extractDocument(await workspace.documentPath(document.name))
       if (text !== null) files.push({ name: document.name, text })
     } catch (error) { throw new Error(`Could not read ${document.name}: ${String(error)}`) }
   }
   const records = scopeContextRecords(snapshot, contextRecords(snapshot, files), readScope)
   const permitted = new Set(records.map((record) => record.ref))
   const allowedOpen = [...new Set([input.activeRef, ...(Array.isArray(input.openRefs) ? input.openRefs : [])])]
-    .filter((ref): ref is string => typeof ref === 'string' && /^(entity|document):/.test(ref) && permitted.has(ref)).slice(0, 12)
+    .filter((ref): ref is string => typeof ref === 'string' && /^(entity|document|page):/.test(ref) && permitted.has(ref)).slice(0, 12)
   const activeRef = allowedOpen.includes(input.activeRef ?? '') ? input.activeRef : undefined
-  const activePath = activeRef ? activeRef.startsWith('entity:') ? `entities/${activeRef.slice(7)}.md` : `documents/${activeRef.slice(9)}` : undefined
+  const activePath = activeRef ? activeRef.startsWith('entity:') ? `entities/${activeRef.slice(7)}.md` : activeRef.startsWith('document:') ?
+    `documents/${activeRef.slice(9)}` : snapshot.pages.find((page) => page.id === activeRef.slice(5))?.path : undefined
   const matchingTerms = question.toLowerCase().match(/[\p{L}\p{N}]+/gu)?.filter((term) => term.length > 2) ?? []
   const scopedMatches: SearchResult[] = records.filter((record) => matchingTerms.some((term) =>
     `${record.title} ${record.text}`.toLowerCase().includes(term))).slice(0, 100).flatMap((record) => {

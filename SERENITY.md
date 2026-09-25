@@ -806,3 +806,19 @@ and System choices available. Use a near-black / muted periwinkle
 identity plus a coordinated light palette. Give the active document
 the strongest emphasis; keep navigation, history, and advanced AI
 controls quieter than its content.
+
+## Workspace as Its Own World
+
+The selected directory contains all authored workspace knowledge,
+pages, structured records, and imported media. Import source files as
+copies within it. A link to an outside path must not masquerade as a
+workspace record. Credentials remain in operating-system secure storage
+or current-session memory rather than in portable knowledge files.
+
+Serenity's foundation is an addressable network of resources and sourced
+claims, not a hardcoded set of screens. Commands give actions stable
+identities; authored Markdown pages, bounded local queries, and YAML
+workbench settings determine how resources appear and where commands are
+shown. Home is an editable workspace page, not a special dashboard
+renderer. AI may draft and suggest within the same validation and review
+boundaries, but does not gain arbitrary command or filesystem access.

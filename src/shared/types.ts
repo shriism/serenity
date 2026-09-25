@@ -40,6 +40,8 @@ export interface ClaimResolution {
 
 export interface WorkspaceSnapshot {
   path: string
+  pages: WorkspacePage[]
+  workbench: WorkbenchConfig
   entities: Entity[]
   claims: Claim[]
   resolutions: ClaimResolution[]
@@ -59,6 +61,26 @@ export interface WorkspaceSnapshot {
   semanticIndex: { generatedAt: string; count: number } | null
   providerActivity: ProviderActivity[]
   errors: string[]
+}
+
+export interface WorkbenchConfig {
+  homePage: string
+  navigation: { group: string; commands: string[] }[]
+}
+
+export interface WorkbenchSession {
+  view: string
+  activeUri?: string
+  openUris: string[]
+}
+
+export interface WorkspacePage {
+  id: string
+  title: string
+  path: string
+  body: string
+  text: string
+  revision: string
 }
 
 export interface ProviderActivity {
@@ -183,7 +205,7 @@ export interface DocumentInfo {
 }
 
 export interface SearchResult {
-  kind: 'entity' | 'claim' | 'document' | 'task' | 'event'
+  kind: 'entity' | 'claim' | 'document' | 'task' | 'event' | 'page'
   id: string
   title: string
   detail: string
@@ -202,6 +224,10 @@ export interface SerenityAPI {
   importDocuments(): Promise<WorkspaceSnapshot | null>
   openDocument(name: string): Promise<void>
   readDocument(name: string): Promise<string | null>
+  savePage(page: Pick<WorkspacePage, 'id' | 'path' | 'text' | 'revision'>): Promise<WorkspaceSnapshot>
+  createPage(): Promise<WorkspaceSnapshot>
+  loadSession(): Promise<WorkbenchSession | null>
+  saveSession(session: WorkbenchSession): Promise<void>
   search(query: string): Promise<SearchResult[]>
   semanticSearch(query: string, provider: Provider): Promise<SearchResult[]>
   searchSemanticIndex(query: string): Promise<SearchResult[]>

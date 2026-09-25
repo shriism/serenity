@@ -10,12 +10,12 @@ type Send = (workspace: Workspace, input: { text: string; provider: Provider; au
 export async function analyzeChangedDocument(workspace: Workspace, filename: string, send: Send, signal?: AbortSignal): Promise<void> {
   const snapshot = await workspace.snapshot()
   if (!snapshot.modules.documentAnalysis || !snapshot.documents.some((item) => item.name === filename && item.extractable)) return
-  const path = join(workspace.directories[2], basename(filename))
+  const path = await workspace.documentPath(basename(filename))
   const hash = createHash('sha256').update(await readFile(path)).digest('hex')
   const statePath = join(workspace.path, '.serenity', 'analyzed-documents.yaml')
   let processed: Record<string, string> = {}
   try {
-    const raw: unknown = YAML.parse(await readFile(statePath, 'utf8'))
+    const raw: unknown = YAML.parse(await workspace.readSettingsFile('analyzed-documents.yaml'))
     if (raw && typeof raw === 'object' && !Array.isArray(raw)) processed = raw as Record<string, string>
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
   if (processed[filename] === hash) return

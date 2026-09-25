@@ -10,7 +10,7 @@ import { askProvider } from './providers'
 import { analyzeChangedDocument } from './document-analysis'
 import { extractDocument } from './documents'
 import { basename, dirname, join, sep } from 'node:path'
-import type { Autonomy, CalendarEvent, Claim, Entity, Provider, ReadScope, TaskItem, WorkflowPermissions, WorkspaceSnapshot } from '../shared/types'
+import type { Autonomy, CalendarEvent, Claim, Entity, Provider, ReadScope, TaskItem, WorkflowPermissions, WorkbenchSession, WorkspacePage, WorkspaceSnapshot } from '../shared/types'
 import type { ModuleId } from '../shared/modules'
 
 let window: BrowserWindow | null = null
@@ -114,15 +114,16 @@ async function openWorkspace(path: string): Promise<WorkspaceSnapshot> {
   await next.initialize()
   workspace = next
   const settingsDirectory = join(next.path, '.serenity')
-  watcher = chokidar.watch([...next.directories.slice(0, 8), join(next.path, 'archive'), settingsDirectory], {
+  watcher = chokidar.watch([...next.directories.slice(0, 8), next.pagesDirectory, join(next.path, 'archive'), settingsDirectory], {
     ignoreInitial: true,
     ignored: (watchedPath) => watchedPath.startsWith(`${settingsDirectory}${sep}`) &&
-      !['modules.yaml', 'semantic-provider.yaml'].includes(basename(watchedPath)),
+      !['modules.yaml', 'semantic-provider.yaml', 'workbench.yaml'].includes(basename(watchedPath)),
     awaitWriteFinish: { stabilityThreshold: 250, pollInterval: 100 }
   })
   watcher.on('all', (event, changedPath) => {
     next.markDirty()
     if (dirname(changedPath) === settingsDirectory) {
+      if (basename(changedPath) === 'workbench.yaml') { window?.webContents.send('workspace:changed'); return }
       void next.snapshot().then((snapshot) => {
         if (basename(changedPath) === 'semantic-provider.yaml' || !snapshot.modules.semanticIndex) pauseBackgroundIndex()
         if (snapshot.modules.semanticIndex) scheduleSemanticIndex(next)
@@ -211,6 +212,10 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('workspace:refresh', () => { workspace?.markDirty(); return workspace?.snapshot() ?? null })
   ipcMain.handle('entity:save', (_event, entity: Entity) => currentWorkspace().saveEntity(entity))
+  ipcMain.handle('page:save', (_event, page: Pick<WorkspacePage, 'id' | 'path' | 'text' | 'revision'>) => currentWorkspace().savePage(page))
+  ipcMain.handle('page:create', () => currentWorkspace().createPage())
+  ipcMain.handle('workspace:session:load', () => currentWorkspace().loadSession())
+  ipcMain.handle('workspace:session:save', (_event, session: WorkbenchSession) => currentWorkspace().saveSession(session))
   ipcMain.handle('claim:add', (_event, claim: Pick<Claim, 'subject' | 'key' | 'value' | 'source'>) => currentWorkspace().addClaim(claim))
   ipcMain.handle('claim:retract', (_event, id: string, reason: string) => currentWorkspace().retractClaim(id, reason))
   ipcMain.handle('claim:current', (_event, id: string, reason: string) => currentWorkspace().setCurrentClaim(id, reason))
@@ -227,14 +232,14 @@ app.whenReady().then(async () => {
     }
     const selected = currentWorkspace()
     if (!(await selected.snapshot()).documents.some((item) => item.name === name)) throw new Error('Document not found in this workspace')
-    const error = await shell.openPath(join(selected.directories[2], name))
+    const error = await shell.openPath(await selected.documentPath(name))
     if (error) throw new Error(error)
   })
   ipcMain.handle('document:read', async (_event, name: string) => {
     if (typeof name !== 'string' || !name || basename(name) !== name || name === '.' || name === '..') throw new Error('Invalid document name')
     const selected = currentWorkspace()
     if (!(await selected.snapshot()).documents.some((item) => item.name === name && item.extractable)) throw new Error('Readable document not found in this workspace')
-    return extractDocument(join(selected.directories[2], name))
+    return extractDocument(await selected.documentPath(name))
   })
   ipcMain.handle('workspace:search', (_event, query: string) => currentWorkspace().search(query))
   ipcMain.handle('workspace:semantic-search', (_event, query: string, provider: Provider) => withActiveRequest(() => semanticSearch(currentWorkspace(), query, provider)))

@@ -17,6 +17,7 @@ const maxExcerpt = 9000
 
 export function contextRecords(snapshot: WorkspaceSnapshot, documents: { name: string; text: string }[]): ContextRecord[] {
   return [
+    ...snapshot.pages.map((item) => ({ ref: `page:${item.id}`, title: item.title, text: item.body })),
     ...snapshot.entities.map((item) => ({ ref: `entity:${item.id}`, title: item.title, text: JSON.stringify({ title: item.title, type: item.type, body: item.body, source: item.source, metadata: item.metadata }) })),
     ...snapshot.archivedEntities.map((item) => ({ ref: `archived:${item.id}`, title: item.title, text: JSON.stringify({ archived: true, title: item.title, type: item.type, body: item.body, metadata: item.metadata }) })),
     ...snapshot.claims.map((item) => ({ ref: `claim:${item.id}`, title: `${item.key}: ${item.value}`, text: JSON.stringify(item) })),
@@ -41,6 +42,7 @@ export function scopeContextRecords(snapshot: WorkspaceSnapshot, records: Contex
     const [kind, ...rest] = record.ref.split(':')
     const identifier = rest.join(':')
     if (kind === 'entity') return entities.has(identifier)
+    if (kind === 'page') return false
     if (kind === 'archived') return entities.has(identifier) || snapshot.merges.some((item) => item.id === identifier && entities.has(item.target))
     if (kind === 'claim') return entities.has(snapshot.claims.find((item) => item.id === identifier)?.subject ?? '')
     if (kind === 'resolution') return entities.has(snapshot.resolutions.find((item) => item.id === identifier)?.subject ?? '')

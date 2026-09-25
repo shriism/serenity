@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { readFile, rename, unlink, writeFile } from 'node:fs/promises'
+import { rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import YAML from 'yaml'
 import type { Provider, SearchResult } from '../shared/types'
@@ -27,7 +27,7 @@ export function fingerprint(text: string): string { return createHash('sha256').
 
 export async function readSemanticIndex(workspace: Workspace): Promise<SemanticIndex | null> {
   try {
-    const parsed: unknown = YAML.parse(await readFile(indexPath(workspace), 'utf8'))
+    const parsed: unknown = YAML.parse(await workspace.readSettingsFile('semantic-index.yaml'))
     if (!parsed || typeof parsed !== 'object' || !('entries' in parsed) || !Array.isArray(parsed.entries)) throw new Error('Invalid semantic index')
     return parsed as SemanticIndex
   } catch (error) {
@@ -54,6 +54,7 @@ export async function buildSemanticIndex(workspace: Workspace, ask: Ask, signal?
   const provider = snapshot.semanticProvider
   const previous = await readSemanticIndex(workspace)
   const records = [
+    ...snapshot.pages.map((item) => ({ key: `page:${item.id}`, text: `${item.title}\n${item.body}` })),
     ...snapshot.entities.map((item) => ({ key: `entity:${item.id}`, text: `${item.title}\n${item.type}\n${item.body}\n${JSON.stringify(item.metadata ?? {})}` })),
     ...snapshot.claims.filter((item) => item.status !== 'retracted').map((item) => ({ key: `claim:${item.id}`, text: `${item.key}: ${item.value}\nSource: ${item.source}\nOrigin: ${item.origin}\n${JSON.stringify(item.metadata ?? {})}` })),
     ...(snapshot.modules.calendar ? snapshot.events.map((item) => ({ key: `event:${item.id}`, text: `${item.title}\n${item.start}\n${item.notes}\n${JSON.stringify(item.metadata ?? {})}` })) : []),
@@ -61,7 +62,7 @@ export async function buildSemanticIndex(workspace: Workspace, ask: Ask, signal?
   ]
   for (const document of snapshot.documents) {
     try {
-      const text = await extractDocument(join(workspace.directories[2], document.name))
+      const text = await extractDocument(await workspace.documentPath(document.name))
       if (text !== null) records.push({ key: `document:${document.name}`, text })
     } catch (error) { throw new Error(`Could not index ${document.name}: ${String(error)}`) }
   }

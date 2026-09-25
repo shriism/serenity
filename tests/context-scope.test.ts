@@ -22,6 +22,7 @@ test('selected read scope excludes other entities and documents even when search
       includeOtherConversations: false, includeCalendarAndTasks: false })
     const permitted = scopeContextRecords(snapshot, all, scope)
     assert.equal(permitted.some((record) => record.ref === `entity:${first.id}`), true)
+    assert.equal(permitted.some((record) => record.ref === 'page:home'), false)
     assert.equal(permitted.some((record) => record.ref === `entity:${second.id}`), false)
     assert.equal(permitted.some((record) => record.ref === 'document:private.txt'), false)
     assert.equal(permitted.filter((record) => record.ref.startsWith('claim:')).length, 1)

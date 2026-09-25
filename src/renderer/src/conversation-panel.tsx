@@ -16,7 +16,7 @@ interface Props {
   onSend(event: FormEvent): void
   onCancel(): void
   onDelete(): void
-  activeFile?: { name: string; path: string; kind: 'entity' | 'document'; allowed: boolean }
+  activeFile?: { name: string; path: string; kind: 'entity' | 'document' | 'page'; allowed: boolean }
   openFileCount: number
 }
 

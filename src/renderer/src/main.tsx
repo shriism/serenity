@@ -1,28 +1,18 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ArrowRight, FileText, FolderOpen, Link2, Maximize2, Minimize2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, RotateCw, Search, Sparkles } from 'lucide-react'
+import { ArrowRight, FileText, FolderOpen, Maximize2, Minimize2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, RotateCw, Search, Sparkles } from 'lucide-react'
 import type { Autonomy, Conversation, Entity, Provider, ReadScope, SearchResult, WorkbenchSession, WorkflowPermissions, WorkspaceSnapshot } from '../../shared/types'
-import { CalendarModule, TasksModule } from './module-views'
 import { ConversationPanel } from './conversation-panel'
 import { ConversationList } from './conversation-list'
-import { ReviewPanel } from './review-panel'
-import { ClaimCard } from './claim-card'
-import { DocumentsPanel } from './documents-panel'
-import { ActivityPanel } from './activity-panel'
-import { SettingsPanel } from './settings-panel'
-import { identityCandidates } from '../../shared/identity'
 import { defaultReadScope, defaultWorkflowPermissions } from '../../shared/workflow'
 import { AppNavigation } from './navigation'
-import { WorkspacePageView } from './workspace-page'
+import { builtinViews } from './builtin-views'
 import { CommandPalette } from './command-palette'
 import { ThemeControl, useTheme } from './theme'
 import type { View } from './views'
 import { WorkspaceTabs, tabRef, type WorkspaceTab } from './workspace-tabs'
-import { DocumentPreview } from './document-preview'
 import { workspaceCommands } from './commands'
 import { parseResourceUri, resourceUri } from '../../shared/resources'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
 import './style.css'
 import './studio.css'
 
@@ -68,7 +58,6 @@ function App() {
   const [focusVersion, setFocusVersion] = useState(0)
   const [theme, setTheme] = useTheme()
   const searchSequence = useRef(0)
-  const loadedConversationWorkspace = useRef<string | null>(null)
   useEffect(() => { try { localStorage.setItem('serenity.left-open', String(leftOpen)) } catch { /* Still works for this session. */ } }, [leftOpen])
   useEffect(() => { try { localStorage.setItem('serenity.right-open', String(rightOpen)) } catch { /* Still works for this session. */ } }, [rightOpen])
   useEffect(() => {
@@ -108,9 +97,18 @@ function App() {
     if (!workspace) return
     let current = true
     setSessionReadyPath(null)
+    const restoreConversation = (last: Conversation | undefined): void => {
+      setConversationId(last?.id ?? null)
+      setAutonomy(last?.autonomy ?? 'propose')
+      setPermissions(last?.permissions ?? { ...defaultWorkflowPermissions })
+      setReadScope(last?.readScope ?? { ...defaultReadScope, entityIds: [], documentNames: [] })
+      setRetained(last?.retained ?? true)
+    }
     void window.serenity.loadSession().then((session) => {
       if (!current) return
-      if (!session) { setSessionReadyPath(workspace.path); return }
+      if (!session) { restoreConversation(workspace.conversations.at(-1)); setSessionReadyPath(workspace.path); return }
+      const lastConversation = workspace.conversations.find((item) => session.assistantUri === resourceUri({ kind: 'conversation', id: item.id })) ?? workspace.conversations.at(-1)
+      restoreConversation(lastConversation)
       const open: WorkspaceTab[] = session.openUris.flatMap<WorkspaceTab>((uri) => {
         const ref = parseResourceUri(uri)
         if (ref?.kind === 'entity') {
@@ -141,26 +139,12 @@ function App() {
     if (!workspace || sessionReadyPath !== workspace.path) return
     const selectedTab = tabs.find((tab) => tabRef(tab) === activeTab)
     const session: WorkbenchSession = { view, openUris: tabs.map((tab) => resourceUri(tab)),
+      assistantUri: conversationId ? resourceUri({ kind: 'conversation', id: conversationId }) : undefined,
       activeUri: view === 'home' ? resourceUri({ kind: 'page', id: activePageId ?? workspace.workbench.homePage }) :
         selectedTab ? resourceUri(selectedTab) : undefined }
     const timer = window.setTimeout(() => { void window.serenity.saveSession(session).catch((error) => setError(`Workspace session: ${String(error)}`)) }, 180)
     return () => window.clearTimeout(timer)
-  }, [workspace?.path, workspace?.workbench.homePage, sessionReadyPath, view, tabs, activeTab, activePageId])
-  useEffect(() => {
-    if (!workspace || loadedConversationWorkspace.current === workspace.path) return
-    loadedConversationWorkspace.current = workspace.path
-    const lastId = (() => { try { return localStorage.getItem(`serenity.conversation.${workspace.path}`) } catch { return null } })()
-    const last = workspace.conversations.find((item) => item.id === lastId) ?? workspace.conversations.at(-1)
-    setConversationId(last?.id ?? null)
-    setAutonomy(last?.autonomy ?? 'propose')
-    setPermissions(last?.permissions ?? { ...defaultWorkflowPermissions })
-    setReadScope(last?.readScope ?? { ...defaultReadScope, entityIds: [], documentNames: [] })
-    setRetained(last?.retained ?? true)
-  }, [workspace?.path])
-  useEffect(() => {
-    if (!workspace || !conversationId) return
-    try { localStorage.setItem(`serenity.conversation.${workspace.path}`, conversationId) } catch { /* Selection remains available this session. */ }
-  }, [workspace?.path, conversationId])
+  }, [workspace?.path, workspace?.workbench.homePage, sessionReadyPath, view, tabs, activeTab, activePageId, conversationId])
   useEffect(() => {
     const onShortcut = (event: globalThis.KeyboardEvent): void => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
@@ -595,14 +579,8 @@ function App() {
     catch (cause) { setError(String(cause)) }
   }
 
-  const claims = workspace?.claims.filter((item) => item.subject === selected) ?? []
-  const incoming = workspace?.claims.filter((item) => item.value === selected && item.subject !== selected && item.status === 'confirmed') ?? []
-  const activeClaims = claims.filter((item) => item.status !== 'retracted')
-  const conflicts = [...new Set(activeClaims.map((item) => item.key))].filter((key) => new Set(activeClaims.filter((item) => item.key === key).map((item) => item.value)).size > 1 && !activeClaims.some((item) => item.key === key && item.isCurrent))
-  const resolvedKeys = [...new Set(activeClaims.filter((item) => item.isCurrent).map((item) => item.key))]
   const conversation = workspace?.conversations.find((item) => item.id === conversationId)
   const pending = workspace?.proposals.filter((proposal) => proposal.status === 'pending') ?? []
-  const candidates = draft && !draft.id && workspace ? identityCandidates(draft.title, draft.type, workspace.entities).slice(0, 4) : []
   const activity = [...(workspace?.claims.map((item) => ({ id: item.id, at: item.recordedAt, title: `Claim: ${item.key}`, detail: `${workspace.entities.find((entity) => entity.id === item.subject)?.title ?? 'Unknown entity'} · ${item.value} · ${item.source}` })) ?? []),
     ...(workspace?.mergeHistory.flatMap((item) => [
       { id: `${item.id}:${item.recordedAt}:merge`, at: item.recordedAt, title: `Merged ${item.title}`, detail: `Archived; linked to ${workspace.entities.find((entity) => entity.id === item.target)?.title ?? item.target}` },
@@ -662,49 +640,20 @@ function App() {
       {view === 'review' && workspace?.proposals.some((item) => item.status === 'pending' && item.reviewReason) && <div className="notice warning" role="status">Some proposals involve similar entities. Verify the identity before accepting them.</div>}
       <div className="workspace-body" key={`${view}:${activeTab ?? ''}`}>
       {!workspace ? <section className="welcome-screen"><div className="welcome-visual"><img src={serenityIcon} alt=""/><span className="visual-orbit orbit-one"/><span className="visual-orbit orbit-two"/><span className="visual-dot dot-one"/><span className="visual-dot dot-two"/><span className="visual-dot dot-three"/></div><div className="welcome-copy"><span className="eyebrow">A SPACE FOR EVERYTHING THAT MATTERS</span><h1>Your world,<br/><em>more connected.</em></h1><p>A private workspace for your knowledge, relationships, plans, and the ideas in between. Choose a folder on your device to begin.</p><button className="primary welcome-action" onClick={() => void chooseWorkspace()}><FolderOpen size={18}/> Choose a workspace <ArrowRight size={17}/></button><small>Your files stay in a folder you control.</small></div></section>
-          : view === 'home' ? workspace.pages.find((item) => item.id === (activePageId ?? workspace.workbench.homePage)) ? <WorkspacePageView
-              key={activePageId ?? workspace.workbench.homePage} page={workspace.pages.find((item) => item.id === (activePageId ?? workspace.workbench.homePage))!} workspace={workspace}
-              commands={workspaceCommands(workspace)} onUpdate={setWorkspace} onError={setError} onDirtyChange={setPageDirty} onOpen={(uri) => { openResource(uri) }} onCommand={runCommand}/>
-            : <section className="page"><h1>Home page unavailable</h1><p>Check pages/Home.md in this workspace. Serenity will not replace a page it cannot read.</p></section>
-        : view === 'calendar' && workspace.modules.calendar ? <CalendarModule workspace={workspace} onUpdate={setWorkspace} onError={setError} focusEventId={focusedEventId} focusVersion={focusVersion} />
-        : view === 'tasks' && workspace.modules.tasks ? <TasksModule workspace={workspace} onUpdate={setWorkspace} onError={setError} focusTaskId={focusedTaskId} focusVersion={focusVersion} />
-        : view === 'review' ? <ReviewPanel workspace={workspace} onResolve={(id, accept) => void resolveProposal(id, accept)} onAttach={(id, entityId) => void attachProposal(id, entityId)} onOpenSource={(name) => void openDocument(name)} />
-        : view === 'documents' ? currentTab?.kind === 'document' ? <DocumentPreview name={currentTab.id} onOpen={(name) => void openDocument(name)} onError={setError}/> : <DocumentsPanel workspace={workspace} onImport={() => void importDocuments()} onOpen={openDocumentTab} onAnalyze={(name) => { openDocumentTab(name); startConversation(`Analyze the imported document ${name}. Summarize it, identify useful knowledge about existing entities, and suggest claims with precise sources. Ask me to clarify any ambiguous identities.`) }} />
-        : view === 'activity' ? <ActivityPanel workspace={workspace} activity={activity} />
-        : view === 'settings' ? <SettingsPanel workspace={workspace} onUpdate={setWorkspace} onError={setError} />
-        : !draft ? <section className="page knowledge-index"><div className="knowledge-index-header"><div><span className="eyebrow">YOUR WORLD</span><h1>Knowledge</h1><p>People, places, projects, ideas—whatever matters to you. Everything can connect.</p></div><button className="primary" onClick={newEntity}><Plus size={16}/> New entity</button></div>{workspace.entities.length ? <div className="knowledge-tiles">{[...workspace.entities].sort((a, b) => a.title.localeCompare(b.title)).map((entity) => <button key={entity.id} onClick={() => selectEntity(entity)}><span className="knowledge-tile-icon">{entity.title.slice(0, 1).toUpperCase()}</span><span><strong>{entity.title}</strong><small>{entity.type}</small></span><ArrowRight size={16}/></button>)}</div> : <div className="knowledge-blank"><Link2 size={25}/><h2>Start with what you know.</h2><p>Create a person, project, idea, or anything else meaningful to you. Categories are yours to define.</p><button className="primary" onClick={newEntity}>Create your first entity <ArrowRight size={16}/></button></div>}</section>
-          : <div className="content">
-              <aside className="knowledge-list-panel"><div className="list-heading"><span className="eyebrow">LIBRARY <span className="count">{workspace.entities.length}</span></span><button className="icon-button" onClick={newEntity} aria-label="New entity" title="New entity"><Plus size={15}/></button></div>
-                <nav className="entity-list" aria-label="Entities">{workspace.entities.map((entity) => <button key={entity.id} className={`entity-link ${selected === entity.id ? 'active' : ''}`} onClick={() => selectEntity(entity)}><span className="entity-icon">{entity.title.slice(0, 1).toUpperCase()}</span><span><strong>{entity.title}</strong><small>{entity.type}</small></span></button>)}</nav>
-              </aside>
-               <section className="editor">
-                 <form onSubmit={(event) => void saveEntity(event)}>
-                   <label className={draft.id ? 'sr-only' : 'field-label'} htmlFor="title">Name</label>
-                   <input id="title" className="title-input" placeholder="What is it called?" value={draft.title} required onChange={(event) => { setDraft({ ...draft, title: event.target.value }); setDirty(true) }} />
-                   <label className={draft.id ? 'sr-only' : 'field-label'} htmlFor="type">Type · your own words</label>
-                   <input id="type" className="entity-type-input" placeholder="Person, project, concept..." value={draft.type} required onChange={(event) => { setDraft({ ...draft, type: event.target.value }); setDirty(true) }} />
-                   {candidates.length > 0 && <div className="candidate-box"><strong>Could this already exist?</strong><p>Review these matches before creating a new entity. Similar names do not prove they are the same.</p>{candidates.map(({ entity }) => <button type="button" key={entity.id} onClick={() => selectEntity(entity)}>{entity.title} · {entity.type} ↗</button>)}</div>}
-                   <label className="sr-only" htmlFor="body">Context · Markdown</label>
-                   <div className="body-tabs"><button type="button" className={bodyMode === 'preview' ? 'active' : ''} onClick={() => setBodyMode('preview')}>Read</button><button type="button" className={bodyMode === 'edit' ? 'active' : ''} onClick={() => setBodyMode('edit')}>Edit</button></div>
-                  {bodyMode === 'edit' ? <textarea id="body" placeholder="Tell the story in your own words..." value={draft.body} onChange={(event) => { setDraft({ ...draft, body: event.target.value }); setDirty(true) }} /> :
-                    <div className="markdown-preview">{draft.body.trim() ? <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
-                      a: ({ children, href }) => <span className="preview-link" title={href}>{children}</span>,
-                      img: ({ alt }) => <span className="preview-image">[Image: {alt || 'no description'}]</span>
-                    }}>{draft.body}</ReactMarkdown> : <p className="hint">Nothing written yet. Switch to Edit Markdown to add context.</p>}</div>}
-                   <div className="form-actions"><span>{dirty ? 'Unsaved changes' : draft.id ? 'Saved' : 'Ready to create'}</span>{(dirty || !draft.id) && <button className="primary" type="submit">{draft.id ? 'Save changes' : 'Create entity'}</button>}</div>
-                 </form>
-               </section>
-               <section className="details"><details className="knowledge-details" open={conflicts.length > 0 ? true : undefined}><summary><span>Facts & sources</span><small>{claims.length} {claims.length === 1 ? 'claim' : 'claims'}{conflicts.length ? ` · ${conflicts.length} to clarify` : ''}</small></summary><div className="knowledge-details-body">
-                {resolvedKeys.map((key) => { const choice = activeClaims.find((item) => item.key === key && item.isCurrent)!; const decision = [...workspace.resolutions].reverse().find((item) => item.subject === selected && item.key === key && item.currentClaimId === choice.id); return <div className="current-banner" key={key}><strong>Current {key}: {workspace.entities.find((entity) => entity.id === choice.value)?.title ?? choice.value}</strong><small>{decision?.reason ?? 'Selected by the user'} · earlier claims remain below.</small><button onClick={() => void clearCurrent(key)}>Undo designation</button></div> })}
-                 {conflicts.map((key) => { const possible = activeClaims.filter((item) => item.key === key); const humanClaims = possible.filter((item) => item.origin === 'human'); const likely = humanClaims.length === 1 ? humanClaims[0] : null; return <div className="conflict" key={key}><strong>Conflicting {key}</strong><small>{likely ? `A direct statement suggests ${workspace.entities.find((entity) => entity.id === likely.value)?.title ?? likely.value}. This is not resolved.` : 'No clear answer from the available sources. Please clarify.'}</small><button onClick={() => startConversation(`I have conflicting information about ${draft.title}'s ${key}. What do the sources say, and what should I clarify?`)}>Discuss this ↗</button></div> })}
-                {claims.map((item) => <ClaimCard key={item.id} claim={item} target={workspace.entities.find((entity) => entity.id === item.value)} mergedFrom={workspace.merges.find((merge) => merge.id === item.mergedFrom)} conflicting={conflicts.includes(item.key)} previousAlternative={resolvedKeys.includes(item.key)} sourceIsDocument={workspace.documents.some((document) => document.name === item.source)} onOpenSource={(name) => void openDocument(name)} onSelectTarget={selectEntity} onMarkCurrent={(id) => void markCurrent(id)} onRetract={(id) => void retractClaim(id)} />)}
-                {claims.length === 0 && <p className="hint">No claims recorded yet.</p>}
-                {incoming.length > 0 && <div className="incoming"><h3>Connected from elsewhere</h3>{incoming.map((link) => { const source = workspace.entities.find((entity) => entity.id === link.subject); return source && <button key={link.id} onClick={() => selectEntity(source)}>{source.title} · {link.key} ↗</button> })}</div>}
-                {selected && <form className="claim-form" onSubmit={(event) => void addClaim(event)}><h3>Add a claim</h3><label htmlFor="claim-key">About or relationship</label><input id="claim-key" placeholder="e.g. birthday, friend of" required value={claim.key} onChange={(event) => setClaim({ ...claim, key: event.target.value })}/><label htmlFor="claim-value">Value</label><input id="claim-value" placeholder="e.g. September 7" required={!claimTarget} value={claim.value} onChange={(event) => setClaim({ ...claim, value: event.target.value })} disabled={Boolean(claimTarget)}/><label htmlFor="claim-target">Or link another entity</label><select id="claim-target" value={claimTarget} onChange={(event) => setClaimTarget(event.target.value)}><option value="">No entity linked</option>{workspace.entities.filter((entity) => entity.id !== selected).map((entity) => <option key={entity.id} value={entity.id}>{entity.title}</option>)}</select><label htmlFor="claim-source">Source</label><input id="claim-source" required value={claim.source} onChange={(event) => setClaim({ ...claim, source: event.target.value })}/><button type="submit" className="secondary">Add claim +</button></form>}
-                {selected && workspace.entities.length > 1 && <div className="merge-form"><h3>Same as another entity?</h3><p>Archive this entity and resolve its links to the selected entity. Its original file and history remain available.</p><select aria-label="Merge into" value={mergeTarget} onChange={(event) => setMergeTarget(event.target.value)}><option value="">Choose the surviving entity</option>{workspace.entities.filter((entity) => entity.id !== selected).map((entity) => <option key={entity.id} value={entity.id}>{entity.title}</option>)}</select><button className="secondary" disabled={!mergeTarget} onClick={() => void mergeSelected()}>Merge into selected entity</button></div>}
-                 {selected && workspace.merges.filter((item) => item.target === selected).map((item) => <div className="merge-form" key={item.id}><h3>Archived as {draft.title}</h3><p>{item.title} was merged here. Its original file and links can be restored without deleting the merge history.</p><button className="secondary" onClick={() => void undoMerge(item.id)}>Restore {item.title}</button></div>)}
-                </div></details></section>
-             </div>}
+          : builtinViews.render(view, { workspace, page: currentPage ?? undefined, commands: workspaceCommands(workspace),
+            activeDocument: currentTab?.kind === 'document' ? currentTab.id : undefined, focusedEventId, focusedTaskId, focusVersion, activity,
+            onUpdate: setWorkspace, onError: setError, onDirtyChange: setPageDirty, onOpenResource: (uri) => { openResource(uri) }, onCommand: runCommand,
+            onResolve: (id, accept) => { void resolveProposal(id, accept) }, onAttach: (id, entityId) => { void attachProposal(id, entityId) },
+            onOpenSource: (name) => { void openDocument(name) }, onImport: () => { void importDocuments() }, onOpenDocument: openDocumentTab,
+            onAnalyze: (name) => { openDocumentTab(name); startConversation(`Analyze the imported document ${name}. Summarize it, identify useful knowledge about existing entities, and suggest claims with precise sources. Ask me to clarify any ambiguous identities.`) },
+            knowledge: { workspace, selected, draft, dirty, bodyMode, claim, claimTarget, mergeTarget,
+              onSelectEntity: selectEntity, onNewEntity: newEntity,
+              onDraftChange: (entity) => { setDraft(entity); setDirty(true) }, onBodyModeChange: setBodyMode,
+              onSave: (event) => { void saveEntity(event) }, onClaimChange: setClaim, onClaimTargetChange: setClaimTarget,
+              onAddClaim: (event) => { void addClaim(event) }, onMarkCurrent: (id) => { void markCurrent(id) }, onRetract: (id) => { void retractClaim(id) },
+              onClearCurrent: (key) => { void clearCurrent(key) }, onDiscuss: startConversation, onOpenSource: (name) => { void openDocument(name) },
+              onMergeTargetChange: setMergeTarget, onMerge: () => { void mergeSelected() }, onUndoMerge: (id) => { void undoMerge(id) } }
+          }) ?? <section className="page"><h1>View unavailable</h1><p>This module is not available in this workspace.</p></section>}
       </div>
     </main>
     {workspace && (rightOpen ? <aside className="assistant-sidebar" aria-label="AI assistant">

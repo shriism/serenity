@@ -503,10 +503,12 @@ export class Workspace {
   private async validatedSession(value: unknown): Promise<WorkbenchSession> {
     if (!record(value) || typeof value.view !== 'string' || !['home', 'knowledge', 'review', 'documents', 'calendar', 'tasks', 'activity', 'settings'].includes(value.view) ||
       !Array.isArray(value.openUris) || value.openUris.length > 30 || value.openUris.some((uri: unknown) => typeof uri !== 'string' || !parseResourceUri(uri)) ||
-      (value.activeUri !== undefined && (typeof value.activeUri !== 'string' || !parseResourceUri(value.activeUri)))) throw new Error('Invalid workspace session')
+      (value.activeUri !== undefined && (typeof value.activeUri !== 'string' || !parseResourceUri(value.activeUri))) ||
+      (value.assistantUri !== undefined && (typeof value.assistantUri !== 'string' || parseResourceUri(value.assistantUri)?.kind !== 'conversation'))) throw new Error('Invalid workspace session')
     const available = new Set(workspaceResources(await this.snapshot()).map((item) => item.uri))
     return { view: value.view, openUris: [...new Set((value.openUris as string[]).filter((uri) => available.has(uri)))],
-      activeUri: typeof value.activeUri === 'string' && available.has(value.activeUri) ? value.activeUri : undefined }
+      activeUri: typeof value.activeUri === 'string' && available.has(value.activeUri) ? value.activeUri : undefined,
+      ...(typeof value.assistantUri === 'string' && available.has(value.assistantUri) ? { assistantUri: value.assistantUri } : {}) }
   }
 
   async addClaim(input: Pick<Claim, 'subject' | 'key' | 'value' | 'source'>): Promise<WorkspaceSnapshot> {

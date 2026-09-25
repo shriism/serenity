@@ -81,11 +81,14 @@ test('the last open resource is restored from workspace-local session metadata',
     assert.equal(await first.loadSession(), null)
     const entity = (await first.saveEntity({ id: '', title: 'Alex', type: 'person', body: 'Notes' })).entities[0]
     const ref = resourceUri({ kind: 'entity', id: entity.id })
-    await first.saveSession({ view: 'knowledge', activeUri: ref, openUris: [ref, 'serenity:document/missing.pdf'] })
+    const conversation = { id: '123e4567-e89b-42d3-a456-426614174015', title: 'Working together', messages: [], retained: true }
+    await first.saveConversation(conversation)
+    const assistantUri = resourceUri({ kind: 'conversation', id: conversation.id })
+    await first.saveSession({ view: 'knowledge', activeUri: ref, assistantUri, openUris: [ref, 'serenity:document/missing.pdf'] })
     first.close()
     const reopened = new Workspace(directory)
     await reopened.initialize()
-    assert.deepEqual(await reopened.loadSession(), { view: 'knowledge', activeUri: ref, openUris: [ref] })
+    assert.deepEqual(await reopened.loadSession(), { view: 'knowledge', activeUri: ref, assistantUri, openUris: [ref] })
     await assert.rejects(reopened.saveSession({ view: 'untrusted', openUris: [] }), /Invalid workspace session/)
     reopened.close()
   } finally { await rm(directory, { recursive: true, force: true }) }

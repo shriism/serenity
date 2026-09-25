@@ -71,6 +71,7 @@ export interface WorkbenchConfig {
 export interface WorkbenchSession {
   view: string
   activeUri?: string
+  assistantUri?: string
   openUris: string[]
 }
 

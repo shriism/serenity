@@ -30,8 +30,14 @@ function storedPanel(key: string, fallback: boolean): boolean {
 function App() {
   const [workspace, setWorkspaceState] = useState<WorkspaceSnapshot | null>(null)
   // Refreshes and operations can finish out of order; never replace a snapshot with one whose reading began earlier.
-  const setWorkspace = useCallback((next: WorkspaceSnapshot | null) => setWorkspaceState((current) =>
-    !next || !current || next.path !== current.path || next.generation >= current.generation ? next : current), [])
+  // The newest generation is also recorded immediately, so effects still holding an older snapshot can tell.
+  const newestSnapshot = useRef<{ path: string; generation: number } | null>(null)
+  const isNewest = (snapshot: WorkspaceSnapshot): boolean =>
+    !newestSnapshot.current || newestSnapshot.current.path !== snapshot.path || snapshot.generation >= newestSnapshot.current.generation
+  const setWorkspace = useCallback((next: WorkspaceSnapshot | null) => {
+    if (next && isNewest(next)) newestSnapshot.current = { path: next.path, generation: next.generation }
+    setWorkspaceState((current) => !next || !current || next.path !== current.path || next.generation >= current.generation ? next : current)
+  }, [])
   const [workbench, setWorkbench] = useState<Workbench>(initialWorkbench)
   // Groups whose page or entity editor has unsaved edits. Each editor owns its draft; the shell only guards leaving it.
   const [dirtyGroups, setDirtyGroups] = useState<Record<string, boolean>>({})
@@ -126,7 +132,9 @@ function App() {
     return () => window.clearTimeout(timer)
   }, [workspace?.path, workspace?.workbench.homePage, sessionReadyPath, workbench, conversationId])
   useEffect(() => {
-    if (workspace) setWorkbench((current) => pruneWorkbench(current, workspace, (id) => builtinViews.available(id, { workspace })))
+    // An effect from an earlier render can run after a newer snapshot has arrived and a tab was opened from it;
+    // pruning with the older snapshot would close that tab as if its resource were gone.
+    if (workspace) setWorkbench((current) => isNewest(workspace) ? pruneWorkbench(current, workspace, (id) => builtinViews.available(id, { workspace })) : current)
   }, [workspace])
   useEffect(() => {
     const mac = navigator.platform.includes('Mac')

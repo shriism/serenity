@@ -9,7 +9,8 @@ export const isWorkbenchView = (value: string): value is WorkbenchView => (workb
 export type SplitDirection = 'row' | 'column'
 export type LayoutNode = { group: string } | { split: SplitDirection; children: LayoutNode[] }
 
-export interface SessionGroup { id: string; view: string; openUris: string[]; activeUri?: string }
+/** `presentations` maps an open resource URI to how this group shows it, when not the resource's default view. */
+export interface SessionGroup { id: string; view: string; openUris: string[]; activeUri?: string; presentations?: Record<string, string> }
 export interface SessionLayout { root: LayoutNode; groups: SessionGroup[]; focused: string }
 
 /** Current policy: the center can split into two groups. Raising it needs no change to the saved format. */
@@ -17,6 +18,7 @@ export const maxEditorGroups = 2
 export const maxTabsPerGroup = 30
 const maxDepth = 8
 const groupId = /^[a-z0-9-]{1,32}$/
+export const presentationId = /^[a-z][a-z0-9-]{0,31}$/
 
 export function layoutGroupIds(node: LayoutNode): string[] {
   return 'group' in node ? [node.group] : node.children.flatMap(layoutGroupIds)
@@ -61,8 +63,11 @@ export function parseLayout(value: unknown, isView: (view: string) => boolean, i
   for (const item of value.groups) {
     if (!record(item) || typeof item.id !== 'string' || !groupId.test(item.id) || typeof item.view !== 'string' || !isView(item.view) ||
       !Array.isArray(item.openUris) || item.openUris.length > maxTabsPerGroup || item.openUris.some((uri) => typeof uri !== 'string' || !isUri(uri)) ||
-      (item.activeUri !== undefined && (typeof item.activeUri !== 'string' || !isUri(item.activeUri)))) return null
-    groups.push({ id: item.id, view: item.view, openUris: item.openUris as string[], ...(item.activeUri ? { activeUri: item.activeUri as string } : {}) })
+      (item.activeUri !== undefined && (typeof item.activeUri !== 'string' || !isUri(item.activeUri))) ||
+      (item.presentations !== undefined && (!record(item.presentations) || Object.entries(item.presentations).some(([uri, id]) =>
+        !(item.openUris as unknown[]).includes(uri) || typeof id !== 'string' || !presentationId.test(id))))) return null
+    groups.push({ id: item.id, view: item.view, openUris: item.openUris as string[], ...(item.activeUri ? { activeUri: item.activeUri as string } : {}),
+      ...(item.presentations && Object.keys(item.presentations).length ? { presentations: item.presentations as Record<string, string> } : {}) })
   }
   const ids = layoutGroupIds(root)
   const known = new Set(groups.map((group) => group.id))

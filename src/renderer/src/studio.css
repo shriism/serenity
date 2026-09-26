@@ -218,3 +218,43 @@
 .workspace-page .page-toolbar > span { min-width: 0; overflow-wrap: anywhere; }
 .workspace-page .page-toolbar > div { flex: none; }
 .workspace-page .page-toolbar button { white-space: nowrap; }
+
+/* Resource presentations: one resource, several views, chosen per tab. */
+.serenity-studio .presented-resource { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.serenity-studio .presented-resource > :not(.presentation-switcher) { flex: 1; min-height: 0; overflow: auto; }
+.serenity-studio .presentation-switcher { flex: none; display: flex; gap: 2px; margin: 14px clamp(31px, 6vw, 86px) 0; padding: 3px; width: fit-content; border-radius: 9px; background: var(--surface-hover); }
+.serenity-studio .presentation-switcher button { border: 0; border-radius: 7px; padding: 5px 12px; background: transparent; color: var(--muted); font-size: 11px; }
+.serenity-studio .presentation-switcher button.active { background: var(--studio-base, var(--surface)); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / 18%); }
+.serenity-studio .entity-timeline h2, .serenity-studio .entity-connections h2 { margin: 34px 0 12px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--subtle); }
+.serenity-studio .timeline { list-style: none; margin: 0; padding: 0; max-width: 720px; }
+.serenity-studio .timeline-entry { position: relative; display: grid; grid-template-columns: 26px 1fr; column-gap: 12px; padding: 0 0 18px; }
+.serenity-studio .timeline-entry::before { content: ''; position: absolute; left: 12px; top: 26px; bottom: 0; width: 1px; background: var(--border); }
+.serenity-studio .timeline-entry:last-child::before { display: none; }
+.serenity-studio .timeline-day { grid-column: 1 / -1; margin: 6px 0 10px; color: var(--subtle); font-size: 11px; font-variant-numeric: tabular-nums; }
+.serenity-studio .timeline-icon { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: var(--surface-hover); color: var(--muted); }
+.serenity-studio .timeline-entry.kind-retraction .timeline-icon { color: var(--danger-text); }
+.serenity-studio .timeline-entry.kind-resolution .timeline-icon, .serenity-studio .timeline-entry.kind-merge .timeline-icon { color: var(--accent); }
+.serenity-studio .timeline-body { min-width: 0; padding-top: 3px; }
+.serenity-studio .timeline-body p { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.serenity-studio .timeline-body small { display: block; margin-top: 4px; color: var(--subtle); font-size: 11px; }
+.serenity-studio .timeline-title { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: var(--text); font-size: 13px; font-weight: 560; text-align: left; }
+.serenity-studio button.timeline-title:hover { color: var(--accent); }
+.serenity-studio .timeline-entry.kind-retraction .timeline-title { text-decoration: line-through; text-decoration-color: var(--subtle); }
+.serenity-studio .connections-graph { display: block; width: min(100%, 440px); margin: 20px 0 8px; overflow: visible; }
+.serenity-studio .connections-graph line { stroke: var(--border); }
+.serenity-studio .connections-graph line.claim-edge { stroke: color-mix(in srgb, var(--accent) 55%, var(--border)); }
+.serenity-studio .connections-graph line.shared-edge { stroke-dasharray: 4 4; }
+.serenity-studio .connections-graph .center-node { fill: var(--accent); }
+.serenity-studio .connections-graph .center-label { fill: var(--accent-contrast, #fff); font-size: 11px; font-weight: 600; }
+.serenity-studio .connections-graph .neighbor-node { cursor: pointer; }
+.serenity-studio .connections-graph .neighbor-node circle { fill: var(--surface-hover); stroke: var(--border); }
+.serenity-studio .connections-graph .neighbor-node:hover circle { stroke: var(--accent); }
+.serenity-studio .connections-graph .neighbor-node text { fill: var(--muted); font-size: 11px; }
+.serenity-studio .connections-list { list-style: none; margin: 18px 0 0; padding: 0; max-width: 720px; }
+.serenity-studio .connections-list > li { padding: 12px 0; border-top: 1px solid var(--border); }
+.serenity-studio .connection-name { display: flex; align-items: baseline; gap: 10px; padding: 0; border: 0; background: none; color: var(--text); text-align: left; }
+.serenity-studio .connection-name:hover strong { color: var(--accent); }
+.serenity-studio .connection-name small { color: var(--subtle); font-size: 11px; }
+.serenity-studio .connections-list ul { list-style: none; margin: 6px 0 0; padding: 0; }
+.serenity-studio .connections-list ul li { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.serenity-studio .connections-list em { color: var(--accent); font-style: normal; }

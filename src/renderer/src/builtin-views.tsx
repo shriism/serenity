@@ -8,7 +8,11 @@ import { SettingsPanel } from './settings-panel'
 import { WorkspacePageView } from './workspace-page'
 import { KnowledgeView } from './knowledge-view'
 import { EntityEditor } from './entity-editor'
+import { EntityTimeline } from './entity-timeline'
+import { EntityConnections } from './entity-connections'
+import { PresentationSwitcher, presentationFor } from './presentations'
 import type { CommandContribution } from './commands'
+import { resourceUri } from '../../shared/resources'
 import { ViewRegistry } from './view-registry'
 
 export interface BuiltinViewContext {
@@ -22,6 +26,9 @@ export interface BuiltinViewContext {
   activity: { id: string; at: string; title: string; detail: string }[]
   entityId?: string
   creatingEntity: boolean
+  /** How the shown resource is presented, if not its default view. */
+  presentation?: string
+  onPresentationChange(id: string): void
   onUpdate(snapshot: WorkspaceSnapshot): void
   onError(message: string): void
   onDirtyChange(dirty: boolean): void
@@ -40,11 +47,21 @@ export interface BuiltinViewContext {
 }
 
 export const builtinViews = new ViewRegistry<BuiltinViewContext>()
-builtinViews.register({ id: 'knowledge', render: (context) => context.entityId || context.creatingEntity ?
-  <EntityEditor key={context.entityId ?? 'new'} workspace={context.workspace} entityId={context.entityId ?? null} onUpdate={context.onUpdate} onError={context.onError}
-    onDirtyChange={context.onDirtyChange} onOpenEntity={context.onOpenEntity} onNewEntity={context.onNewEntity} onCreated={context.onEntityCreated}
-    onDiscuss={context.onDiscuss} onOpenSource={context.onOpenSource}/> :
-  <KnowledgeView workspace={context.workspace} onOpenEntity={context.onOpenEntity} onNewEntity={context.onNewEntity}/> })
+const entityEditor = (context: BuiltinViewContext) => <EntityEditor key={context.entityId ?? 'new'} workspace={context.workspace} entityId={context.entityId ?? null}
+  onUpdate={context.onUpdate} onError={context.onError} onDirtyChange={context.onDirtyChange} onOpenEntity={context.onOpenEntity} onNewEntity={context.onNewEntity}
+  onCreated={context.onEntityCreated} onDiscuss={context.onDiscuss} onOpenSource={context.onOpenSource}/>
+builtinViews.register({ id: 'knowledge', render: (context) => {
+  if (!context.entityId) return context.creatingEntity ? entityEditor(context) :
+    <KnowledgeView workspace={context.workspace} onOpenEntity={context.onOpenEntity} onNewEntity={context.onNewEntity}/>
+  const entityId = context.entityId
+  const presentation = presentationFor('entity', context.presentation)!
+  return <div className="presented-resource">
+    <PresentationSwitcher kind="entity" active={presentation} onChange={context.onPresentationChange}/>
+    {presentation === 'timeline' ? <EntityTimeline workspace={context.workspace} entityId={entityId} onOpenResource={context.onOpenResource} onOpenSource={context.onOpenSource}/> :
+      presentation === 'connections' ? <EntityConnections workspace={context.workspace} entityId={entityId}
+        onOpenEntity={(id, side) => context.onOpenResource(resourceUri({ kind: 'entity', id }), side)}/> : entityEditor(context)}
+  </div>
+} })
 builtinViews.register({ id: 'home', render: (context) => context.page ? <WorkspacePageView key={context.page.id} page={context.page} workspace={context.workspace}
   commands={context.commands} onUpdate={context.onUpdate} onError={context.onError} onDirtyChange={context.onDirtyChange}
   onOpen={context.onOpenResource} onCommand={context.onCommand}/> :

@@ -12,7 +12,8 @@ import { ThemeControl, useTheme } from './theme'
 import type { View } from './views'
 import { WorkspaceTabs } from './workspace-tabs'
 import { routeResource, tabKey, tabPath, tabTitle, type TabRef } from './resource-routing'
-import { activeTabOf, closeGroup, emptyGroup, enterView, findGroup, focusedGroup, initialWorkbench, nextGroupId, orderedGroups, pruneWorkbench, removeTab, restoreWorkbench, showTab, showView, shownUri, splitWorkbench, updateGroup, workbenchSession, type EditorGroup, type Workbench } from './workbench-groups'
+import { presentationFor } from './presentations'
+import { activeTabOf, closeGroup, emptyGroup, enterView, presentTab, findGroup, focusedGroup, initialWorkbench, nextGroupId, orderedGroups, pruneWorkbench, removeTab, restoreWorkbench, showTab, showView, shownUri, splitWorkbench, updateGroup, workbenchSession, type EditorGroup, type Workbench } from './workbench-groups'
 import { layoutGroupIds, maxEditorGroups, type LayoutNode } from '../../shared/layout'
 import { knownCommandIds, workspaceCommands, type CommandContribution, type CommandHost } from './commands'
 import { eventKeybinding, formatKeybinding, resolveKeymap, type KeymapResult } from '../../shared/keybindings'
@@ -396,6 +397,13 @@ function App() {
     setWorkbench((current) => updateGroup(current, groupId, (group) => removeTab(group, key)))
   }
 
+  function changePresentation(groupId: string, tab: TabRef, presentation: string): void {
+    // Leaving the default presentation replaces its editor, so unsaved edits there need the usual confirmation.
+    if (!confirmLeave(groupId)) return
+    const fallback = presentationFor(tab.kind, undefined)
+    setWorkbench((current) => updateGroup(current, groupId, (group) => presentTab(group, tabKey(tab), presentation === fallback ? undefined : presentation)))
+  }
+
   function splitEditor(): void {
     const next = splitWorkbench(workbench)
     if (next) setWorkbench(next)
@@ -549,6 +557,8 @@ function App() {
       onOpenSource: (name) => { void openDocument(name) }, onImport: () => { void importDocuments() }, onOpenDocument: (name) => { openDocumentTab(name, group.id) },
       onAnalyze: (name) => { openDocumentTab(name, group.id); startConversation(`Analyze the imported document ${name}. Summarize it, identify useful knowledge about existing entities, and suggest claims with precise sources. Ask me to clarify any ambiguous identities.`) },
       entityId: tab?.kind === 'entity' ? tab.id : undefined, creatingEntity: group.creatingEntity,
+      presentation: tab ? group.presentations[tabKey(tab)] : undefined,
+      onPresentationChange: (id) => { if (tab) changePresentation(group.id, tab, id) },
       onOpenEntity: (id) => { openEntity(id, group.id) }, onNewEntity: () => newEntity(group.id), onDiscuss: startConversation,
       onEntityCreated: (id) => setWorkbench((current) => updateGroup(current, group.id, (item) => showTab(item, { kind: 'entity', id })))
     }

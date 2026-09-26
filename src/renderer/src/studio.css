@@ -213,3 +213,8 @@
   .serenity-studio .editor-split.row { flex-direction: column; }
   .serenity-studio .editor-split.row > * + * { border-left: 0; border-top: 1px solid var(--border); }
 }
+/* Narrow groups: tabs keep a readable width and scroll; toolbar actions stay on one line while the path wraps. */
+.serenity-studio .workspace-tab { flex: none; }
+.workspace-page .page-toolbar > span { min-width: 0; overflow-wrap: anywhere; }
+.workspace-page .page-toolbar > div { flex: none; }
+.workspace-page .page-toolbar button { white-space: nowrap; }

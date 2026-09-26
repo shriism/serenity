@@ -326,6 +326,7 @@ try {
   assert.match(String(createdPage), /^pages\/page-[a-f0-9-]{36}\.md$/, 'New page should create and open a Markdown file owned by this workspace')
   const split = await evaluate(pageUrl, `(async () => { document.querySelector('.topbar-icon[aria-label="Split editor"]')?.click(); for (let i = 0; i < 30; i++) { const groups = [...document.querySelectorAll('.editor-group')]; if (groups.length === 2 && groups.every((group) => group.querySelector('.page-prose h1')?.textContent === 'Untitled page')) return { groups: groups.length, focused: groups[1].classList.contains('focused') }; await new Promise((resolve) => setTimeout(resolve, 100)) } return { groups: document.querySelectorAll('.editor-group').length } })()`)
   assert.deepEqual(split, { groups: 2, focused: true }, 'Splitting should show the same page in a second, focused editor group')
+  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-split.png'), await captureScreenshot(pageUrl))
   let savedLayout: { groups?: unknown[] } | undefined
   for (let i = 0; i < 30 && !savedLayout; i++) {
     savedLayout = (YAML.parse(await readFile(join(workspace, '.serenity', 'session.yaml'), 'utf8')) as { layout?: { groups?: unknown[] } }).layout

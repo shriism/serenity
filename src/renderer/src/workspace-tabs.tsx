@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { FileText, Link2, NotebookText, X } from 'lucide-react'
 import type { TabKind } from './resource-routing'
 
@@ -11,8 +12,11 @@ export function WorkspaceTabs({ tabs, active, onSelect, onClose }: {
   onSelect(key: string): void
   onClose(key: string): void
 }) {
+  const strip = useRef<HTMLElement>(null)
+  // Keep the shown tab in view when a narrow group scrolls its tab strip.
+  useEffect(() => { strip.current?.querySelector('.workspace-tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }, [active, tabs.length])
   if (!tabs.length) return null
-  return <nav className="workspace-tabs" aria-label="Open files">
+  return <nav className="workspace-tabs" aria-label="Open files" ref={strip}>
     {tabs.map((tab) => {
       const Icon = icons[tab.kind]
       return <div className={`workspace-tab ${active === tab.key ? 'active' : ''}`} key={tab.key}>

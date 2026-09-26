@@ -70,10 +70,10 @@ builtinViews.register({ id: 'calendar', module: 'calendar', render: ({ workspace
   <CalendarModule workspace={workspace} onUpdate={onUpdate} onError={onError} focusEventId={focusedEventId} focusVersion={focusVersion}/> })
 builtinViews.register({ id: 'tasks', module: 'tasks', render: ({ workspace, onUpdate, onError, focusedTaskId, focusVersion }) =>
   <TasksModule workspace={workspace} onUpdate={onUpdate} onError={onError} focusTaskId={focusedTaskId} focusVersion={focusVersion}/> })
-builtinViews.register({ id: 'review', render: ({ workspace, onResolve, onAttach, onOpenSource }) =>
-  <ReviewPanel workspace={workspace} onResolve={onResolve} onAttach={onAttach} onOpenSource={onOpenSource}/> })
-builtinViews.register({ id: 'documents', render: ({ workspace, activeDocument, onImport, onOpenDocument, onOpenSource, onError, onAnalyze }) =>
-  activeDocument ? <DocumentPreview name={activeDocument} onOpen={onOpenSource} onError={onError}/> :
+builtinViews.register({ id: 'review', render: ({ workspace, onResolve, onAttach, onOpenSource, onOpenResource }) =>
+  <ReviewPanel workspace={workspace} onResolve={onResolve} onAttach={onAttach} onOpenSource={onOpenSource} onOpenResource={onOpenResource}/> })
+builtinViews.register({ id: 'documents', render: ({ workspace, activeDocument, onImport, onOpenDocument, onOpenSource, onError, onAnalyze, onResolve, onAttach }) =>
+  activeDocument ? <DocumentPreview name={activeDocument} workspace={workspace} onOpen={onOpenSource} onError={onError} onResolve={onResolve} onAttach={onAttach} onOpenSource={onOpenSource}/> :
     <DocumentsPanel workspace={workspace} onImport={onImport} onOpen={onOpenDocument} onAnalyze={onAnalyze}/> })
 builtinViews.register({ id: 'activity', render: ({ workspace, activity }) => <ActivityPanel workspace={workspace} activity={activity}/> })
 builtinViews.register({ id: 'settings', render: ({ workspace, onUpdate, onError }) => <SettingsPanel workspace={workspace} onUpdate={onUpdate} onError={onError}/> })

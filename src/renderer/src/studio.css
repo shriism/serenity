@@ -258,3 +258,17 @@
 .serenity-studio .connections-list ul { list-style: none; margin: 6px 0 0; padding: 0; }
 .serenity-studio .connections-list ul li { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12px; line-height: 1.8; }
 .serenity-studio .connections-list em { color: var(--accent); font-style: normal; }
+
+/* Review by source, and a document's own suggestions beside its text. */
+.serenity-studio .review-source { margin-top: 30px; }
+.serenity-studio .review-source-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.serenity-studio .review-source-header h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.serenity-studio .review-source-header small { color: var(--subtle); font-size: 11px; }
+.serenity-studio .review-source-header button { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.serenity-studio .document-suggestions { margin-top: 28px; }
+.serenity-studio .document-suggestions h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.serenity-studio .document-suggestions > small { display: block; margin-top: 3px; color: var(--subtle); font-size: 11px; }
+@container (min-width: 980px) {
+  .serenity-studio .document-with-suggestions { display: grid; grid-template-columns: minmax(0, 1fr) minmax(280px, 360px); gap: 34px; align-items: start; }
+  .serenity-studio .document-with-suggestions .document-suggestions { position: sticky; top: 0; margin-top: 0; max-height: calc(100vh - 160px); overflow: auto; }
+}

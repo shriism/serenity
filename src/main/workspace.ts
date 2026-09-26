@@ -157,6 +157,8 @@ export class Workspace {
   private index: DatabaseSync | null = null
   private indexDirty = true
 
+  private snapshotGeneration = 0
+
   constructor(readonly path: string) {}
 
   get directories(): string[] {
@@ -219,6 +221,7 @@ export class Workspace {
   close(): void { this.index?.close(); this.index = null; this.indexDirty = true }
 
   async snapshot(): Promise<WorkspaceSnapshot> {
+    const generation = ++this.snapshotGeneration
     await this.verifyDirectories()
     const pages: WorkspacePage[] = []
     const entities: Entity[] = []
@@ -442,7 +445,7 @@ export class Workspace {
     for (const event of archivedEvents) event.relatedEntityIds = event.relatedEntityIds.map(resolve)
     for (const task of tasks) task.relatedEntityIds = task.relatedEntityIds.map(resolve)
     for (const task of archivedTasks) task.relatedEntityIds = task.relatedEntityIds.map(resolve)
-    return { path: this.path, pages, workbench, entities, archivedEntities, claims, resolutions, conversations, proposals, documents,
+    return { path: this.path, generation, pages, workbench, entities, archivedEntities, claims, resolutions, conversations, proposals, documents,
       events, archivedEvents, tasks, archivedTasks, merges, mergeHistory, modules: enabled, semanticProvider,
       backgroundProviderNeedsChoice, semanticIndex, providerActivity, errors }
   }

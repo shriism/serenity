@@ -193,3 +193,23 @@
   .serenity-studio .sidebar-inner, .serenity-studio .sidebar-inner *, .serenity-studio .workbench, .serenity-studio button { animation: none !important; transition-duration: 0.01ms !important; }
   .serenity-studio .workspace-body, .serenity-studio .assistant-sidebar, .serenity-studio .message, .serenity-studio .command-palette, .serenity-studio .thinking-mark i { animation: none !important; }
 }
+
+/* Editor groups: each group is its own place with tabs and a view; views size to their group. */
+.serenity-studio .editor-groups { flex: 1; min-height: 0; display: flex; }
+.serenity-studio .editor-split { flex: 1; min-width: 0; min-height: 0; display: flex; }
+.serenity-studio .editor-split.column { flex-direction: column; }
+.serenity-studio .editor-group { position: relative; flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; container-type: inline-size; outline: none; }
+.serenity-studio .editor-split.row > * + * { border-left: 1px solid var(--border); }
+.serenity-studio .editor-split.column > * + * { border-top: 1px solid var(--border); }
+.serenity-studio .editor-groups.split .editor-group.focused::before { content: ''; position: absolute; inset: 0 0 auto; height: 2px; z-index: 2; background: color-mix(in srgb, var(--accent) 75%, transparent); pointer-events: none; }
+.serenity-studio .group-bar { flex: none; display: flex; align-items: center; min-height: 36px; }
+.serenity-studio .group-bar .workspace-tabs { flex: 1; min-width: 0; }
+.serenity-studio .group-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; padding: 0 10px 0 14px; }
+.serenity-studio .group-title { color: var(--subtle); font-size: 11px; white-space: nowrap; }
+.serenity-studio .group-actions button { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--subtle); }
+.serenity-studio .group-actions button:hover { background: var(--surface-hover); color: var(--text); }
+.serenity-studio .editor-groups.split .editor-group:not(.focused) .workspace-tab.active { background: transparent; }
+@media (max-width: 900px) {
+  .serenity-studio .editor-split.row { flex-direction: column; }
+  .serenity-studio .editor-split.row > * + * { border-left: 0; border-top: 1px solid var(--border); }
+}

@@ -503,3 +503,15 @@ test('oversized workspaces retain an inspectable catalog and retrieve further ex
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
+
+test('snapshots are numbered in the order they began so a late reply cannot replace newer state', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-generation-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const [earlier, later] = await Promise.all([workspace.snapshot(), workspace.snapshot()])
+    assert.ok(later.generation > earlier.generation)
+    assert.ok((await workspace.createPage()).generation > later.generation)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})

@@ -28,6 +28,9 @@ if (packaged) {
   assert.ok((await stat(codex)).isFile(), 'The packaged Codex runtime must be available')
 }
 const workspace = await mkdtemp(join(tmpdir(), 'serenity-desktop-smoke-'))
+// A fresh browser profile keeps runs independent of each other and of the person's own Serenity settings. Live
+// provider runs keep the normal profile, where the provider credentials are stored.
+const profile = process.env.SERENITY_SMOKE_PROVIDER ? null : await mkdtemp(join(tmpdir(), 'serenity-desktop-profile-'))
 const futureDate = (days: number): string => {
   const day = new Date()
   day.setDate(day.getDate() + days)
@@ -53,7 +56,7 @@ docx.file('word/document.xml', `<?xml version="1.0" encoding="UTF-8"?><w:documen
 await writeFile(join(workspace, 'documents', 'syllabus.docx'), await docx.generateAsync({ type: 'nodebuffer' }))
 await writeFile(join(workspace, 'documents', 'unreadable.bin'), 'Not a supported document type')
 const port = 20000 + Math.floor(Math.random() * 30000)
-const child = spawn(electron, [`--remote-debugging-port=${port}`, ...(packaged ? [] : ['.']), `--workspace=${workspace}`], {
+const child = spawn(electron, [`--remote-debugging-port=${port}`, ...(profile ? [`--user-data-dir=${profile}`] : []), ...(process.env.SERENITY_SMOKE_VISIBLE ? [] : ['--background']), ...(packaged ? [] : ['.']), `--workspace=${workspace}`], {
   stdio: ['ignore', 'pipe', 'pipe'],
   env: { ...process.env }
 })
@@ -321,6 +324,16 @@ try {
   assert.deepEqual(customWorkbench, { group: 'My space', chosen: 'Research notebook', linked: 'My own workspace' }, 'A workspace YAML edit should recompose Home and the navigation without new UI code')
   const createdPage = await evaluate(pageUrl, `(async () => { document.querySelector('.topbar-more summary')?.click(); [...document.querySelectorAll('.topbar-menu button')].find((button) => button.textContent?.includes('New page'))?.click(); for (let i = 0; i < 30; i++) { const path = document.querySelector('.page-toolbar > span')?.textContent; if (path?.startsWith('pages/page-') && document.querySelector('.page-prose h1')?.textContent === 'Untitled page') return path; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
   assert.match(String(createdPage), /^pages\/page-[a-f0-9-]{36}\.md$/, 'New page should create and open a Markdown file owned by this workspace')
+  const split = await evaluate(pageUrl, `(async () => { document.querySelector('.topbar-icon[aria-label="Split editor"]')?.click(); for (let i = 0; i < 30; i++) { const groups = [...document.querySelectorAll('.editor-group')]; if (groups.length === 2 && groups.every((group) => group.querySelector('.page-prose h1')?.textContent === 'Untitled page')) return { groups: groups.length, focused: groups[1].classList.contains('focused') }; await new Promise((resolve) => setTimeout(resolve, 100)) } return { groups: document.querySelectorAll('.editor-group').length } })()`)
+  assert.deepEqual(split, { groups: 2, focused: true }, 'Splitting should show the same page in a second, focused editor group')
+  let savedLayout: { groups?: unknown[] } | undefined
+  for (let i = 0; i < 30 && !savedLayout; i++) {
+    savedLayout = (YAML.parse(await readFile(join(workspace, '.serenity', 'session.yaml'), 'utf8')) as { layout?: { groups?: unknown[] } }).layout
+    if (!savedLayout) await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  assert.equal(savedLayout?.groups?.length, 2, 'The two-group layout should be saved in workspace session state')
+  const closedSplit = await evaluate(pageUrl, `(async () => { document.querySelectorAll('.group-actions button[aria-label^="Close editor group"]')[1]?.click(); for (let i = 0; i < 30; i++) { if (document.querySelectorAll('.editor-group').length === 1) return document.querySelector('.page-prose h1')?.textContent; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
+  assert.equal(closedSplit, 'Untitled page', 'Closing the second group should leave the first group as it was')
   assert.match(await readFile(join(workspace, String(createdPage)), 'utf8'), /# Untitled page/)
   const lastPage = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const session = await window.serenity.loadSession(); if (session?.activeUri?.startsWith('serenity:page/page-')) return session.activeUri; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
   assert.match(String(lastPage), /^serenity:page\/page-[a-f0-9-]{36}$/, 'The last worked-on page should be remembered inside the workspace')
@@ -336,4 +349,5 @@ try {
 } finally {
   child.kill()
   await rm(workspace, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
+  if (profile) await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
 }

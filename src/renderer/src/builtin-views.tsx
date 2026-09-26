@@ -25,7 +25,7 @@ export interface BuiltinViewContext {
   onUpdate(snapshot: WorkspaceSnapshot): void
   onError(message: string): void
   onDirtyChange(dirty: boolean): void
-  onOpenResource(uri: string): void
+  onOpenResource(uri: string, side?: boolean): void
   onCommand(id: string): void
   onResolve(id: string, accept: boolean): void
   onAttach(id: string, entityId: string): void

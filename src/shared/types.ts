@@ -41,6 +41,8 @@ export interface ClaimResolution {
 
 export interface WorkspaceSnapshot {
   path: string
+  /** Increases with each snapshot of this workspace, in the order reading began, so late replies can be ignored. */
+  generation: number
   pages: WorkspacePage[]
   workbench: WorkbenchConfig
   entities: Entity[]

@@ -13,7 +13,7 @@ interface Props {
   commands: CommandContribution[]
   onChange(value: string): void
   onClose(): void
-  onSelect(result: SearchResult): void
+  onSelect(result: SearchResult, side: boolean): void
   onAISearch(): void
   onSavedSearch(): void
   onCommand(id: string): void
@@ -37,18 +37,18 @@ export function CommandPalette(props: Props) {
     ...(props.results ?? []).map((result) => ({ type: 'result' as const, result }))
   ]
 
-  function choose(index: number): void {
+  function choose(index: number, side = false): void {
     const entry = entries[index]
     if (!entry) return
     if (entry.type === 'command') { props.onClose(); props.onCommand(entry.command.id) }
-    else props.onSelect(entry.result)
+    else props.onSelect(entry.result, side)
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
     if (event.key === 'Escape') { props.onClose(); return }
     if (event.key === 'ArrowDown') { event.preventDefault(); setActive((current) => Math.min(Math.max(0, entries.length - 1), current + 1)) }
     if (event.key === 'ArrowUp') { event.preventDefault(); setActive((current) => Math.max(0, current - 1)) }
-    if (event.key === 'Enter' && entries[active]) { event.preventDefault(); choose(active) }
+    if (event.key === 'Enter' && entries[active]) { event.preventDefault(); choose(active, event.metaKey || event.ctrlKey) }
   }
 
   return <div className="palette-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose() }}>
@@ -64,12 +64,12 @@ export function CommandPalette(props: Props) {
           const title = entry.type === 'command' ? entry.command.title : entry.result.title
           const detail = entry.type === 'command' ? ['Command', props.shortcutFor(entry.command.id)].filter(Boolean).join(' · ') : entry.result.detail
           return <button key={entry.type === 'command' ? entry.command.id : `${entry.result.kind}-${entry.result.id}-${index}`}
-            className={index === active ? 'active' : ''} onMouseEnter={() => setActive(index)} onClick={() => choose(index)}>
+            className={index === active ? 'active' : ''} onMouseEnter={() => setActive(index)} onClick={(event) => choose(index, event.metaKey || event.ctrlKey)}>
             <span className="palette-result-icon"><Icon size={17}/></span><span><strong>{title}</strong><small>{detail}</small></span><ArrowRight size={15}/>
           </button>
         })}</div> : <div className="palette-empty">No local matches yet. Try another phrase or search meaning with AI.</div>}
       </div>
-      <div className="palette-footer"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>↵</kbd> Open</span><span><kbd>esc</kbd> Close</span></div>
+      <div className="palette-footer"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>↵</kbd> Open</span><span><kbd>{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}</kbd><kbd>↵</kbd> Open to the side</span><span><kbd>esc</kbd> Close</span></div>
     </div>
   </div>
 }

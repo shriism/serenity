@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { Workspace } from '../src/main/workspace'
 import { isWorkbenchView, parseLayout, removeFromLayout, splitLayout } from '../src/shared/layout'
 import { parseResourceUri, resourceUri } from '../src/shared/resources'
-import { activeTabOf, closeGroup, focusedGroup, initialWorkbench, nextGroupId, orderedGroups, pruneWorkbench, restoreWorkbench, showTab, showView, splitWorkbench, updateGroup, workbenchSession } from '../src/renderer/src/workbench-groups'
+import { activeTabOf, closeGroup, emptyGroup, enterView, focusedGroup, initialWorkbench, removeTab, nextGroupId, orderedGroups, pruneWorkbench, restoreWorkbench, showTab, showView, splitWorkbench, updateGroup, workbenchSession } from '../src/renderer/src/workbench-groups'
 
 const parse = (value: unknown) => parseLayout(value, isWorkbenchView, (uri) => parseResourceUri(uri) !== null)
 
@@ -81,4 +81,17 @@ test('a two-group session restores through the main process and drops unavailabl
     assert.equal(pruneWorkbench(restored, snapshot, () => true), restored)
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('returning to Knowledge resumes the last entity; choosing Knowledge again shows the library', () => {
+  const alex = { kind: 'entity' as const, id: 'alex' }
+  let group = showTab(emptyGroup('main'), alex)
+  group = enterView(group, 'review')
+  assert.equal(activeTabOf(group), undefined)
+  group = enterView(group, 'knowledge')
+  assert.deepEqual(activeTabOf(group), alex)
+  group = enterView(group, 'knowledge')
+  assert.equal(activeTabOf(group), undefined, 'the library')
+  assert.equal(activeTabOf(enterView(enterView(group, 'review'), 'knowledge')), undefined, 'leaving from the library returns to it')
+  assert.equal(enterView(removeTab(showTab(group, alex), 'entity:alex'), 'knowledge').activeTab, null, 'a closed tab is not resumed')
 })

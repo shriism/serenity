@@ -1,4 +1,4 @@
-import { Activity, CalendarDays, FileText, Files, FolderOpen, House, Inbox, Link2, ListTodo, MessageCircle, PanelLeft, PanelRight, Plus, RotateCw, Search, Settings2 } from 'lucide-react'
+import { Activity, ArrowRightLeft, CalendarDays, Columns2, SquareX, MoveRight, FileText, Files, FolderOpen, House, Inbox, Link2, ListTodo, MessageCircle, PanelLeft, PanelRight, Plus, RotateCw, Search, Settings2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { WorkspaceSnapshot } from '../../shared/types'
 import type { ModuleId } from '../../shared/modules'
@@ -15,6 +15,10 @@ export interface CommandHost {
   newConversation(): void
   toggleSearch(): void
   toggleNavigation(): void
+  splitEditor(): void
+  closeEditorGroup(): void
+  focusNextGroup(): void
+  moveTabToOtherGroup(): void
   toggleAssistant(): void
   refresh(): void
 }
@@ -53,6 +57,10 @@ const builtins: CommandContribution[] = [
   { id: 'assistant.new', title: 'New conversation', icon: MessageCircle, run: (host) => host.newConversation() },
   { id: 'assistant.toggle', title: 'Toggle assistant', icon: PanelRight, keybinding: 'Mod+J', run: (host) => host.toggleAssistant() },
   { id: 'navigation.toggle', title: 'Toggle navigation', icon: PanelLeft, keybinding: 'Mod+B', run: (host) => host.toggleNavigation() },
+  { id: 'layout.split', title: 'Split editor', icon: Columns2, keybinding: 'Mod+\\', run: (host) => host.splitEditor() },
+  { id: 'layout.close-group', title: 'Close editor group', icon: SquareX, run: (host) => host.closeEditorGroup() },
+  { id: 'layout.focus-next', title: 'Focus next editor group', icon: ArrowRightLeft, keybinding: 'Mod+Alt+ArrowRight', run: (host) => host.focusNextGroup() },
+  { id: 'layout.move-tab', title: 'Move tab to other group', icon: MoveRight, run: (host) => host.moveTabToOtherGroup() },
   { id: 'workspace.search', title: 'Search workspace', icon: Search, keybinding: 'Mod+K', whileTyping: true, hideInPalette: true, run: (host) => host.toggleSearch() },
   { id: 'workspace.refresh', title: 'Refresh files', icon: RotateCw, run: (host) => host.refresh() }
 ]

@@ -13,11 +13,16 @@ export interface EditorGroup {
   activeTab: string | null
   /** Showing a not-yet-saved entity draft in the Knowledge view. */
   creatingEntity: boolean
+  /** Tab last shown in a resuming view, so returning to that view picks up where the person left off. */
+  recent: Partial<Record<View, string>>
 }
 
 export interface Workbench { root: LayoutNode; groups: EditorGroup[]; focused: string }
 
-export const emptyGroup = (id: string, view: View = 'home'): EditorGroup => ({ id, view, tabs: [], activeTab: null, creatingEntity: false })
+export const emptyGroup = (id: string, view: View = 'home'): EditorGroup => ({ id, view, tabs: [], activeTab: null, creatingEntity: false, recent: {} })
+
+// Returning to Knowledge reopens the entity last shown there; choosing it again from that entity shows the library.
+const resumingViews: ReadonlySet<View> = new Set(['knowledge'])
 export const initialWorkbench: Workbench = { root: { group: 'main' }, groups: [emptyGroup('main')], focused: 'main' }
 
 export function findGroup(workbench: Workbench, id: string = workbench.focused): EditorGroup | undefined {
@@ -46,13 +51,23 @@ export function showView(group: EditorGroup, view: View): EditorGroup {
   return { ...group, view, activeTab: null, creatingEntity: false }
 }
 
+/** Navigates a group to a view, resuming its last resource where that view does so. */
+export function enterView(group: EditorGroup, view: View): EditorGroup {
+  const recent = group.view !== view && resumingViews.has(view) ? group.tabs.find((tab) => tabKey(tab) === group.recent[view]) : undefined
+  if (recent) return showTab(group, recent)
+  const { [view]: _left, ...others } = group.recent
+  return { ...showView(group, view), recent: group.view === view ? others : group.recent }
+}
+
 export function showTab(group: EditorGroup, tab: TabRef): EditorGroup {
   const tabs = group.tabs.some((item) => tabKey(item) === tabKey(tab)) ? group.tabs : [...group.tabs, tab]
-  return { ...group, tabs, view: tabView[tab.kind], activeTab: tabKey(tab), creatingEntity: false }
+  const view = tabView[tab.kind]
+  return { ...group, tabs, view, activeTab: tabKey(tab), creatingEntity: false, recent: resumingViews.has(view) ? { ...group.recent, [view]: tabKey(tab) } : group.recent }
 }
 
 export function removeTab(group: EditorGroup, key: string): EditorGroup {
-  return { ...group, tabs: group.tabs.filter((item) => tabKey(item) !== key), activeTab: group.activeTab === key ? null : group.activeTab }
+  const recent = Object.fromEntries(Object.entries(group.recent).filter(([, value]) => value !== key)) as EditorGroup['recent']
+  return { ...group, tabs: group.tabs.filter((item) => tabKey(item) !== key), activeTab: group.activeTab === key ? null : group.activeTab, recent }
 }
 
 export function nextGroupId(workbench: Workbench, from: string = workbench.focused): string | null {

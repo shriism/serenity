@@ -8,12 +8,12 @@ import { evaluateWorkspaceQuery } from '../../shared/query'
 import { parseResourceUri } from '../../shared/resources'
 import type { CommandContribution } from './commands'
 
-function LiveQuery({ source, workspace, onOpen }: { source: string; workspace: WorkspaceSnapshot; onOpen(uri: string): void }) {
+function LiveQuery({ source, workspace, onOpen }: { source: string; workspace: WorkspaceSnapshot; onOpen(uri: string, side?: boolean): void }) {
   try {
     const result = evaluateWorkspaceQuery(workspace, YAML.parse(source) as unknown)
     const kind = result.source === 'upcoming' ? 'home-list' : result.source === 'claims' ? 'home-recent-list' :
       result.source === 'proposals' ? 'home-review-list' : 'page-query-list'
-    return result.items.length ? <div className={`page-query-list ${kind}`}>{result.items.map((item) => <button key={item.uri} onClick={() => onOpen(item.uri)}>
+    return result.items.length ? <div className={`page-query-list ${kind}`}>{result.items.map((item) => <button key={item.uri} onClick={(event) => onOpen(item.uri, event.metaKey || event.ctrlKey)} title="Open (⌘/Ctrl-click to open to the side)">
       <span><strong>{item.title}</strong><small>{item.detail}</small></span><ArrowUpRight size={15}/>
     </button>)}</div> : <p className="page-query-empty">Nothing here yet.</p>
   } catch (error) { return <p className="page-query-error" role="alert">Query: {String(error)}</p> }
@@ -26,7 +26,8 @@ export function WorkspacePageView({ page, workspace, commands, onUpdate, onError
   onUpdate(snapshot: WorkspaceSnapshot): void
   onError(error: string): void
   onDirtyChange(dirty: boolean): void
-  onOpen(uri: string): void
+  /** `side` opens the resource in the other editor group. */
+  onOpen(uri: string, side?: boolean): void
   onCommand(id: string): void
 }) {
   const [editing, setEditing] = useState(false)
@@ -69,7 +70,7 @@ export function WorkspacePageView({ page, workspace, commands, onUpdate, onError
       : <article className="page-prose"><ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={urlTransform} components={{
         a: ({ children, href }) => {
           const ref = href ? parseResourceUri(href) : null
-          if (ref) return <button className="page-link" onClick={() => onOpen(href!)}>{children}<ArrowUpRight size={14}/></button>
+          if (ref) return <button className="page-link" onClick={(event) => onOpen(href!, event.metaKey || event.ctrlKey)}>{children}<ArrowUpRight size={14}/></button>
           const command = href?.startsWith('serenity:command/') ? decodeURIComponent(href.slice('serenity:command/'.length)) : null
           if (command && commands.some((item) => item.id === command)) return <button className="page-link" onClick={() => onCommand(command)}>{children}<ArrowUpRight size={14}/></button>
           return <span title={href}>{children}</span>

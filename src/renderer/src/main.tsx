@@ -1,17 +1,19 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ArrowRight, FileText, FolderOpen, Maximize2, Minimize2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, RotateCw, Search, Sparkles } from 'lucide-react'
-import type { Autonomy, Conversation, Provider, ReadScope, SearchResult, WorkbenchSession, WorkflowPermissions, WorkspaceSnapshot } from '../../shared/types'
+import { ArrowRight, Columns2, FileText, FolderOpen, Maximize2, Minimize2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, RotateCw, Search, Sparkles, X } from 'lucide-react'
+import type { Autonomy, Conversation, Provider, ReadScope, SearchResult, WorkflowPermissions, WorkspacePage, WorkspaceSnapshot } from '../../shared/types'
 import { ConversationPanel } from './conversation-panel'
 import { ConversationList } from './conversation-list'
 import { defaultReadScope, defaultWorkflowPermissions } from '../../shared/workflow'
 import { AppNavigation } from './navigation'
-import { builtinViews } from './builtin-views'
+import { builtinViews, type BuiltinViewContext } from './builtin-views'
 import { CommandPalette } from './command-palette'
 import { ThemeControl, useTheme } from './theme'
 import type { View } from './views'
 import { WorkspaceTabs } from './workspace-tabs'
-import { restoreTabs, routeResource, tabKey, tabPath, tabTitle, tabUri, tabView, type TabRef } from './resource-routing'
+import { routeResource, tabKey, tabPath, tabTitle, type TabRef } from './resource-routing'
+import { activeTabOf, closeGroup, emptyGroup, enterView, findGroup, focusedGroup, initialWorkbench, nextGroupId, orderedGroups, pruneWorkbench, removeTab, restoreWorkbench, showTab, showView, shownUri, splitWorkbench, updateGroup, workbenchSession, type EditorGroup, type Workbench } from './workbench-groups'
+import { layoutGroupIds, maxEditorGroups, type LayoutNode } from '../../shared/layout'
 import { knownCommandIds, workspaceCommands, type CommandContribution, type CommandHost } from './commands'
 import { eventKeybinding, formatKeybinding, resolveKeymap, type KeymapResult } from '../../shared/keybindings'
 import { parseResourceUri, resourceUri } from '../../shared/resources'
@@ -25,17 +27,17 @@ function storedPanel(key: string, fallback: boolean): boolean {
 }
 
 function App() {
-  const [workspace, setWorkspace] = useState<WorkspaceSnapshot | null>(null)
-  // Whether the open page or entity editor has unsaved edits; the editor itself owns the draft.
-  const [contentDirty, setContentDirty] = useState(false)
-  const [creatingEntity, setCreatingEntity] = useState(false)
+  const [workspace, setWorkspaceState] = useState<WorkspaceSnapshot | null>(null)
+  // Refreshes and operations can finish out of order; never replace a snapshot with one whose reading began earlier.
+  const setWorkspace = useCallback((next: WorkspaceSnapshot | null) => setWorkspaceState((current) =>
+    !next || !current || next.path !== current.path || next.generation >= current.generation ? next : current), [])
+  const [workbench, setWorkbench] = useState<Workbench>(initialWorkbench)
+  // Groups whose page or entity editor has unsaved edits. Each editor owns its draft; the shell only guards leaving it.
+  const [dirtyGroups, setDirtyGroups] = useState<Record<string, boolean>>({})
   const [error, setError] = useState('')
-  const [view, setView] = useState<View>('home')
   const [leftOpen, setLeftOpen] = useState(() => storedPanel('serenity.left-open', false))
   const [rightOpen, setRightOpen] = useState(() => storedPanel('serenity.right-open', true))
   const [aiExpanded, setAIExpanded] = useState(false)
-  const [tabs, setTabs] = useState<TabRef[]>([])
-  const [activeTab, setActiveTab] = useState<string | null>(null)
   const [sessionReadyPath, setSessionReadyPath] = useState<string | null>(null)
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [provider, setProvider] = useState<Provider>('copilot')
@@ -55,9 +57,13 @@ function App() {
   const [theme, setTheme] = useTheme()
   const searchSequence = useRef(0)
   const commandContext = useRef<{ host: CommandHost; commands: CommandContribution[]; keymap: KeymapResult; escape(): void } | null>(null)
-  const activeTabRef = tabs.find((tab) => tabKey(tab) === activeTab)
+  const dirtyHandlers = useRef(new Map<string, (dirty: boolean) => void>())
+  const focused = focusedGroup(workbench)
+  const view = focused.view
+  const activeTabRef = activeTabOf(focused)
   const activePageId = view === 'home' && activeTabRef?.kind === 'page' ? activeTabRef.id : null
   const viewAvailable = (target: View): boolean => Boolean(workspace && builtinViews.available(target, { workspace }))
+  const anyDirty = Object.values(dirtyGroups).some(Boolean)
   useEffect(() => { try { localStorage.setItem('serenity.left-open', String(leftOpen)) } catch { /* Still works for this session. */ } }, [leftOpen])
   useEffect(() => { try { localStorage.setItem('serenity.right-open', String(rightOpen)) } catch { /* Still works for this session. */ } }, [rightOpen])
   useEffect(() => {
@@ -88,7 +94,7 @@ function App() {
 
   useEffect(() => window.serenity.onWorkspaceChange(() => { void refresh() }), [refresh])
   useEffect(() => { void window.serenity.refresh().then(setWorkspace).catch((cause) => setError(String(cause))) }, [])
-  useEffect(() => window.serenity.setEditorDirty(contentDirty), [contentDirty])
+  useEffect(() => window.serenity.setEditorDirty(anyDirty), [anyDirty])
   useEffect(() => window.serenity.onIndexError((message) => setError(`Background AI: ${message}`)), [])
   useEffect(() => {
     if (!workspace) return
@@ -106,36 +112,20 @@ function App() {
       if (!session) { restoreConversation(workspace.conversations.at(-1)); setSessionReadyPath(workspace.path); return }
       const lastConversation = workspace.conversations.find((item) => session.assistantUri === resourceUri({ kind: 'conversation', id: item.id })) ?? workspace.conversations.at(-1)
       restoreConversation(lastConversation)
-      const available = (id: View): boolean => builtinViews.available(id, { workspace })
-      const open = restoreTabs(workspace, session.openUris, available)
-      const active = session.activeUri ? routeResource(workspace, session.activeUri, available) : null
-      const target = available(session.view as View) ? session.view as View : 'home'
-      if (active?.action === 'tab' && active.view === target) {
-        const tab = active.tab
-        setTabs(open.some((item) => tabKey(item) === tabKey(tab)) ? open : [...open, tab])
-        setActiveTab(tabKey(tab))
-      } else setTabs(open)
-      setView(target)
+      setWorkbench(restoreWorkbench(session, workspace, (id) => builtinViews.available(id, { workspace })))
+      setDirtyGroups({})
       setSessionReadyPath(workspace.path)
     }).catch((error) => { if (current) setError(`Workspace session: ${String(error)}`) })
     return () => { current = false }
   }, [workspace?.path])
   useEffect(() => {
     if (!workspace || sessionReadyPath !== workspace.path) return
-    const session: WorkbenchSession = { view, openUris: tabs.slice(-30).map(tabUri),
-      assistantUri: conversationId ? resourceUri({ kind: 'conversation', id: conversationId }) : undefined,
-      activeUri: activeTabRef && tabView[activeTabRef.kind] === view ? tabUri(activeTabRef) :
-        view === 'home' ? resourceUri({ kind: 'page', id: workspace.workbench.homePage }) : undefined }
+    const session = workbenchSession(workbench, workspace.workbench.homePage, conversationId ? resourceUri({ kind: 'conversation', id: conversationId }) : undefined)
     const timer = window.setTimeout(() => { void window.serenity.saveSession(session).catch((error) => setError(`Workspace session: ${String(error)}`)) }, 180)
     return () => window.clearTimeout(timer)
-  }, [workspace?.path, workspace?.workbench.homePage, sessionReadyPath, view, tabs, activeTab, activeTabRef, conversationId])
+  }, [workspace?.path, workspace?.workbench.homePage, sessionReadyPath, workbench, conversationId])
   useEffect(() => {
-    if (!workspace) return
-    const available = (id: View): boolean => builtinViews.available(id, { workspace })
-    setTabs((existing) => {
-      const kept = restoreTabs(workspace, existing.map(tabUri), available)
-      return kept.length === existing.length ? existing : kept
-    })
+    if (workspace) setWorkbench((current) => pruneWorkbench(current, workspace, (id) => builtinViews.available(id, { workspace })))
   }, [workspace])
   useEffect(() => {
     const mac = navigator.platform.includes('Mac')
@@ -162,12 +152,9 @@ function App() {
       if (!next) return
       setWorkspace(next)
       setSessionReadyPath(null)
-      setContentDirty(false)
-      setCreatingEntity(false)
+      setWorkbench(initialWorkbench)
+      setDirtyGroups({})
       setError('')
-      setView('home')
-      setTabs([])
-      setActiveTab(null)
       setAIExpanded(false)
       setConversationId(null)
       setPermissions({ ...defaultWorkflowPermissions })
@@ -180,35 +167,61 @@ function App() {
     }
   }
 
-  function confirmLeave(): boolean {
-    if (!contentDirty) return true
+  /** A stable per-group callback, so editors' dirty-tracking effects do not re-run on every render. */
+  function dirtyHandler(groupId: string): (dirty: boolean) => void {
+    let handler = dirtyHandlers.current.get(groupId)
+    if (!handler) {
+      handler = (dirty) => setDirtyGroups((current) => Boolean(current[groupId]) === dirty ? current : { ...current, [groupId]: dirty })
+      dirtyHandlers.current.set(groupId, handler)
+    }
+    return handler
+  }
+
+  function confirmLeave(groupId: string): boolean {
+    if (!dirtyGroups[groupId]) return true
     if (!window.confirm('Discard your unsaved changes?')) return false
-    setContentDirty(false)
+    setDirtyGroups((current) => ({ ...current, [groupId]: false }))
     return true
   }
 
-  function openTab(tab: TabRef): void {
-    setTabs((existing) => existing.some((item) => tabKey(item) === tabKey(tab)) ? existing : [...existing, tab])
-    setActiveTab(tabKey(tab))
+  /** A group that `sideGroup` may have just created is not in this render's state yet; treat it as empty. */
+  function groupState(groupId: string): EditorGroup {
+    return findGroup(workbench, groupId) ?? emptyGroup(groupId)
   }
 
-  function openEntity(id: string): boolean {
+  /** Changes what a group shows and focuses it. */
+  function show(groupId: string, update: (group: EditorGroup) => EditorGroup): void {
+    setWorkbench((current) => findGroup(current, groupId) ? { ...updateGroup(current, groupId, update), focused: groupId } : current)
+  }
+
+  function focusGroup(groupId: string): void {
+    setWorkbench((current) => current.focused === groupId || !findGroup(current, groupId) ? current : { ...current, focused: groupId })
+  }
+
+  /** The group beside `from`, creating an empty one if there is room. Returns `from` at the group limit. */
+  function sideGroup(from: string = workbench.focused): string {
+    const other = nextGroupId(workbench, from)
+    if (other) return other
+    const next = splitWorkbench(workbench, { from, duplicate: false })
+    if (!next) return from
+    setWorkbench(next)
+    return next.focused
+  }
+
+  function openEntity(id: string, groupId: string = workbench.focused): boolean {
     const tab: TabRef = { kind: 'entity', id }
-    if (view === 'knowledge' && activeTab === tabKey(tab)) return true
-    if (!workspace?.entities.some((item) => item.id === id) || !confirmLeave()) return false
-    setCreatingEntity(false)
+    const group = groupState(groupId)
+    if (group.view === 'knowledge' && group.activeTab === tabKey(tab)) { focusGroup(groupId); return true }
+    if (!workspace?.entities.some((item) => item.id === id) || !confirmLeave(groupId)) return false
     setError('')
-    setView('knowledge')
-    openTab(tab)
+    show(groupId, (current) => showTab(current, tab))
     return true
   }
 
-  function newEntity() {
-    if (!confirmLeave()) return
-    setCreatingEntity(true)
+  function newEntity(groupId: string = workbench.focused) {
+    if (!confirmLeave(groupId)) return
     setError('')
-    setView('knowledge')
-    setActiveTab(null)
+    show(groupId, (current) => ({ ...showView(current, 'knowledge'), creatingEntity: true }))
   }
 
   function startConversation(prompt = '') {
@@ -245,60 +258,61 @@ function App() {
     } catch (cause) { setError(String(cause)) }
   }
 
-  function openSearchResult(result: SearchResult) {
+  function openSearchResult(result: SearchResult, side: boolean) {
     // The search index records claim hits under their subject entity's ID.
     const kind = result.kind === 'claim' && !workspace?.claims.some((item) => item.id === result.id) ? 'entity' : result.kind
-    if (openResource(resourceUri({ kind, id: result.id }))) closePalette()
+    if (openResource(resourceUri({ kind, id: result.id }), { side })) closePalette()
   }
 
-  function openResource(uri: string): boolean {
+  /** Opens a resource in a group: the given one, the focused one, or with `side` the group beside it. */
+  function openResource(uri: string, options: { group?: string; side?: boolean } = {}): boolean {
     const target = workspace ? routeResource(workspace, uri, viewAvailable) : null
     if (!workspace || !target) return false
+    if (target.action === 'external') { void openDocument(target.name); return true }
+    if (target.action === 'conversation') {
+      const conversation = workspace.conversations.find((item) => item.id === target.id)
+      if (conversation) selectConversation(conversation)
+      return Boolean(conversation)
+    }
+    const groupId = options.side ? sideGroup(options.group) : options.group ?? workbench.focused
     switch (target.action) {
-      case 'tab': return openTabRef(target.tab)
-      case 'home': return navigate('home')
-      case 'focus': return focusRecord(target.kind, target.id)
-      case 'external': void openDocument(target.name); return true
-      case 'view': return navigate(target.view)
-      case 'conversation': {
-        const conversation = workspace.conversations.find((item) => item.id === target.id)
-        if (conversation) selectConversation(conversation)
-        return Boolean(conversation)
-      }
+      case 'tab': return openTabRef(target.tab, groupId)
+      case 'home': return navigate('home', groupId)
+      case 'focus': return focusRecord(target.kind, target.id, groupId)
+      case 'view': return navigate(target.view, groupId)
     }
   }
 
-  function openTabRef(tab: TabRef): boolean {
-    if (tab.kind === 'document') return openDocumentTab(tab.id)
-    if (tab.kind === 'page') return openPageTab(tab.id)
-    return openEntity(tab.id)
+  function openTabRef(tab: TabRef, groupId: string): boolean {
+    if (tab.kind === 'document') return openDocumentTab(tab.id, groupId)
+    if (tab.kind === 'page') return openPageTab(tab.id, groupId)
+    return openEntity(tab.id, groupId)
   }
 
-  function openPageTab(id: string): boolean {
-    if (activePageId !== id && !confirmLeave()) return false
-    openTab({ kind: 'page', id })
-    setView('home')
+  function openPageTab(id: string, groupId: string): boolean {
+    const tab: TabRef = { kind: 'page', id }
+    const group = groupState(groupId)
+    if (!(group.view === 'home' && group.activeTab === tabKey(tab)) && !confirmLeave(groupId)) return false
+    show(groupId, (current) => showTab(current, tab))
     return true
   }
 
-  function focusRecord(kind: 'task' | 'event', id: string): boolean {
-    if (!confirmLeave()) return false
+  function focusRecord(kind: 'task' | 'event', id: string, groupId: string): boolean {
+    if (!confirmLeave(groupId)) return false
     if (kind === 'task') setFocusedTaskId(id)
     else setFocusedEventId(id)
     setFocusVersion((version) => version + 1)
-    setActiveTab(null)
-    setView(kind === 'task' ? 'tasks' : 'calendar')
+    show(groupId, (current) => showView(current, kind === 'task' ? 'tasks' : 'calendar'))
     return true
   }
 
-  function navigate(destination: View): boolean {
+  function navigate(destination: View, groupId: string = workbench.focused): boolean {
+    const group = groupState(groupId)
     if (!viewAvailable(destination)) return false
-    if ((view !== destination || activeTabRef || creatingEntity) && !confirmLeave()) return false
-    setActiveTab(null)
-    setCreatingEntity(false)
+    if ((group.view !== destination || group.activeTab || group.creatingEntity) && !confirmLeave(groupId)) return false
     if (destination === 'calendar') setFocusedEventId(null)
     if (destination === 'tasks') setFocusedTaskId(null)
-    setView(destination)
+    show(groupId, (current) => enterView(current, destination))
     if (leftOpen) setLeftOpen(false)
     if (destination === 'activity') void refresh()
     return true
@@ -308,16 +322,15 @@ function App() {
     commands.find((item) => item.id === id)?.run(commandHost)
   }
 
-  async function createPage(): Promise<void> {
-    if (!confirmLeave()) return
+  async function createPage(groupId: string = workbench.focused): Promise<void> {
+    if (!confirmLeave(groupId)) return
     try {
       const before = new Set(workspace?.pages.map((page) => page.id) ?? [])
       const next = await window.serenity.createPage()
       const created = next.pages.find((page) => !before.has(page.id))
       if (!created) throw new Error('New page was not found in this workspace')
       setWorkspace(next)
-      openTab({ kind: 'page', id: created.id })
-      setView('home')
+      show(groupId, (current) => showTab(current, { kind: 'page', id: created.id }))
       setError('')
     } catch (error) { setError(String(error)) }
   }
@@ -362,39 +375,69 @@ function App() {
     catch (cause) { setError(String(cause)) }
   }
 
-  function openDocumentTab(name: string): boolean {
+  function openDocumentTab(name: string, groupId: string = workbench.focused): boolean {
     const item = workspace?.documents.find((document) => document.name === name)
     if (!item) return false
     if (!item.extractable) { void openDocument(name); return true }
-    if (!confirmLeave()) return false
-    openTab({ kind: 'document', id: name })
-    setView('documents')
+    const tab: TabRef = { kind: 'document', id: name }
+    const group = groupState(groupId)
+    if (!(group.view === 'documents' && group.activeTab === tabKey(tab)) && !confirmLeave(groupId)) return false
+    show(groupId, (current) => showTab(current, tab))
     return true
   }
 
-  function activateTab(key: string) {
-    const tab = tabs.find((item) => tabKey(item) === key)
-    if (tab) openTabRef(tab)
+  function activateTab(key: string, groupId: string) {
+    const tab = groupState(groupId).tabs.find((item) => tabKey(item) === key)
+    if (tab) openTabRef(tab, groupId)
   }
 
-  function closeTab(key: string) {
-    const tab = tabs.find((item) => tabKey(item) === key)
-    if (!tab) return
-    if (activeTab === key && !confirmLeave()) return
-    setTabs(tabs.filter((item) => tabKey(item) !== key))
-    if (activeTab === key) { setActiveTab(null); setView(tabView[tab.kind]) }
+  function closeTab(key: string, groupId: string) {
+    if (groupState(groupId).activeTab === key && !confirmLeave(groupId)) return
+    setWorkbench((current) => updateGroup(current, groupId, (group) => removeTab(group, key)))
+  }
+
+  function splitEditor(): void {
+    const next = splitWorkbench(workbench)
+    if (next) setWorkbench(next)
+  }
+
+  function closeEditorGroup(groupId: string = workbench.focused): void {
+    if (workbench.groups.length < 2 || !confirmLeave(groupId)) return
+    setWorkbench((current) => closeGroup(current, groupId))
+    setDirtyGroups(({ [groupId]: _closed, ...rest }) => rest)
+  }
+
+  function focusNextGroup(): void {
+    const next = nextGroupId(workbench)
+    if (!next) return
+    focusGroup(next)
+    document.querySelector<HTMLElement>(`[data-group="${next}"]`)?.focus()
+  }
+
+  function moveTabToOtherGroup(): void {
+    const tab = activeTabOf(focused)
+    if (!tab || !confirmLeave(focused.id)) return
+    const target = sideGroup(focused.id)
+    if (target === focused.id) return
+    setWorkbench((current) => ({ ...updateGroup(updateGroup(current, focused.id, (group) => removeTab(group, tabKey(tab))), target, (group) => showTab(group, tab)), focused: target }))
   }
 
   async function sendMessage(event: FormEvent) {
     event.preventDefault()
-    if (!message.trim() || busy) return
+    if (!message.trim() || busy || !workspace) return
     if (autonomy === 'ask' && !window.confirm(`Allow ${provider} to read this workspace for this request? No knowledge changes will be saved without separate approval.`)) return
     setBusy(true)
     try {
+      const groups = orderedGroups(workbench)
+      const shownRef = (group: EditorGroup): string | undefined => {
+        const ref = parseResourceUri(shownUri(group, workspace.workbench.homePage) ?? '')
+        return ref ? `${ref.kind}:${ref.id}` : undefined
+      }
       const next = await window.serenity.sendMessage({ conversationId: conversationId ?? undefined, text: message, provider, autonomy, retained, permissions, readScope,
-        activeRef: view === 'home' ? `page:${activePageId ?? workspace?.workbench.homePage ?? 'home'}` : activeTab ?? undefined, openRefs: tabs.map(tabKey) })
+        activeRef: shownRef(focused), visibleRefs: groups.filter((group) => group.id !== focused.id).flatMap((group) => shownRef(group) ?? []),
+        openRefs: [...new Set(groups.flatMap((group) => group.tabs.map(tabKey)))] })
       if (!conversationId) {
-        const created = next.conversations.find((item) => !workspace?.conversations.some((old) => old.id === item.id))
+        const created = next.conversations.find((item) => !workspace.conversations.some((old) => old.id === item.id))
         setConversationId(created?.id ?? null)
       }
       setWorkspace(next)
@@ -438,7 +481,6 @@ function App() {
     } catch (cause) { setError(String(cause)) }
   }
 
-
   const commands = workspace ? workspaceCommands(workspace) : []
   const keymap = resolveKeymap(commands, workspace?.workbench.keybindings, workspace ? knownCommandIds(workspace) : undefined)
   const mac = navigator.platform.includes('Mac')
@@ -446,15 +488,19 @@ function App() {
   const ariaShortcut = (id: string): string | undefined => keymap.byCommand.get(id)?.replace('Mod', mac ? 'Meta' : 'Control').replace('Ctrl', 'Control')
   const withShortcut = (label: string, id: string): string => { const keys = shortcut(id); return keys ? `${label} (${keys})` : label }
   const commandHost: CommandHost = {
-    navigate,
+    navigate: (destination) => navigate(destination),
     openResource: (uri) => { const opened = openResource(uri); if (opened && leftOpen) setLeftOpen(false); return opened },
-    newEntity,
+    newEntity: () => newEntity(),
     createPage: () => { void createPage() },
     importDocuments: () => { if (navigate('documents')) void importDocuments() },
     newConversation: () => startConversation(),
     toggleSearch: () => { if (paletteOpen) closePalette(); else setPaletteOpen(true) },
     toggleNavigation: () => setLeftOpen((open) => !open),
     toggleAssistant: () => { setRightOpen((open) => !open); setAIExpanded(false) },
+    splitEditor,
+    closeEditorGroup: () => closeEditorGroup(),
+    focusNextGroup,
+    moveTabToOtherGroup,
     refresh: () => { void refresh() }
   }
   commandContext.current = { host: commandHost, commands, keymap, escape: () => { if (paletteOpen) closePalette(); else if (leftOpen) setLeftOpen(false) } }
@@ -473,14 +519,68 @@ function App() {
     ...(workspace?.conversations.flatMap((item) => item.messages.map((message) => ({ id: message.id, at: message.recordedAt, title: message.role === 'user' ? 'You' : `${message.provider} replied`, detail: message.text.slice(0, 180) }))) ?? [])]
     .sort((a, b) => b.at.localeCompare(a.at))
   const title: Record<View, string> = { home: 'Home', knowledge: 'Knowledge', review: 'Review', documents: 'Documents', calendar: 'Calendar', tasks: 'Tasks', activity: 'Activity', settings: 'Settings' }
+  const multipleGroups = workbench.groups.length > 1
+  const canSplit = workbench.groups.length < maxEditorGroups
+  const pageFor = (group: EditorGroup): WorkspacePage | undefined => {
+    const tab = activeTabOf(group)
+    return workspace && group.view === 'home' ? workspace.pages.find((item) => item.id === (tab?.kind === 'page' ? tab.id : workspace.workbench.homePage)) : undefined
+  }
+  const groupTitle = (group: EditorGroup): string => {
+    const tab = activeTabOf(group)
+    return !workspace ? 'Welcome' : group.view === 'home' ? pageFor(group)?.title ?? 'Home' : tab ? tabTitle(workspace, tab) : title[group.view]
+  }
   const currentTab = activeTabRef
-  const currentPage = view === 'home' ? workspace?.pages.find((item) => item.id === (activePageId ?? workspace.workbench.homePage)) : null
+  const currentPage = pageFor(focused)
   const activeFile = currentTab && currentTab.kind !== 'page' && workspace ? {
     name: tabTitle(workspace, currentTab),
     path: tabPath(workspace, currentTab),
     kind: currentTab.kind,
     allowed: readScope.mode === 'workspace' || (currentTab.kind === 'entity' ? readScope.entityIds.includes(currentTab.id) : readScope.documentNames.includes(currentTab.id))
   } : currentPage ? { name: currentPage.title, path: currentPage.path, kind: 'page' as const, allowed: readScope.mode === 'workspace' } : undefined
+  const openFileCount = new Set(workbench.groups.flatMap((group) => group.tabs.map(tabKey))).size
+
+  function viewContext(group: EditorGroup, snapshot: WorkspaceSnapshot): BuiltinViewContext {
+    const tab = activeTabOf(group)
+    return { workspace: snapshot, page: pageFor(group), commands,
+      activeDocument: tab?.kind === 'document' ? tab.id : undefined, focusedEventId, focusedTaskId, focusVersion, activity,
+      onUpdate: setWorkspace, onError: setError, onDirtyChange: dirtyHandler(group.id),
+      onOpenResource: (uri, side) => { openResource(uri, { group: group.id, side }) }, onCommand: runCommand,
+      onResolve: (id, accept) => { void resolveProposal(id, accept) }, onAttach: (id, entityId) => { void attachProposal(id, entityId) },
+      onOpenSource: (name) => { void openDocument(name) }, onImport: () => { void importDocuments() }, onOpenDocument: (name) => { openDocumentTab(name, group.id) },
+      onAnalyze: (name) => { openDocumentTab(name, group.id); startConversation(`Analyze the imported document ${name}. Summarize it, identify useful knowledge about existing entities, and suggest claims with precise sources. Ask me to clarify any ambiguous identities.`) },
+      entityId: tab?.kind === 'entity' ? tab.id : undefined, creatingEntity: group.creatingEntity,
+      onOpenEntity: (id) => { openEntity(id, group.id) }, onNewEntity: () => newEntity(group.id), onDiscuss: startConversation,
+      onEntityCreated: (id) => setWorkbench((current) => updateGroup(current, group.id, (item) => showTab(item, { kind: 'entity', id })))
+    }
+  }
+
+  function renderGroup(group: EditorGroup, snapshot: WorkspaceSnapshot, position: number): ReactNode {
+    const isFocused = group.id === workbench.focused
+    return <section key={group.id} data-group={group.id} tabIndex={-1} className={`editor-group ${isFocused ? 'focused' : ''}`}
+      aria-label={multipleGroups ? `${groupTitle(group)} · editor group ${position}` : undefined} aria-current={multipleGroups && isFocused ? 'true' : undefined}
+      onMouseDownCapture={() => focusGroup(group.id)} onFocusCapture={() => focusGroup(group.id)}>
+      {(group.tabs.length > 0 || multipleGroups) && <div className="group-bar">
+        <WorkspaceTabs tabs={group.tabs.map((tab) => ({ key: tabKey(tab), kind: tab.kind, title: tabTitle(snapshot, tab) }))} active={group.activeTab}
+          onSelect={(key) => activateTab(key, group.id)} onClose={(key) => closeTab(key, group.id)}/>
+        {multipleGroups && <div className="group-actions">
+          {!group.tabs.length && <span className="group-title">{groupTitle(group)}</span>}
+          <button onClick={() => closeEditorGroup(group.id)} aria-label={`Close editor group ${position}`} title="Close editor group"><X size={14}/></button>
+        </div>}
+      </div>}
+      {group.view === 'review' && snapshot.proposals.some((item) => item.status === 'pending' && item.reviewReason) && <div className="notice warning" role="status">Some proposals involve similar entities. Verify the identity before accepting them.</div>}
+      <div className="workspace-body" key={`${group.view}:${group.activeTab ?? ''}:${group.creatingEntity}`}>
+        {builtinViews.render(group.view, viewContext(group, snapshot)) ?? <section className="page"><h1>View unavailable</h1><p>This module is not available in this workspace.</p></section>}
+      </div>
+    </section>
+  }
+
+  function renderLayout(node: LayoutNode, snapshot: WorkspaceSnapshot): ReactNode {
+    if ('group' in node) {
+      const group = findGroup(workbench, node.group)
+      return group ? renderGroup(group, snapshot, layoutGroupIds(workbench.root).indexOf(group.id) + 1) : null
+    }
+    return <div className={`editor-split ${node.split}`} key={layoutGroupIds(node).join('+')}>{node.children.map((child) => renderLayout(child, snapshot))}</div>
+  }
 
   return <div className={`app serenity-studio ${leftOpen ? 'dock-open' : 'left-collapsed'} ${rightOpen ? '' : 'right-collapsed'} ${aiExpanded && rightOpen ? 'ai-expanded' : ''}`}>
     <aside className="sidebar" aria-label="Workspace sidebar">
@@ -507,31 +607,19 @@ function App() {
     <div className="workbench">
     <main className="main" id="workspace-main">
       <header className="topbar">
-        <div className="breadcrumbs"><strong>{workspace ? view === 'home' ? currentPage?.title ?? 'Home' : title[view] : 'Welcome'}</strong></div>
+        <div className="breadcrumbs"><strong>{groupTitle(focused)}</strong></div>
         {workspace && <div className="topbar-actions">
           <button className="topbar-search" onClick={() => runCommand('workspace.search')} title={withShortcut('Search workspace', 'workspace.search')} aria-label="Search workspace"><Search size={18}/></button>
+          {canSplit && <button className="topbar-icon" onClick={() => runCommand('layout.split')} title={withShortcut('Split editor', 'layout.split')} aria-label="Split editor" aria-keyshortcuts={ariaShortcut('layout.split')}><Columns2 size={18}/></button>}
           {!rightOpen && <button className="topbar-icon show-ai" onClick={() => setRightOpen(true)} title={withShortcut('Show AI assistant', 'assistant.toggle')} aria-label="Show AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')}><PanelRightOpen size={18}/></button>}
           <details className="topbar-more"><summary aria-label="Workspace actions" title="Workspace actions"><MoreHorizontal size={19}/></summary><div className="topbar-menu"><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); runCommand('entity.create') }}><Plus size={15}/> New entity</button><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); runCommand('page.create') }}><FileText size={15}/> New page</button><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); runCommand('workspace.refresh') }}><RotateCw size={15}/> Refresh files</button></div></details>
         </div>}
       </header>
-      {workspace && <WorkspaceTabs tabs={tabs.map((tab) => ({ key: tabKey(tab), kind: tab.kind, title: tabTitle(workspace, tab) }))} active={activeTab} onSelect={activateTab} onClose={closeTab}/>}
       {error && <div className="notice error" role="alert">{error}</div>}
       {workspace?.errors.map((item) => <div key={item} className="notice warning" role="alert">Could not read {item}</div>)}
       {keymap.problems.map((item) => <div key={item} className="notice warning" role="alert">.serenity/workbench.yaml: {item}</div>)}
-      {view === 'review' && workspace?.proposals.some((item) => item.status === 'pending' && item.reviewReason) && <div className="notice warning" role="status">Some proposals involve similar entities. Verify the identity before accepting them.</div>}
-      <div className="workspace-body" key={`${view}:${activeTab ?? ''}`}>
-      {!workspace ? <section className="welcome-screen"><div className="welcome-visual"><img src={serenityIcon} alt=""/><span className="visual-orbit orbit-one"/><span className="visual-orbit orbit-two"/><span className="visual-dot dot-one"/><span className="visual-dot dot-two"/><span className="visual-dot dot-three"/></div><div className="welcome-copy"><span className="eyebrow">A SPACE FOR EVERYTHING THAT MATTERS</span><h1>Your world,<br/><em>more connected.</em></h1><p>A private workspace for your knowledge, relationships, plans, and the ideas in between. Choose a folder on your device to begin.</p><button className="primary welcome-action" onClick={() => void chooseWorkspace()}><FolderOpen size={18}/> Choose a workspace <ArrowRight size={17}/></button><small>Your files stay in a folder you control.</small></div></section>
-          : builtinViews.render(view, { workspace, page: currentPage ?? undefined, commands,
-            activeDocument: currentTab?.kind === 'document' ? currentTab.id : undefined, focusedEventId, focusedTaskId, focusVersion, activity,
-            onUpdate: setWorkspace, onError: setError, onDirtyChange: setContentDirty, onOpenResource: (uri) => { openResource(uri) }, onCommand: runCommand,
-            onResolve: (id, accept) => { void resolveProposal(id, accept) }, onAttach: (id, entityId) => { void attachProposal(id, entityId) },
-            onOpenSource: (name) => { void openDocument(name) }, onImport: () => { void importDocuments() }, onOpenDocument: openDocumentTab,
-            onAnalyze: (name) => { openDocumentTab(name); startConversation(`Analyze the imported document ${name}. Summarize it, identify useful knowledge about existing entities, and suggest claims with precise sources. Ask me to clarify any ambiguous identities.`) },
-            entityId: currentTab?.kind === 'entity' ? currentTab.id : undefined, creatingEntity,
-            onOpenEntity: (id) => { openEntity(id) }, onNewEntity: newEntity, onDiscuss: startConversation,
-            onEntityCreated: (id) => { setCreatingEntity(false); openTab({ kind: 'entity', id }) }
-          }) ?? <section className="page"><h1>View unavailable</h1><p>This module is not available in this workspace.</p></section>}
-      </div>
+      {!workspace ? <div className="workspace-body"><section className="welcome-screen"><div className="welcome-visual"><img src={serenityIcon} alt=""/><span className="visual-orbit orbit-one"/><span className="visual-orbit orbit-two"/><span className="visual-dot dot-one"/><span className="visual-dot dot-two"/><span className="visual-dot dot-three"/></div><div className="welcome-copy"><span className="eyebrow">A SPACE FOR EVERYTHING THAT MATTERS</span><h1>Your world,<br/><em>more connected.</em></h1><p>A private workspace for your knowledge, relationships, plans, and the ideas in between. Choose a folder on your device to begin.</p><button className="primary welcome-action" onClick={() => void chooseWorkspace()}><FolderOpen size={18}/> Choose a workspace <ArrowRight size={17}/></button><small>Your files stay in a folder you control.</small></div></section></div>
+        : <div className={`editor-groups ${multipleGroups ? 'split' : ''}`}>{renderLayout(workbench.root, workspace)}</div>}
     </main>
     {workspace && (rightOpen ? <aside className="assistant-sidebar" aria-label="AI assistant">
       <div className="assistant-toolbar"><div><Sparkles size={18}/><span>Assistant</span><small>WITH YOUR WORKSPACE</small></div><div className="assistant-toolbar-actions">
@@ -541,7 +629,7 @@ function App() {
       <ConversationList workspace={workspace} conversationId={conversationId} autonomy={autonomy} permissions={permissions} readScope={readScope} busy={busy}
         onNew={() => runCommand('assistant.new')} onSelect={selectConversation} onPermissionsChange={setPermissions} onReadScopeChange={setReadScope} onSaveSettings={() => void saveWorkflowSettings()} />
       {readScope.mode === 'selected' && <div className="ai-scope-note" role="status">Selected knowledge only · review allowed files in Workflow settings</div>}
-      <ConversationPanel conversation={conversation} provider={provider} onProviderChange={setProvider} autonomy={autonomy} onAutonomyChange={setAutonomy} retained={retained} onRetentionChange={setRetained} message={message} onMessageChange={setMessage} busy={busy} onSend={(event) => void sendMessage(event)} onCancel={() => void cancelMessage()} onDelete={() => void deleteConversation()} activeFile={activeFile} openFileCount={tabs.length} />
+      <ConversationPanel conversation={conversation} provider={provider} onProviderChange={setProvider} autonomy={autonomy} onAutonomyChange={setAutonomy} retained={retained} onRetentionChange={setRetained} message={message} onMessageChange={setMessage} busy={busy} onSend={(event) => void sendMessage(event)} onCancel={() => void cancelMessage()} onDelete={() => void deleteConversation()} activeFile={activeFile} openFileCount={openFileCount} />
     </aside> : <aside className="assistant-rail" aria-label="AI assistant collapsed"><button onClick={() => setRightOpen(true)} title="Expand AI sidebar" aria-label="Expand AI sidebar"><PanelRightOpen size={20}/></button><span>AI</span></aside>)}
     </div>
     <CommandPalette open={paletteOpen && Boolean(workspace)} query={query} results={results} searching={searching} provider={provider} savedIndexEnabled={Boolean(workspace?.modules.semanticIndex)} commands={commands.filter((command) => !command.hideInPalette)} shortcutFor={shortcut} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult} onAISearch={() => void searchSemantically()} onSavedSearch={() => void searchSavedConcepts()} onCommand={runCommand} />

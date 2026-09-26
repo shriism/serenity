@@ -211,10 +211,11 @@ function App() {
   function sideGroup(from: string = workbench.focused): string {
     const other = nextGroupId(workbench, from)
     if (other) return other
-    const next = splitWorkbench(workbench, { from, duplicate: false })
-    if (!next) return from
-    setWorkbench(next)
-    return next.focused
+    const planned = splitWorkbench(workbench, { from, duplicate: false })
+    if (!planned) return from
+    // Apply on top of any update queued earlier in this event, e.g. opening a resource in `from` just before.
+    setWorkbench((current) => findGroup(current, planned.focused) ? current : splitWorkbench(current, { from, duplicate: false }) ?? current)
+    return planned.focused
   }
 
   function openEntity(id: string, groupId: string = workbench.focused): boolean {

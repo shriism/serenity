@@ -609,7 +609,7 @@ function App() {
     <aside className="sidebar" aria-label="Workspace sidebar">
       <div className="sidebar-inner">
       <div className="brand"><img className="brand-icon" src={serenityIcon} alt=""/><div><strong>Serenity</strong></div></div>
-      <button className="left-rail-toggle" onClick={() => setLeftOpen(!leftOpen)} aria-label={leftOpen ? 'Collapse navigation' : 'Expand navigation'} aria-keyshortcuts={ariaShortcut('navigation.toggle')} title={withShortcut(`${leftOpen ? 'Collapse' : 'Expand'} navigation`, 'navigation.toggle')}>{leftOpen ? <PanelLeftClose size={17}/> : <PanelLeftOpen size={19}/>}</button>
+      <button className="left-rail-toggle" onClick={() => workspace ? runCommand('navigation.toggle') : setLeftOpen((open) => !open)} aria-label={leftOpen ? 'Collapse navigation' : 'Expand navigation'} aria-keyshortcuts={ariaShortcut('navigation.toggle')} title={withShortcut(`${leftOpen ? 'Collapse' : 'Expand'} navigation`, 'navigation.toggle')}>{leftOpen ? <PanelLeftClose size={17}/> : <PanelLeftOpen size={19}/>}</button>
       <div className="workspace-control">
         <button className="workspace-button" onClick={() => workspace ? runCommand('workspace.choose') : void chooseWorkspace()} title={workspace?.path ?? 'Choose a workspace'}>
           <span className="workspace-avatar">{workspace ? workspace.path.split(/[\\/]/).filter(Boolean).at(-1)?.slice(0, 1).toUpperCase() : '+'}</span>
@@ -634,7 +634,7 @@ function App() {
         {workspace && <div className="topbar-actions">
           <button className="topbar-search" onClick={() => runCommand('workspace.search')} title={withShortcut('Search workspace', 'workspace.search')} aria-label="Search workspace"><Search size={18}/></button>
           {canSplit && !multipleGroups && <button className="topbar-icon" onClick={() => runCommand('layout.split')} title={withShortcut('Split right', 'layout.split')} aria-label="Split right" aria-keyshortcuts={ariaShortcut('layout.split')}><Columns2 size={18}/></button>}
-          {!rightOpen && <button className="topbar-icon show-ai" onClick={() => setRightOpen(true)} title={withShortcut('Show AI assistant', 'assistant.toggle')} aria-label="Show AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')}><PanelRightOpen size={18}/></button>}
+          {!rightOpen && <button className="topbar-icon show-ai" onClick={() => runCommand('assistant.toggle')} title={withShortcut('Show AI assistant', 'assistant.toggle')} aria-label="Show AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')}><PanelRightOpen size={18}/></button>}
           <details className="topbar-more"><summary aria-label="Workspace actions" title="Workspace actions"><MoreHorizontal size={19}/></summary><div className="topbar-menu">{menuCommands.map(({ id, title, icon: Icon }) =>
             <button key={id} onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); runCommand(id) }}><Icon size={15}/>{title}</button>)}</div></details>
         </div>}
@@ -648,7 +648,7 @@ function App() {
     {workspace && (rightOpen ? <aside className="assistant-sidebar" aria-label="AI assistant">
       <div className="assistant-toolbar"><div><Sparkles size={18}/><span>Assistant</span><small>WITH YOUR WORKSPACE</small></div><div className="assistant-toolbar-actions">
         <button onClick={() => runCommand('assistant.expand')} aria-label={aiExpanded ? 'Return AI to sidebar' : 'Expand AI over workspace'} title={aiExpanded ? 'Return AI to sidebar' : 'Expand AI over workspace'}>{aiExpanded ? <Minimize2 size={17}/> : <Maximize2 size={17}/>}</button>
-        <button onClick={() => { setRightOpen(false); setAIExpanded(false) }} aria-label="Collapse AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')} title={withShortcut('Collapse AI sidebar', 'assistant.toggle')}><PanelRightClose size={17}/></button>
+        <button onClick={() => runCommand('assistant.toggle')} aria-label="Collapse AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')} title={withShortcut('Collapse AI sidebar', 'assistant.toggle')}><PanelRightClose size={17}/></button>
       </div></div>
       <ConversationList workspace={workspace} conversationId={conversationId} autonomy={assistant.autonomy} permissions={assistant.permissions} readScope={readScope} busy={assistant.busy}
         onNew={() => runCommand('assistant.new')} onSelect={selectConversation} onPermissionsChange={assistant.setPermissions} onReadScopeChange={assistant.setReadScope} onSaveSettings={() => void assistant.saveWorkflowSettings()} />
@@ -656,7 +656,7 @@ function App() {
       <ConversationPanel conversation={assistant.conversation} provider={assistant.provider} onProviderChange={assistant.setProvider} autonomy={assistant.autonomy} onAutonomyChange={assistant.setAutonomy}
         retained={assistant.retained} onRetentionChange={assistant.setRetained} message={assistant.message} onMessageChange={assistant.setMessage} busy={assistant.busy}
         onSend={(event) => void assistant.sendMessage(event)} onCancel={() => void assistant.cancelMessage()} onDelete={() => void assistant.deleteConversation()} activeFile={activeFile} openFileCount={openFileCount} visiblePaneCount={visiblePaneCount} onOpenResource={(uri, side) => { openResource(uri, { side }) }} />
-    </aside> : <aside className="assistant-rail" aria-label="AI assistant collapsed"><button onClick={() => setRightOpen(true)} title="Expand AI sidebar" aria-label="Expand AI sidebar"><PanelRightOpen size={20}/></button><span>AI</span></aside>)}
+    </aside> : <aside className="assistant-rail" aria-label="AI assistant collapsed"><button onClick={() => runCommand('assistant.toggle')} title={withShortcut('Expand AI sidebar', 'assistant.toggle')} aria-label="Expand AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')}><PanelRightOpen size={20}/></button><span>AI</span></aside>)}
     </div>
     <CommandPalette open={paletteOpen && Boolean(workspace)} query={query} results={results} searching={searching} provider={assistant.provider} savedIndexEnabled={Boolean(workspace?.modules.semanticIndex)} commands={commands.filter((command) => !command.hideInPalette)} shortcutFor={shortcut} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult} onAISearch={() => void searchSemantically()} onSavedSearch={() => void searchSavedConcepts()} onCommand={runCommand} />
   </div>

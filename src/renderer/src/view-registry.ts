@@ -17,10 +17,14 @@ export class ViewRegistry<Context extends { workspace: WorkspaceSnapshot }> {
     return () => { if (this.views.get(contribution.id) === contribution) this.views.delete(contribution.id) }
   }
 
+  available(id: string, context: Pick<Context, 'workspace'>): boolean {
+    const view = this.views.get(id)
+    return Boolean(view && (!view.module || context.workspace.modules[view.module]))
+  }
+
   render(id: string, context: Context): ReactNode {
     const view = this.views.get(id)
-    if (!view || (view.module && !context.workspace.modules[view.module])) return null
-    return view.render(context)
+    return view && this.available(id, context) ? view.render(context) : null
   }
 
   has(id: string): boolean { return this.views.has(id) }

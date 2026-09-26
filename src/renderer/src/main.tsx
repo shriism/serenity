@@ -123,14 +123,13 @@ function App() {
       })
       const active = session.activeUri ? parseResourceUri(session.activeUri) : null
       const target = session.view as View
-      const validView = (target !== 'calendar' || workspace.modules.calendar) && (target !== 'tasks' || workspace.modules.tasks)
       setTabs(open)
       if (active?.kind === 'entity' && target === 'knowledge') {
         const entity = workspace.entities.find((item) => item.id === active.id)
         if (entity) { setSelected(entity.id); setDraft(entity); setBodyMode('preview'); setActiveTab(`entity:${entity.id}`) }
       } else if (active?.kind === 'document' && target === 'documents') setActiveTab(`document:${active.id}`)
       else if (active?.kind === 'page' && target === 'home') setActivePageId(active.id === workspace.workbench.homePage ? null : active.id)
-      setView(validView ? target : 'home')
+      setView(builtinViews.available(target, { workspace }) ? target : 'home')
       setSessionReadyPath(workspace.path)
     }).catch((error) => { if (current) setError(`Workspace session: ${String(error)}`) })
     return () => { current = false }

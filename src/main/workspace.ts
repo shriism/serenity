@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { copyFile, lstat, mkdir, readFile, readdir, realpath, rename, unlink, writeFile } from 'node:fs/promises'
+import type { Stats } from 'node:fs'
 import { basename, extname, isAbsolute, join, relative, sep } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import YAML from 'yaml'
@@ -142,6 +143,15 @@ function parseClaim(text: string): Claim {
   }
 }
 
+const parseYaml = (text: string): unknown => YAML.parse(text)
+
+/** Runs file work a batch at a time, keeping results in order and staying well under open-file limits. */
+async function inBatches<T, R>(items: readonly T[], work: (item: T) => Promise<R>, size = 64): Promise<R[]> {
+  const results: R[] = []
+  for (let index = 0; index < items.length; index += size) results.push(...await Promise.all(items.slice(index, index + size).map(work)))
+  return results
+}
+
 async function atomicWrite(path: string, text: string): Promise<void> {
   const temp = `${path}.${randomUUID()}.tmp`
   try {
@@ -159,6 +169,8 @@ export class Workspace {
   private indexDirty = true
 
   private snapshotGeneration = 0
+  private rootRealpath: string | null = null
+  private fileCache = new Map<string, { version: string; text: string; parsed: Map<string, unknown> }>()
   private extractedText = new Map<string, { version: string; text: string }>()
 
   constructor(readonly path: string) {}
@@ -198,15 +210,39 @@ export class Workspace {
     }
   }
 
-  private async ownedFile(path: string): Promise<string> {
+  private async ownedStat(path: string): Promise<Stats> {
     const info = await lstat(path)
     if (!info.isFile() || info.isSymbolicLink()) throw new Error('Workspace file must be a regular file inside this workspace')
-    const within = relative(await realpath(this.path), await realpath(path))
+    this.rootRealpath ??= await realpath(this.path)
+    const within = relative(this.rootRealpath, await realpath(path))
     if (!within || within === '..' || within.startsWith(`..${sep}`) || isAbsolute(within)) throw new Error('File is outside this workspace')
-    return path
+    return info
   }
 
-  private async readOwnedText(path: string): Promise<string> { return readFile(await this.ownedFile(path), 'utf8') }
+  private async ownedFile(path: string): Promise<string> { await this.ownedStat(path); return path }
+
+  /**
+   * Reads a workspace file, reusing the last read while its size, times, and inode are unchanged. Every snapshot
+   * re-reads the whole workspace, so this keeps an edit from costing a full re-read of thousands of records.
+   */
+  private async readOwnedText(path: string): Promise<string> {
+    const info = await this.ownedStat(path)
+    const version = `${info.size}:${info.mtimeMs}:${info.ctimeMs}:${info.ino}`
+    const cached = this.fileCache.get(path)
+    if (cached?.version === version) return cached.text
+    const text = await readFile(path, 'utf8')
+    this.fileCache.set(path, { version, text, parsed: new Map() })
+    return text
+  }
+
+  /** Reads and parses a file once per version. Each caller gets its own copy, since snapshots adjust records in place. */
+  private async readOwnedParsed<T>(path: string, format: string, parse: (text: string) => T): Promise<{ text: string; value: T }> {
+    const text = await this.readOwnedText(path)
+    const entry = this.fileCache.get(path)
+    if (!entry || entry.text !== text) return { text, value: parse(text) }
+    if (!entry.parsed.has(format)) entry.parsed.set(format, parse(text))
+    return { text, value: structuredClone(entry.parsed.get(format)) as T }
+  }
 
   async readSettingsFile(name: 'semantic-index.yaml' | 'analyzed-documents.yaml' | 'session.yaml'): Promise<string> {
     await this.verifyDirectories()
@@ -244,7 +280,7 @@ export class Workspace {
     for (const name of (await readdir(this.pagesDirectory)).filter((item) => item.endsWith('.md')).sort()) {
       try {
         const path = `pages/${name}`
-        const page = parsePage(await this.readOwnedText(join(this.pagesDirectory, name)), path)
+        const page = (await this.readOwnedParsed(join(this.pagesDirectory, name), 'page', (text) => parsePage(text, path))).value
         if (pages.some((item) => item.id === page.id)) throw new Error('Duplicate page ID')
         pages.push(page)
       } catch (error) { errors.push(`pages/${name}: ${String(error)}`) }
@@ -302,7 +338,7 @@ export class Workspace {
     const archivedDirectory = join(this.path, 'archive', 'entities')
     for (const name of (await readdir(archivedDirectory)).filter((entry) => entry.endsWith('.md'))) {
       try {
-        const archived = parseEntity(await this.readOwnedText(join(archivedDirectory, name)))
+        const archived = (await this.readOwnedParsed(join(archivedDirectory, name), 'entity', parseEntity)).value
         if (`${archived.id}.md` !== name) throw new Error('Filename does not match archived entity ID')
         archivedEntities.push(archived)
       } catch (error) { errors.push(`archive/entities/${name}: ${String(error)}`) }
@@ -345,7 +381,7 @@ export class Workspace {
     }
     for (const name of (await readdir(this.directories[7])).filter((entry) => entry.endsWith('.yaml')).sort()) {
       try {
-        const data: unknown = YAML.parse(await this.readOwnedText(join(this.directories[7], name)))
+        const data = (await this.readOwnedParsed<unknown>(join(this.directories[7], name), 'yaml', parseYaml)).value
         if (!record(data) || id(data.id) !== name.slice(0, -5)) throw new Error('Invalid resolution record')
         resolutions.push({ id: id(data.id), subject: resolve(id(data.subject)), key: requiredText(data.key, 'Key'),
           currentClaimId: data.currentClaimId === null ? null : id(data.currentClaimId),
@@ -355,7 +391,7 @@ export class Workspace {
     }
     for (const name of (await readdir(this.directories[8])).filter((entry) => entry.endsWith('.yaml')).sort()) {
       try {
-        const data: unknown = YAML.parse(await this.readOwnedText(join(this.directories[8], name)))
+        const data = (await this.readOwnedParsed<unknown>(join(this.directories[8], name), 'yaml', parseYaml)).value
         if (!record(data) || id(data.id) !== name.slice(0, -5) || !Array.isArray(data.refs) ||
           typeof data.provider !== 'string' || !data.provider.trim() ||
           !['running', 'completed', 'failed'].includes(String(data.status))) throw new Error('Invalid provider activity')
@@ -366,24 +402,25 @@ export class Workspace {
       [this.directories[0], '.md', parseEntity],
       [this.directories[1], '.yaml', parseClaim]
     ] as const) {
-      const names = await readdir(directory)
-      for (const name of names.filter((name) => name.endsWith(extension)).sort()) {
+      const names = (await readdir(directory)).filter((name) => name.endsWith(extension)).sort()
+      const loaded = await inBatches(names, (name) => this.readOwnedParsed<Entity | Claim>(join(directory, name), extension, parse)
+        .then((result) => ({ name, parsed: result.value }), (error: unknown) => ({ name, error })))
+      for (const item of loaded) {
         try {
-          const parsed = parse(await this.readOwnedText(join(directory, name)))
-          if (`${parsed.id}${extension}` !== name) throw new Error('Filename does not match record ID')
+          if ('error' in item) throw item.error
+          if (`${item.parsed.id}${extension}` !== item.name) throw new Error('Filename does not match record ID')
           // The two lists have different element types; each parser is paired with its list above.
-          if (extension === '.md') entities.push(parsed as Entity)
-          else claims.push(parsed as Claim)
+          if (extension === '.md') entities.push(item.parsed as Entity)
+          else claims.push(item.parsed as Claim)
         } catch (error) {
-          errors.push(`${basename(directory)}/${name}: ${error instanceof Error ? error.message : String(error)}`)
+          errors.push(`${basename(directory)}/${item.name}: ${error instanceof Error ? error.message : String(error)}`)
         }
       }
     }
     for (const [directory, target] of [[this.directories[3], conversations], [this.directories[4], proposals]] as const) {
       for (const name of (await readdir(directory)).filter((entry) => entry.endsWith('.yaml')).sort()) {
         try {
-          const text = await this.readOwnedText(join(directory, name))
-          const data: unknown = YAML.parse(text)
+          const { text, value: data } = await this.readOwnedParsed<unknown>(join(directory, name), 'yaml', parseYaml)
           if (!record(data) || id(data.id) !== name.slice(0, -5)) throw new Error('Invalid record or mismatched filename')
           if (directory === this.directories[3]) {
             if (!Array.isArray(data.messages) || typeof data.title !== 'string') throw new Error('Invalid conversation')
@@ -409,8 +446,8 @@ export class Workspace {
     ] as const) {
       for (const name of (await readdir(directory)).filter((entry) => entry.endsWith('.yaml')).sort()) {
         try {
-          const text = await this.readOwnedText(join(directory, name))
-          const parsed = parse(YAML.parse(text))
+          const { text, value } = await this.readOwnedParsed<unknown>(join(directory, name), 'yaml', parseYaml)
+          const parsed = parse(value)
           if (`${parsed.id}.yaml` !== name) throw new Error('Filename does not match record ID')
           if (parse === parseEvent) (archived ? archivedEvents : events).push({ ...parsed as CalendarEvent, revision: checksum(text) })
           else (archived ? archivedTasks : tasks).push({ ...parsed as TaskItem, revision: checksum(text) })

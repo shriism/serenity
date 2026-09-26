@@ -515,3 +515,27 @@ test('snapshots are numbered in the order they began so a late reply cannot repl
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
+
+test('cached reads still see external edits and never share records between snapshots', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-cache-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const alex = (await workspace.saveEntity({ id: '', title: 'Alex', type: 'person', body: '' })).entities[0]
+    const claim = (await workspace.addClaim({ subject: alex.id, key: 'color', value: 'red', source: 'Me' })).claims[0]
+    const path = join(directory, 'claims', `${claim.id}.yaml`)
+    const first = await workspace.snapshot()
+    first.claims[0].value = 'mutated by a caller'
+    first.entities[0].title = 'Mutated'
+    const second = await workspace.snapshot()
+    assert.equal(second.claims[0].value, 'red')
+    assert.equal(second.entities[0].title, 'Alex')
+    // Same length, so only the modification time and inode can reveal the edit.
+    await writeFile(path, (await readFile(path, 'utf8')).replace('value: red', 'value: tan'))
+    assert.equal((await workspace.snapshot()).claims[0].value, 'tan')
+    const sam = (await workspace.saveEntity({ id: '', title: 'Sam', type: 'person', body: '' })).entities.find((item) => item.title === 'Sam')!
+    await workspace.mergeEntities(alex.id, sam.id)
+    assert.equal((await workspace.snapshot()).claims[0].subject, sam.id, 'cached claims are still resolved through merges')
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})

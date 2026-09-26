@@ -10,6 +10,7 @@ import { defaultHome } from '../shared/default-home'
 import { defaultWorkbench } from '../shared/default-workbench'
 import { normalizeKeybinding } from '../shared/keybindings'
 import { isWorkbenchView, parseLayout } from '../shared/layout'
+import { rankSearchResults } from '../shared/search-rank'
 import { validateReadScope, validateWorkflowPermissions } from '../shared/workflow'
 import { canExtractText, extractDocument } from './documents'
 
@@ -158,6 +159,7 @@ export class Workspace {
   private indexDirty = true
 
   private snapshotGeneration = 0
+  private extractedText = new Map<string, { version: string; text: string }>()
 
   constructor(readonly path: string) {}
 
@@ -661,6 +663,18 @@ export class Workspace {
     }
   }
 
+  /** Extracted text, reused while the file's size and modification time are unchanged, so reindexing stays cheap. */
+  private async documentText(name: string): Promise<string> {
+    const path = await this.documentPath(name)
+    const info = await lstat(path)
+    const version = `${info.size}:${info.mtimeMs}`
+    const cached = this.extractedText.get(name)
+    if (cached?.version === version) return cached.text
+    const text = await extractDocument(path) ?? ''
+    this.extractedText.set(name, { version, text })
+    return text
+  }
+
   async search(term: string): Promise<SearchResult[]> {
     const query = requiredText(term, 'Search')
     if (!this.index) {
@@ -702,7 +716,7 @@ export class Workspace {
         }
         for (const document of snapshot.documents) {
           let text = ''
-          try { text = await extractDocument(await this.documentPath(document.name)) ?? '' } catch { /* unsupported or unreadable document remains in the list */ }
+          try { text = await this.documentText(document.name) } catch { /* unsupported or unreadable document remains in the list */ }
           insert.run(document.name, 'document', document.name, 'Imported document', text)
         }
         this.index.exec('COMMIT')
@@ -714,8 +728,11 @@ export class Workspace {
     }
     const words = query.toLowerCase().match(/[\p{L}\p{N}]+/gu)?.filter((word) => word.length > 1 && !new Set(['what', 'where', 'when', 'which', 'with', 'about', 'from', 'should', 'would']).has(word)) ?? []
     if (!words.length) return []
-    const terms = words.slice(0, 16).map((word) => `"${word.replaceAll('"', '""')}"*`).join(' OR ')
-    return this.index.prepare('SELECT kind, id, title, detail FROM records WHERE records MATCH ? ORDER BY rank LIMIT 100').all(terms) as unknown as SearchResult[]
+    const terms = words.slice(0, 16).map((word) => `"${word.replaceAll('"', '""')}"*`)
+    // Titles weigh more than details and body text, and records containing every word come before those with some.
+    const select = this.index.prepare('SELECT kind, id, title, detail FROM records WHERE records MATCH ? ORDER BY bm25(records, 0, 0, 8, 2, 1) LIMIT 100')
+    const all = terms.length > 1 ? select.all(terms.join(' AND ')) as unknown as SearchResult[] : []
+    return rankSearchResults(query, [...all, ...select.all(terms.join(' OR ')) as unknown as SearchResult[]]).slice(0, 100)
   }
 
   async saveConversation(conversation: Conversation): Promise<void> {

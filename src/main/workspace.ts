@@ -598,6 +598,21 @@ export class Workspace {
     await rename(path, `${path}.corrupt-${randomUUID()}`)
   }
 
+  /** A settings correction must not erase the unreadable file the person may need to inspect. */
+  private async archiveInvalidSetting(name: 'modules.yaml' | 'semantic-provider.yaml', valid: (raw: unknown) => boolean): Promise<void> {
+    const path = join(this.path, '.serenity', name)
+    let text: string
+    try { text = await this.readOwnedText(path) }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return
+      throw error
+    }
+    let acceptable = false
+    try { acceptable = valid(YAML.parse(text)) }
+    catch { /* Preserve malformed YAML below. */ }
+    if (!acceptable) await rename(path, `${path}.corrupt-${randomUUID()}`)
+  }
+
   async saveSession(session: WorkbenchSession): Promise<void> {
     const validated = await this.validatedSession(session)
     await atomicWrite(join(this.path, '.serenity', 'session.yaml'), YAML.stringify(validated))
@@ -951,6 +966,7 @@ export class Workspace {
     }
     const current = snapshot.modules
     current[moduleId] = enabled
+    await this.archiveInvalidSetting('modules.yaml', record)
     await atomicWrite(join(this.path, '.serenity', 'modules.yaml'), YAML.stringify(current))
     this.markDirty()
     return this.snapshot()
@@ -958,6 +974,7 @@ export class Workspace {
 
   async setSemanticProvider(provider: Provider): Promise<WorkspaceSnapshot> {
     if (!['copilot', 'codex'].includes(provider)) throw new Error('Unknown provider')
+    await this.archiveInvalidSetting('semantic-provider.yaml', (raw) => record(raw) && ['copilot', 'codex'].includes(String(raw.provider)))
     await atomicWrite(join(this.path, '.serenity', 'semantic-provider.yaml'), YAML.stringify({ provider }))
     return this.snapshot()
   }

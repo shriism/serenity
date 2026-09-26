@@ -114,6 +114,32 @@ test('a damaged session is preserved and a fresh session can be saved', async ()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
+test('correcting damaged module and provider settings keeps their original files', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-settings-recovery-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const settings = join(directory, '.serenity')
+    const invalidModules = 'calendar: [unfinished'
+    const invalidProvider = 'provider: discontinued\n'
+    await writeFile(join(settings, 'modules.yaml'), invalidModules)
+    await writeFile(join(settings, 'semantic-provider.yaml'), invalidProvider)
+    await workspace.setModule('calendar', false)
+    await workspace.setSemanticProvider('codex')
+    const names = await readdir(settings)
+    const preserved = async (prefix: string): Promise<string> => {
+      const archive = names.find((name) => name.startsWith(`${prefix}.corrupt-`))
+      assert.ok(archive)
+      return readFile(join(settings, archive), 'utf8')
+    }
+    assert.equal(await preserved('modules.yaml'), invalidModules)
+    assert.equal(await preserved('semantic-provider.yaml'), invalidProvider)
+    assert.equal((await workspace.snapshot()).modules.calendar, false)
+    assert.equal((await workspace.snapshot()).semanticProvider, 'codex')
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
 test('a linked Home page cannot read or rewrite content outside the workspace', { skip: process.platform === 'win32' }, async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-pages-'))
   const outside = await mkdtemp(join(tmpdir(), 'serenity-external-page-'))

@@ -153,7 +153,7 @@ This is an **implemented desktop foundation**, not a finished general workbench.
 
 ### 4. Product hardening and later platforms
 
-- Done: invalid workspace session YAML or top-level state is moved to a `.corrupt-<id>` sibling before the workbench starts fresh; a new valid session can then be saved. A damaged pane layout inside an otherwise valid session still falls back to its single-pane fields.
+- Done: invalid workspace session YAML or top-level state is moved to a `.corrupt-<id>` sibling before the workbench starts fresh; a new valid session can then be saved. A damaged pane layout inside an otherwise valid session still falls back to its single-pane fields. Correcting unreadable module or provider settings also keeps the old file in a `.corrupt-<id>` sibling.
 - Exercise migrations, recovery, performance, packaging and real-provider behavior against larger and older workspaces. Keep the data format readable, recoverable and reversible when settings or indexes are damaged.
 - Decide if and when to support external integrations/actions, cloud/device sync, local models, mobile access, or simultaneous workspaces. These are **future goals**, not existing features. External calendar sync is not the same as Serenity's internal Calendar.
 

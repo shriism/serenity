@@ -1,18 +1,20 @@
 import type { WorkspaceSnapshot } from './types'
-import { resourceUri, type ResourceKind } from './resources'
+import { parseResourceUri, resourceUri, type ResourceKind } from './resources'
+import { citesDocument } from './provenance'
+import { workspaceActivity } from './activity'
 
 export interface QueryItem { uri: string; kind: ResourceKind; title: string; detail: string; sortValue: string }
 export interface QueryResult { source: string; items: QueryItem[] }
 
-const sources = ['upcoming', 'entities', 'claims', 'documents', 'tasks', 'events', 'proposals', 'pages'] as const
+const sources = ['upcoming', 'entities', 'claims', 'documents', 'tasks', 'events', 'proposals', 'pages', 'activity'] as const
 type Source = (typeof sources)[number]
 const filters: Partial<Record<Source, string[]>> = {
-  entities: ['type'], claims: ['status', 'subject', 'key'], tasks: ['completed'],
-  proposals: ['status', 'kind'], pages: ['id']
+  entities: ['type', 'source'], claims: ['status', 'subject', 'key', 'source'], tasks: ['completed', 'source'], events: ['source'],
+  proposals: ['status', 'kind', 'source'], pages: ['id'], activity: ['kind']
 }
 const sorts: Record<Source, string[]> = {
   upcoming: ['due', 'start', 'title'], entities: ['title'], claims: ['title', 'recordedAt'], documents: ['title'],
-  tasks: ['title', 'due'], events: ['title', 'start'], proposals: ['title', 'recordedAt'], pages: ['title']
+  tasks: ['title', 'due'], events: ['title', 'start'], proposals: ['title', 'recordedAt'], pages: ['title'], activity: ['recordedAt', 'title']
 }
 
 function mapping(value: unknown): value is Record<string, unknown> {
@@ -32,7 +34,9 @@ export function evaluateWorkspaceQuery(snapshot: WorkspaceSnapshot, definition: 
   if (definition.sort !== undefined && !sorts[source].includes(String(definition.sort))) throw new Error(`Unsupported ${source} sort`)
   const item = (kind: ResourceKind, id: string, title: string, detail: string, sortValue: string): QueryItem =>
     ({ uri: resourceUri({ kind, id }), kind, title, detail, sortValue })
-  const matches = (value: Record<string, unknown>): boolean => Object.entries(where).every(([key, expected]) => value[key] === expected)
+  // A source names a document, possibly followed by a location such as ', p. 2'; other fields compare exactly.
+  const matches = (value: Record<string, unknown>): boolean => Object.entries(where).every(([key, expected]) =>
+    key === 'source' ? typeof expected === 'string' && citesDocument(typeof value.source === 'string' ? value.source : undefined, expected) : value[key] === expected)
   const enabledTasks = snapshot.modules.tasks ? snapshot.tasks : []
   const enabledEvents = snapshot.modules.calendar ? snapshot.events : []
   const records: QueryItem[] = source === 'upcoming' ? [
@@ -42,10 +46,14 @@ export function evaluateWorkspaceQuery(snapshot: WorkspaceSnapshot, definition: 
     : source === 'claims' ? snapshot.claims.filter((claim) => matches(claim as unknown as Record<string, unknown>)).map((claim) => item('claim', claim.id, `${snapshot.entities.find((entity) => entity.id === claim.subject)?.title ?? 'Unknown'} · ${claim.key}`, claim.value, claim.recordedAt))
       : source === 'documents' ? snapshot.documents.map((document) => item('document', document.name, document.name, 'Document', document.name))
         : source === 'tasks' ? enabledTasks.filter((task) => matches(task as unknown as Record<string, unknown>)).map((task) => item('task', task.id, task.title, task.due ?? 'No due date', task.due ?? ''))
-          : source === 'events' ? enabledEvents.map((event) => item('event', event.id, event.title, event.start, event.start))
+          : source === 'events' ? enabledEvents.filter((event) => matches(event as unknown as Record<string, unknown>)).map((event) => item('event', event.id, event.title, event.start, event.start))
             : source === 'proposals' ? snapshot.proposals.filter((proposal) => matches(proposal as unknown as Record<string, unknown>)).map((proposal) => item('proposal', proposal.id, proposal.kind === 'claim' ? `${proposal.key}: ${proposal.value}` : proposal.title, `Suggested ${proposal.kind} · ${proposal.source}`, proposal.recordedAt))
+              : source === 'activity' ? workspaceActivity(snapshot).filter((entry) => entry.uri && matches(entry as unknown as Record<string, unknown>)).flatMap((entry) => {
+                const ref = parseResourceUri(entry.uri!)
+                return ref ? [{ uri: entry.uri!, kind: ref.kind, title: entry.title, detail: entry.detail, sortValue: entry.at }] : []
+              })
               : snapshot.pages.filter((page) => matches(page as unknown as Record<string, unknown>)).map((page) => item('page', page.id, page.title, 'Workspace page', page.title))
-  const descending = definition.sort === 'recordedAt' || (definition.sort === undefined && (source === 'claims' || source === 'proposals'))
+  const descending = definition.sort === 'recordedAt' || (definition.sort === undefined && (source === 'claims' || source === 'proposals' || source === 'activity'))
   return { source, items: records.sort((a, b) => {
     const left = definition.sort === 'title' ? a.title : a.sortValue
     const right = definition.sort === 'title' ? b.title : b.sortValue

@@ -114,3 +114,22 @@ test('a linked Home page cannot read or rewrite content outside the workspace', 
     await rm(outside, { recursive: true, force: true })
   }
 })
+
+test('page queries can select by document source and list recent activity', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-query-source-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const course = (await workspace.saveEntity({ id: '', title: 'CS 101', type: 'course', body: '' })).entities[0]
+    await workspace.addClaim({ subject: course.id, key: 'midterm', value: 'October 12', source: 'syllabus.pdf, p. 2' })
+    await workspace.addClaim({ subject: course.id, key: 'room', value: 'B12', source: 'Registrar email' })
+    const snapshot = await workspace.snapshot()
+    assert.deepEqual(evaluateWorkspaceQuery(snapshot, { from: 'claims', where: { source: 'syllabus.pdf' } }).items.map((item) => item.title), ['CS 101 · midterm'])
+    const recent = evaluateWorkspaceQuery(snapshot, { from: 'activity', where: { kind: 'claim' }, limit: 5 })
+    assert.equal(recent.items.length, 2)
+    assert.equal(parseResourceUri(recent.items[0].uri)?.kind, 'entity')
+    assert.throws(() => evaluateWorkspaceQuery(snapshot, { from: 'activity', where: { title: 'x' } }), /Unsupported activity filter/)
+    assert.throws(() => evaluateWorkspaceQuery(snapshot, { from: 'claims', where: { source: 3 } }), /Unsupported claims filter/)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})

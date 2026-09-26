@@ -108,6 +108,50 @@ test('workspace preserves file edits and prevents stale saves', async () => {
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
+test('simultaneous edits to one record cannot silently replace each other', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-write-order-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const entity = (await workspace.saveEntity({ id: '', title: 'Alex', type: 'person', body: 'Original' })).entities[0]
+    const entitySaves = await Promise.allSettled([
+      workspace.saveEntity({ ...entity, body: 'First edit' }),
+      workspace.saveEntity({ ...entity, body: 'Second edit' })
+    ])
+    assert.deepEqual(entitySaves.map((result) => result.status).sort(), ['fulfilled', 'rejected'])
+    assert.equal((await workspace.snapshot()).entities[0].body, entitySaves[0].status === 'fulfilled' ? 'First edit' : 'Second edit')
+
+    const task = (await workspace.saveTask({ id: '', title: 'Call Alex', completed: false, notes: 'Original', relatedEntityIds: [] })).tasks[0]
+    const taskSaves = await Promise.allSettled([
+      workspace.saveTask({ ...task, notes: 'First edit' }),
+      workspace.saveTask({ ...task, notes: 'Second edit' })
+    ])
+    assert.deepEqual(taskSaves.map((result) => result.status).sort(), ['fulfilled', 'rejected'])
+    assert.equal((await workspace.snapshot()).tasks[0].notes, taskSaves[0].status === 'fulfilled' ? 'First edit' : 'Second edit')
+
+    const page = (await workspace.snapshot()).pages.find((item) => item.id === 'home')!
+    const pageSaves = await Promise.allSettled([
+      workspace.savePage({ ...page, text: `${page.text}\nFirst edit` }),
+      workspace.savePage({ ...page, text: `${page.text}\nSecond edit` })
+    ])
+    assert.deepEqual(pageSaves.map((result) => result.status).sort(), ['fulfilled', 'rejected'])
+    assert.match((await workspace.snapshot()).pages.find((item) => item.id === 'home')!.text,
+      pageSaves[0].status === 'fulfilled' ? /First edit$/ : /Second edit$/)
+
+    const conversationId = '123e4567-e89b-42d3-a456-426614174105'
+    await workspace.saveConversation({ id: conversationId, title: 'Original', messages: [], retained: true })
+    const conversation = (await workspace.snapshot()).conversations.find((item) => item.id === conversationId)!
+    const conversationSaves = await Promise.allSettled([
+      workspace.saveConversation({ ...conversation, title: 'First edit' }),
+      workspace.saveConversation({ ...conversation, title: 'Second edit' })
+    ])
+    assert.deepEqual(conversationSaves.map((result) => result.status).sort(), ['fulfilled', 'rejected'])
+    assert.equal((await workspace.snapshot()).conversations.find((item) => item.id === conversationId)?.title,
+      conversationSaves[0].status === 'fulfilled' ? 'First edit' : 'Second edit')
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
 test('editing in Serenity preserves custom YAML fields from external editors', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
   try {

@@ -173,6 +173,7 @@ export class Workspace {
   private snapshotGeneration = 0
   private identityMutation: Promise<void> = Promise.resolve()
   private sessionMutation: Promise<void> = Promise.resolve()
+  private fileMutations = new Map<string, Promise<void>>()
   private rootRealpath: string | null = null
   private fileCache = new Map<string, { version: string; text: string; parsed: Map<string, unknown> }>()
   /** Files read since the cache was last swept; anything else is gone or unused and can be forgotten. */
@@ -188,6 +189,19 @@ export class Workspace {
     await previous
     try { return await work() }
     finally { release() }
+  }
+
+  private async withFileMutation<T>(path: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.fileMutations.get(path) ?? Promise.resolve()
+    let release!: () => void
+    const current = new Promise<void>((resolve) => { release = resolve })
+    this.fileMutations.set(path, current)
+    await previous
+    try { return await work() }
+    finally {
+      release()
+      if (this.fileMutations.get(path) === current) this.fileMutations.delete(path)
+    }
   }
 
   get directories(): string[] {
@@ -528,22 +542,24 @@ export class Workspace {
     const title = requiredText(input.title, 'Title')
     const type = requiredText(input.type, 'Type')
     const path = join(this.directories[0], `${entityId}.md`)
-    const previous = await this.readOwnedText(path).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === 'ENOENT') return null
-      throw error
+    return this.withFileMutation(path, async () => {
+      const previous = await this.readOwnedText(path).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return null
+        throw error
+      })
+      if (previous && checksum(previous) !== input.revision) {
+        throw new Error('This entity changed on disk. Refresh before saving to avoid overwriting it.')
+      }
+      if (!previous && input.revision) throw new Error('This entity was removed on disk. Refresh before saving.')
+      if (typeof input.body !== 'string') throw new Error('Body must be text')
+      const metadata = previous ? updateYaml(frontmatter.exec(previous)?.[1] ?? '',
+        { id: entityId, title, type, source: input.source, origin: input.origin ?? 'human' }) :
+        YAML.stringify({ ...input.metadata, id: entityId, title, type, source: input.source, origin: input.origin ?? 'human' })
+      const text = `---\n${metadata}---\n${input.body}`
+      await atomicWrite(path, text)
+      this.markDirty()
+      return this.snapshot()
     })
-    if (previous && checksum(previous) !== input.revision) {
-      throw new Error('This entity changed on disk. Refresh before saving to avoid overwriting it.')
-    }
-    if (!previous && input.revision) throw new Error('This entity was removed on disk. Refresh before saving.')
-    if (typeof input.body !== 'string') throw new Error('Body must be text')
-    const metadata = previous ? updateYaml(frontmatter.exec(previous)?.[1] ?? '',
-      { id: entityId, title, type, source: input.source, origin: input.origin ?? 'human' }) :
-      YAML.stringify({ ...input.metadata, id: entityId, title, type, source: input.source, origin: input.origin ?? 'human' })
-    const text = `---\n${metadata}---\n${input.body}`
-    await atomicWrite(path, text)
-    this.markDirty()
-    return this.snapshot()
   }
 
   async savePage(input: Pick<WorkspacePage, 'id' | 'path' | 'text' | 'revision'>): Promise<WorkspaceSnapshot> {
@@ -553,10 +569,12 @@ export class Workspace {
     const next = parsePage(input.text, page.path)
     if (next.id !== page.id) throw new Error('Page ID cannot change during an edit')
     const path = await this.ownedFile(join(this.pagesDirectory, basename(page.path)))
-    if (checksum(await this.readOwnedText(path)) !== input.revision) throw new Error('This page changed on disk. Refresh before saving to avoid overwriting it.')
-    await atomicWrite(path, input.text)
-    this.markDirty()
-    return this.snapshot()
+    return this.withFileMutation(path, async () => {
+      if (checksum(await this.readOwnedText(path)) !== input.revision) throw new Error('This page changed on disk. Refresh before saving to avoid overwriting it.')
+      await atomicWrite(path, input.text)
+      this.markDirty()
+      return this.snapshot()
+    })
   }
 
   /**
@@ -925,22 +943,24 @@ export class Workspace {
 
   async saveConversation(conversation: Conversation): Promise<void> {
     const path = join(this.directories[3], `${id(conversation.id)}.yaml`)
-    if (conversation.retained) {
-      const previous = await this.readOwnedText(path).catch((error: NodeJS.ErrnoException) => {
-        if (error.code === 'ENOENT') return null
-        throw error
-      })
-      if (previous && checksum(previous) !== conversation.revision) throw new Error('Conversation changed on disk. Refresh before continuing it.')
-      if (!previous && conversation.revision) throw new Error('Conversation was removed on disk. Refresh before continuing it.')
-      this.ephemeral.delete(conversation.id)
-      const text = YAML.stringify({ ...conversation, revision: undefined })
-      await atomicWrite(path, text)
-      conversation.revision = checksum(text)
-    } else {
-      this.ephemeral.set(conversation.id, conversation)
-      await unlink(path).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error })
-      conversation.revision = undefined
-    }
+    return this.withFileMutation(path, async () => {
+      if (conversation.retained) {
+        const previous = await this.readOwnedText(path).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === 'ENOENT') return null
+          throw error
+        })
+        if (previous && checksum(previous) !== conversation.revision) throw new Error('Conversation changed on disk. Refresh before continuing it.')
+        if (!previous && conversation.revision) throw new Error('Conversation was removed on disk. Refresh before continuing it.')
+        this.ephemeral.delete(conversation.id)
+        const text = YAML.stringify({ ...conversation, revision: undefined })
+        await atomicWrite(path, text)
+        conversation.revision = checksum(text)
+      } else {
+        this.ephemeral.set(conversation.id, conversation)
+        await unlink(path).catch((error: NodeJS.ErrnoException) => { if (error.code !== 'ENOENT') throw error })
+        conversation.revision = undefined
+      }
+    })
   }
 
   async updateConversationSettings(conversationId: string,
@@ -1063,18 +1083,20 @@ export class Workspace {
   private async saveModuleRecord(directory: string, value: CalendarEvent | TaskItem): Promise<WorkspaceSnapshot> {
     const recordId = value.id ? id(value.id) : randomUUID()
     const path = join(directory, `${recordId}.yaml`)
-    const previous = await this.readOwnedText(path).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === 'ENOENT') return null
-      throw error
+    return this.withFileMutation(path, async () => {
+      const previous = await this.readOwnedText(path).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return null
+        throw error
+      })
+      if (previous && checksum(previous) !== value.revision) throw new Error('This item changed on disk. Refresh before saving.')
+      if (!previous && value.revision) throw new Error('This item was removed on disk. Refresh before saving.')
+      const { metadata, revision: _revision, ...recordData } = value
+      const text = previous ? updateYaml(previous, { ...recordData, id: recordId }) :
+        YAML.stringify({ ...metadata, ...recordData, id: recordId })
+      await atomicWrite(path, text)
+      this.markDirty()
+      return this.snapshot()
     })
-    if (previous && checksum(previous) !== value.revision) throw new Error('This item changed on disk. Refresh before saving.')
-    if (!previous && value.revision) throw new Error('This item was removed on disk. Refresh before saving.')
-    const { metadata, revision: _revision, ...recordData } = value
-    const text = previous ? updateYaml(previous, { ...recordData, id: recordId }) :
-      YAML.stringify({ ...metadata, ...recordData, id: recordId })
-    await atomicWrite(path, text)
-    this.markDirty()
-    return this.snapshot()
   }
 
   async saveEvent(value: CalendarEvent): Promise<WorkspaceSnapshot> {

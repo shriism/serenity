@@ -330,6 +330,31 @@ test('opt-in semantic indexing sends changed records only and retains a rebuilda
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
+test('a damaged semantic index is preserved and rebuilt from workspace records', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-semantic-recovery-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    await workspace.saveEntity({ id: '', title: 'Robotics', type: 'concept', body: 'Machines that move.' })
+    await workspace.setModule('semanticIndex', true)
+    const path = join(directory, '.serenity', 'semantic-index.yaml')
+    const damaged = ['entries: [unfinished', YAML.stringify({ generatedAt: '2026-09-26', provider: 'codex', entries: [{ key: 'entity:x', fingerprint: 'bad', summary: 'Unsafe', terms: [] }] })]
+    for (const text of damaged) {
+      await writeFile(path, text)
+      assert.ok((await workspace.snapshot()).errors.some((error) => error.includes('semantic-index.yaml')))
+      assert.equal(await readSemanticIndex(workspace), null)
+    }
+    const preserved = (await readdir(join(directory, '.serenity'))).filter((name) => name.startsWith('semantic-index.yaml.corrupt-'))
+    assert.equal(preserved.length, 2)
+    assert.deepEqual((await Promise.all(preserved.map((name) => readFile(join(directory, '.serenity', name), 'utf8')))).sort(), damaged.sort())
+    let sent = 0
+    await buildSemanticIndex(workspace, async () => { sent++; return '{"summary":"Robots","terms":["robotics"]}' })
+    assert.equal(sent, 2, 'the editable Home page and entity are regenerated')
+    assert.equal((await readSemanticIndex(workspace))?.entries.length, 2)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
 test('aborted background indexing does not continue sending later document chunks', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
   try {

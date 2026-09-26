@@ -26,14 +26,29 @@ const indexPath = (workspace: Workspace) => join(workspace.path, '.serenity', 's
 export function fingerprint(text: string): string { return createHash('sha256').update(text).digest('hex') }
 
 export async function readSemanticIndex(workspace: Workspace): Promise<SemanticIndex | null> {
+  let text: string
   try {
-    const parsed: unknown = YAML.parse(await workspace.readSettingsFile('semantic-index.yaml'))
-    if (!parsed || typeof parsed !== 'object' || !('entries' in parsed) || !Array.isArray(parsed.entries)) throw new Error('Invalid semantic index')
-    return parsed as SemanticIndex
+    text = await workspace.readSettingsFile('semantic-index.yaml')
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
     throw error
   }
+  let parsed: unknown
+  try { parsed = YAML.parse(text) }
+  catch { parsed = null }
+  const valid = parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) &&
+    'generatedAt' in parsed && typeof parsed.generatedAt === 'string' &&
+    'provider' in parsed && (parsed.provider === 'copilot' || parsed.provider === 'codex') &&
+    'entries' in parsed && Array.isArray(parsed.entries) && parsed.entries.every((entry: unknown) =>
+      entry !== null && typeof entry === 'object' && !Array.isArray(entry) &&
+      'key' in entry && typeof entry.key === 'string' &&
+      'fingerprint' in entry && typeof entry.fingerprint === 'string' && /^[a-f0-9]{64}$/.test(entry.fingerprint) &&
+      'summary' in entry && typeof entry.summary === 'string' &&
+      'terms' in entry && Array.isArray(entry.terms) && entry.terms.every((term: unknown) => typeof term === 'string'))
+  if (valid) return parsed as SemanticIndex
+  const path = indexPath(workspace)
+  await rename(path, `${path}.corrupt-${randomUUID()}`)
+  return null
 }
 
 async function store(workspace: Workspace, index: SemanticIndex): Promise<void> {

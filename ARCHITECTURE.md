@@ -21,6 +21,8 @@ Record IDs are stable UUIDs. Types and relationship names are ordinary user-chos
 
 Human judgments that two active entity IDs are distinct are version 1 YAML records under `identity-decisions/`, keyed by their own UUID and storing a canonical ordered pair. Active decisions suppress that pair in duplicate review and prevent a direct merge until undone. Undo writes `undoneAt` into the same record, preserving the judgment's history. The main process validates externally edited files and surfaces invalid ones as workspace errors. AI context includes active decisions only when the workflow can read both named entities.
 
+The generated semantic index is checked before reuse. Malformed YAML or an invalid entry is moved to a `.corrupt-<id>` sibling, and the opt-in indexing job rebuilds it from authored records; a filesystem ownership or permission error still surfaces instead of being treated as corruption.
+
 The renderer reports unsaved entity and page edits to the main process, which asks before closing or switching workspaces. Only the current workspace path can be revealed in the OS file manager; the renderer cannot pass arbitrary paths to that operation.
 
 ## Resources, commands, and authored pages

@@ -334,7 +334,11 @@ export class Workspace {
     }
     try {
       const raw: unknown = YAML.parse(await this.readOwnedText(join(this.path, '.serenity', 'semantic-index.yaml')))
-      if (!record(raw) || !Array.isArray(raw.entries) || typeof raw.generatedAt !== 'string') throw new Error('Invalid semantic index')
+      if (!record(raw) || !Array.isArray(raw.entries) || typeof raw.generatedAt !== 'string' ||
+        !['copilot', 'codex'].includes(String(raw.provider)) || raw.entries.some((entry: unknown) =>
+          !record(entry) || typeof entry.key !== 'string' || typeof entry.fingerprint !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(entry.fingerprint) || typeof entry.summary !== 'string' ||
+          !Array.isArray(entry.terms) || entry.terms.some((term: unknown) => typeof term !== 'string'))) throw new Error('Invalid semantic index')
       semanticIndex = { generatedAt: raw.generatedAt, count: raw.entries.length }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') errors.push(`.serenity/semantic-index.yaml: ${String(error)}`)

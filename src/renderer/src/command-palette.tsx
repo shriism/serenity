@@ -24,9 +24,16 @@ const icons = { entity: Link2, claim: Link2, document: FileText, task: ListTodo,
 
 export function CommandPalette(props: Props) {
   const input = useRef<HTMLInputElement>(null)
+  const dialog = useRef<HTMLDivElement>(null)
   const [active, setActive] = useState(0)
 
-  useEffect(() => { if (props.open) { setActive(0); input.current?.focus() } }, [props.open])
+  useEffect(() => {
+    if (!props.open) return
+    const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setActive(0)
+    input.current?.focus()
+    return () => { if (previous?.isConnected) previous.focus() }
+  }, [props.open])
   useEffect(() => setActive(0), [props.results, props.query])
   if (!props.open) return null
 
@@ -45,14 +52,22 @@ export function CommandPalette(props: Props) {
   }
 
   function onKeyDown(event: KeyboardEvent<HTMLInputElement>): void {
-    if (event.key === 'Escape') { props.onClose(); return }
     if (event.key === 'ArrowDown') { event.preventDefault(); setActive((current) => Math.min(Math.max(0, entries.length - 1), current + 1)) }
     if (event.key === 'ArrowUp') { event.preventDefault(); setActive((current) => Math.max(0, current - 1)) }
     if (event.key === 'Enter' && entries[active]) { event.preventDefault(); choose(active, event.metaKey || event.ctrlKey) }
   }
 
+  function dialogKeyDown(event: KeyboardEvent<HTMLDivElement>): void {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); props.onClose(); return }
+    if (event.key !== 'Tab') return
+    const focusable = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)') ?? [])
+    if (!focusable.length) return
+    if (event.shiftKey && document.activeElement === focusable[0]) { event.preventDefault(); focusable.at(-1)?.focus() }
+    else if (!event.shiftKey && document.activeElement === focusable.at(-1)) { event.preventDefault(); focusable[0].focus() }
+  }
+
   return <div className="palette-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose() }}>
-    <div className="command-palette" role="dialog" aria-modal="true" aria-label="Search workspace">
+    <div ref={dialog} className="command-palette" role="dialog" aria-modal="true" aria-label="Search workspace" onKeyDown={dialogKeyDown}>
       <div className="palette-input"><Search size={20}/><input ref={input} value={props.query} onChange={(event) => props.onChange(event.target.value)} onKeyDown={onKeyDown} placeholder="Search your world..." aria-label="Search workspace"/><button onClick={props.onClose} aria-label="Close search"><X size={17}/></button></div>
       <div className="palette-body">
         {props.query.trim() && <div className="palette-actions">

@@ -73,14 +73,38 @@ const builtins: CommandContribution[] = [
   { id: 'workspace.refresh', title: 'Refresh files', icon: RotateCw, run: (host) => host.refresh() }
 ]
 
-/** Every command ID this workspace could bind, including commands whose module is currently disabled. */
-export function knownCommandIds(workspace: WorkspaceSnapshot, contributions: readonly CommandContribution[] = []): Set<string> {
-  return new Set([...builtins, ...contributions].map((command) => command.id).concat(workspace.pages.map((page) => `page.open.${page.id}`)))
-}
+/** One authority for command identity, module availability, discovery, and dispatch. */
+export class CommandRegistry {
+  private entries = new Map<string, CommandContribution>()
 
-export function workspaceCommands(workspace: WorkspaceSnapshot, contributions: readonly CommandContribution[] = []): CommandContribution[] {
-  const pages: CommandContribution[] = workspace.pages.map((page) => ({ id: `page.open.${page.id}`, title: page.title, icon: FileText,
-    run: (host) => { host.openResource(resourceUri({ kind: 'page', id: page.id })) } }))
-  const commands = new Map<string, CommandContribution>([...builtins, ...pages, ...contributions].map((command) => [command.id, command]))
-  return [...commands.values()].filter((command) => !command.module || workspace.modules[command.module])
+  constructor(private workspace: WorkspaceSnapshot, contributions: readonly CommandContribution[] = []) {
+    for (const command of builtins) this.register(command)
+    for (const page of workspace.pages) this.register({ id: `page.open.${page.id}`, title: page.title, icon: FileText,
+      run: (host) => { host.openResource(resourceUri({ kind: 'page', id: page.id })) } })
+    for (const command of contributions) this.register(command)
+  }
+
+  register(command: CommandContribution): void {
+    if (!/^[a-z][a-z0-9.-]*$/.test(command.id) || !command.title.trim() || typeof command.run !== 'function')
+      throw new Error(`Invalid command contribution: ${command.id}`)
+    if (this.entries.has(command.id)) throw new Error(`Command already registered: ${command.id}`)
+    this.entries.set(command.id, command)
+  }
+
+  /** Includes disabled-module commands so workspace keymaps retain their identity. */
+  knownIds(): Set<string> { return new Set(this.entries.keys()) }
+
+  get(id: string): CommandContribution | undefined {
+    const command = this.entries.get(id)
+    return command && (!command.module || this.workspace.modules[command.module]) ? command : undefined
+  }
+
+  list(): CommandContribution[] { return [...this.entries.keys()].flatMap((id) => this.get(id) ?? []) }
+
+  dispatch(id: string, host: CommandHost): boolean {
+    const command = this.get(id)
+    if (!command) return false
+    command.run(host)
+    return true
+  }
 }

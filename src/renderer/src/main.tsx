@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ArrowRight, Columns2, Rows2, FileText, FolderOpen, Maximize2, Minimize2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, RotateCw, Search, Sparkles, X } from 'lucide-react'
+import { ArrowRight, Columns2, Rows2, FolderOpen, Maximize2, Minimize2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Search, Sparkles, X } from 'lucide-react'
 import type { SearchResult, WorkspacePage, WorkspaceSnapshot } from '../../shared/types'
 import { ConversationPanel } from './conversation-panel'
 import { ConversationList } from './conversation-list'
@@ -17,7 +17,7 @@ import { presentationFor } from './presentations'
 import { activeTabOf, closeGroup, emptyGroup, enterView, moveTab, presentTab, findGroup, focusedGroup, initialWorkbench, nextGroupId, orderedGroups, pruneWorkbench, removeTab, restoreWorkbench, showTab, showView, shownUri, splitWorkbench, updateGroup, workbenchSession, type EditorGroup, type Workbench } from './workbench-groups'
 import { layoutGeometry, maxEditorGroups, neighborGroup, resizeSplit, type PaneDirection, type SplitDirection } from '../../shared/layout'
 import { PaneDivider, dropZoneAt, percentRect, tabDragType, type DropZone } from './pane-layout'
-import { knownCommandIds, workspaceCommands, type CommandContribution, type CommandHost } from './commands'
+import { CommandRegistry, type CommandContribution, type CommandHost } from './commands'
 import { eventKeybinding, formatKeybinding, resolveKeymap, type KeymapResult } from '../../shared/keybindings'
 import { parseResourceUri, resourceUri } from '../../shared/resources'
 import './style.css'
@@ -57,7 +57,7 @@ function App() {
   const [focusVersion, setFocusVersion] = useState(0)
   const [theme, setTheme] = useTheme()
   const searchSequence = useRef(0)
-  const commandContext = useRef<{ host: CommandHost; commands: CommandContribution[]; keymap: KeymapResult; escape(): void } | null>(null)
+  const commandContext = useRef<{ host: CommandHost; registry: CommandRegistry | null; keymap: KeymapResult; escape(): void } | null>(null)
   const dirtyHandlers = useRef(new Map<string, (dirty: boolean) => void>())
   const paneArea = useRef<HTMLDivElement>(null)
   const [paneAreaSize, setPaneAreaSize] = useState({ width: 0, height: 0 })
@@ -148,12 +148,12 @@ function App() {
       if (event.key === 'Escape') { current.escape(); return }
       const binding = eventKeybinding(event, mac)
       const id = binding ? current.keymap.bindings.get(binding) : undefined
-      const command = id ? current.commands.find((item) => item.id === id) : undefined
+      const command = id ? current.registry?.get(id) : undefined
       if (!command || event.repeat) return
       const typing = event.target instanceof HTMLElement && event.target.closest('input, textarea, select, [contenteditable="true"]')
       if (typing && !command.whileTyping) return
       event.preventDefault()
-      command.run(current.host)
+      current.registry?.dispatch(command.id, current.host)
     }
     window.addEventListener('keydown', onShortcut)
     return () => window.removeEventListener('keydown', onShortcut)
@@ -316,7 +316,7 @@ function App() {
   }
 
   function runCommand(id: string): void {
-    commands.find((item) => item.id === id)?.run(commandHost)
+    commandRegistry?.dispatch(id, commandHost)
   }
 
   async function createPage(groupId: string = workbench.focused): Promise<void> {
@@ -457,8 +457,10 @@ function App() {
     catch (cause) { setError(String(cause)) }
   }
 
-  const commands = useMemo(() => workspace ? workspaceCommands(workspace) : [], [workspace])
-  const keymap = useMemo(() => resolveKeymap(commands, workspace?.workbench.keybindings, workspace ? knownCommandIds(workspace) : undefined), [commands, workspace])
+  const commandRegistry = useMemo(() => workspace ? new CommandRegistry(workspace) : null, [workspace])
+  const commands = useMemo(() => commandRegistry?.list() ?? [], [commandRegistry])
+  const menuCommands = ['entity.create', 'page.create', 'workspace.refresh'].flatMap((id) => commandRegistry?.get(id) ?? [])
+  const keymap = useMemo(() => resolveKeymap(commands, workspace?.workbench.keybindings, commandRegistry?.knownIds()), [commands, workspace, commandRegistry])
   const mac = navigator.platform.includes('Mac')
   const shortcut = (id: string): string | undefined => { const binding = keymap.byCommand.get(id); return binding && formatKeybinding(binding, mac) }
   const ariaShortcut = (id: string): string | undefined => keymap.byCommand.get(id)?.replace('Mod', mac ? 'Meta' : 'Control').replace('Ctrl', 'Control')
@@ -482,7 +484,7 @@ function App() {
     moveTabToOtherGroup,
     refresh: () => { void refresh() }
   }
-  commandContext.current = { host: commandHost, commands, keymap, escape: () => { if (paletteOpen) closePalette(); else if (leftOpen) setLeftOpen(false) } }
+  commandContext.current = { host: commandHost, registry: commandRegistry, keymap, escape: () => { if (paletteOpen) closePalette(); else if (leftOpen) setLeftOpen(false) } }
 
   const pending = workspace?.proposals.filter((proposal) => proposal.status === 'pending') ?? []
   // The feed spans every record; rebuild it when the workspace changes, not on each keystroke elsewhere in the shell.
@@ -625,7 +627,8 @@ function App() {
           <button className="topbar-search" onClick={() => runCommand('workspace.search')} title={withShortcut('Search workspace', 'workspace.search')} aria-label="Search workspace"><Search size={18}/></button>
           {canSplit && !multipleGroups && <button className="topbar-icon" onClick={() => runCommand('layout.split')} title={withShortcut('Split right', 'layout.split')} aria-label="Split right" aria-keyshortcuts={ariaShortcut('layout.split')}><Columns2 size={18}/></button>}
           {!rightOpen && <button className="topbar-icon show-ai" onClick={() => setRightOpen(true)} title={withShortcut('Show AI assistant', 'assistant.toggle')} aria-label="Show AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')}><PanelRightOpen size={18}/></button>}
-          <details className="topbar-more"><summary aria-label="Workspace actions" title="Workspace actions"><MoreHorizontal size={19}/></summary><div className="topbar-menu"><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); runCommand('entity.create') }}><Plus size={15}/> New entity</button><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); runCommand('page.create') }}><FileText size={15}/> New page</button><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); runCommand('workspace.refresh') }}><RotateCw size={15}/> Refresh files</button></div></details>
+          <details className="topbar-more"><summary aria-label="Workspace actions" title="Workspace actions"><MoreHorizontal size={19}/></summary><div className="topbar-menu">{menuCommands.map(({ id, title, icon: Icon }) =>
+            <button key={id} onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); runCommand(id) }}><Icon size={15}/>{title}</button>)}</div></details>
         </div>}
       </header>
       {error && <div className="notice error" role="alert">{error}</div>}

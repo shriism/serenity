@@ -156,6 +156,8 @@ try {
   const providers = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Settings')); if (button) { button.click(); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const select = document.querySelector('#index-provider'); if (select) return [...select.options].map((option) => option.value); await new Promise((resolve) => setTimeout(resolve, 100)) } return [] })()`) as string[]
   assert.deepEqual(providers, ['copilot', 'codex'])
   const displayedPath = await evaluate(pageUrl, `document.querySelector('.settings-workspace strong')?.textContent`)
+  const searchShortcut = await evaluate(pageUrl, `[...document.querySelectorAll('.settings-shortcuts tr')].find((row) => row.textContent?.includes('workspace.search'))?.querySelector('kbd')?.textContent ?? null`)
+  assert.match(String(searchShortcut), /^(⌘K|Ctrl\+K)$/, 'Settings should list each command with its current shortcut')
   assert.equal(displayedPath, workspace)
   const settingsError = await evaluate(pageUrl, `(async () => { await new Promise((resolve) => setTimeout(resolve, 250)); return document.querySelector('.notice.error')?.textContent ?? null })()`)
   assert.equal(settingsError, null, `Settings should load credentials without an error: ${settingsError}`)

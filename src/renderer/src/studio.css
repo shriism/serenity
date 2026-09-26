@@ -352,3 +352,12 @@
 .serenity-studio .graph-node.active circle, .serenity-studio .graph-node:focus-visible circle { fill: var(--accent); stroke: var(--accent); }
 .serenity-studio .graph-node text { fill: var(--muted); font-size: 13px; pointer-events: none; }
 .serenity-studio .graph-node.dim { opacity: .25; }
+
+/* Keyboard shortcut reference in Settings. */
+.serenity-studio .settings-shortcuts { margin-top: 34px; max-width: 720px; }
+.serenity-studio .settings-shortcuts h2 { font-size: 15px; font-weight: 600; }
+.serenity-studio .settings-shortcuts table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.serenity-studio .settings-shortcuts th { text-align: left; color: var(--subtle); font-weight: 500; font-size: 11px; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.serenity-studio .settings-shortcuts td { padding: 7px 8px; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); color: var(--text); }
+.serenity-studio .settings-shortcuts td code { color: var(--subtle); font-size: 11px; }
+.serenity-studio .settings-shortcuts kbd { padding: 2px 6px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface); font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; }

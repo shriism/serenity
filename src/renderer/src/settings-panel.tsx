@@ -4,11 +4,13 @@ import { modules, type ModuleId } from '../../shared/modules'
 
 interface Props {
   workspace: WorkspaceSnapshot
+  /** Every available command with its current chord, after this workspace's keybindings are applied. */
+  shortcuts: { id: string; title: string; keys?: string }[]
   onUpdate(snapshot: WorkspaceSnapshot): void
   onError(error: string): void
 }
 
-export function SettingsPanel({ workspace, onUpdate, onError }: Props) {
+export function SettingsPanel({ workspace, shortcuts, onUpdate, onError }: Props) {
   const [credentials, setCredentials] = useState<Record<Provider, boolean> | null>(null)
   const [keyProvider, setKeyProvider] = useState<Provider>('copilot')
   const [key, setKey] = useState('')
@@ -78,5 +80,14 @@ export function SettingsPanel({ workspace, onUpdate, onError }: Props) {
         {credentials?.[keyProvider] && <button className="secondary" type="button" onClick={() => void removeKey()}>Remove credential</button>}
       </div>
     </form>
+    <section className="settings-shortcuts" aria-labelledby="shortcuts-heading">
+      <h2 id="shortcuts-heading">Keyboard shortcuts</h2>
+      <p>Change them for this workspace in <code>.serenity/workbench.yaml</code>, for example <code>keybindings: {'{'} entity.create: Mod+Shift+E {'}'}</code>, or set a command to <code>null</code> to remove its shortcut.</p>
+      <table>
+        <thead><tr><th scope="col">Command</th><th scope="col">Shortcut</th><th scope="col">ID</th></tr></thead>
+        <tbody>{[...shortcuts].sort((a, b) => Number(!a.keys) - Number(!b.keys) || a.title.localeCompare(b.title)).map((item) =>
+          <tr key={item.id}><td>{item.title}</td><td>{item.keys ? <kbd>{item.keys}</kbd> : <span className="hint">None</span>}</td><td><code>{item.id}</code></td></tr>)}</tbody>
+      </table>
+    </section>
   </section>
 }

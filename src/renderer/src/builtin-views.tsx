@@ -20,6 +20,7 @@ export interface BuiltinViewContext {
   workspace: WorkspaceSnapshot
   page?: WorkspacePage
   commands: CommandContribution[]
+  shortcuts: { id: string; title: string; keys?: string }[]
   activeDocument?: string
   focusedEventId: string | null
   focusedTaskId: string | null
@@ -83,4 +84,4 @@ builtinViews.register({ id: 'documents', render: ({ workspace, activeDocument, o
   </div> :
     <DocumentsPanel workspace={workspace} onImport={onImport} onOpen={onOpenDocument} onAnalyze={onAnalyze}/> })
 builtinViews.register({ id: 'activity', render: ({ workspace, activity }) => <ActivityPanel workspace={workspace} activity={activity}/> })
-builtinViews.register({ id: 'settings', render: ({ workspace, onUpdate, onError }) => <SettingsPanel workspace={workspace} onUpdate={onUpdate} onError={onError}/> })
+builtinViews.register({ id: 'settings', render: ({ workspace, shortcuts, onUpdate, onError }) => <SettingsPanel workspace={workspace} shortcuts={shortcuts} onUpdate={onUpdate} onError={onError}/> })

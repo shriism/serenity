@@ -462,6 +462,8 @@ function App() {
   const shortcut = (id: string): string | undefined => { const binding = keymap.byCommand.get(id); return binding && formatKeybinding(binding, mac) }
   const ariaShortcut = (id: string): string | undefined => keymap.byCommand.get(id)?.replace('Mod', mac ? 'Meta' : 'Control').replace('Ctrl', 'Control')
   const withShortcut = (label: string, id: string): string => { const keys = shortcut(id); return keys ? `${label} (${keys})` : label }
+  const shortcuts = useMemo(() => commands.filter((command) => !command.id.startsWith('page.open.') || keymap.byCommand.has(command.id))
+    .map((command) => ({ id: command.id, title: command.title, keys: keymap.byCommand.has(command.id) ? formatKeybinding(keymap.byCommand.get(command.id)!, mac) : undefined })), [commands, keymap, mac])
   const commandHost: CommandHost = {
     navigate: (destination) => navigate(destination),
     openResource: (uri) => { const opened = openResource(uri); if (opened && leftOpen) setLeftOpen(false); return opened },
@@ -523,7 +525,7 @@ function App() {
 
   function viewContext(group: EditorGroup, snapshot: WorkspaceSnapshot): BuiltinViewContext {
     const tab = activeTabOf(group)
-    return { workspace: snapshot, page: pageFor(group), commands,
+    return { workspace: snapshot, page: pageFor(group), commands, shortcuts,
       activeDocument: tab?.kind === 'document' ? tab.id : undefined, focusedEventId, focusedTaskId, focusVersion, activity,
       onUpdate: setWorkspace, onError: setError, onDirtyChange: dirtyHandler(group.id),
       onOpenResource: (uri, side) => { openResource(uri, { group: group.id, side }) }, onCommand: runCommand,

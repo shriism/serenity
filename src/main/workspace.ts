@@ -603,7 +603,8 @@ export class Workspace {
         const active = activeUri(group.activeUri)
         const open = openUris(group.openUris)
         const presentations = Object.fromEntries(Object.entries(group.presentations ?? {}).filter(([uri]) => open.includes(uri)))
-        return { id: group.id, view: group.view, openUris: open, ...(active ? { activeUri: active } : {}), ...(Object.keys(presentations).length ? { presentations } : {}) }
+        return { id: group.id, view: group.view, openUris: open, ...(active ? { activeUri: active } : {}), ...(Object.keys(presentations).length ? { presentations } : {}),
+          ...(group.viewPresentations ? { viewPresentations: group.viewPresentations } : {}) }
       }) } } : {}) }
   }
 

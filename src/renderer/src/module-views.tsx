@@ -10,6 +10,8 @@ type Props = {
   focusEventId?: string | null
   focusTaskId?: string | null
   focusVersion?: number
+  taskPresentation?: 'list' | 'board'
+  onTaskPresentationChange?(presentation: 'list' | 'board'): void
 }
 
 function today(): string {
@@ -141,10 +143,10 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
   </section>
 }
 
-export function TasksModule({ workspace, onUpdate, onError, focusTaskId, focusVersion }: Props) {
+export function TasksModule({ workspace, onUpdate, onError, focusTaskId, focusVersion, taskPresentation = 'list', onTaskPresentationChange }: Props) {
   const [draft, setDraft] = useState<TaskItem>({ id: '', title: '', completed: false, notes: '', relatedEntityIds: [] })
   const [busy, setBusy] = useState(false)
-  const [presentation, setPresentation] = useState<'list' | 'board'>('list')
+  const presentation = taskPresentation
   const titleInput = useRef<HTMLInputElement>(null)
   useEffect(() => {
     const task = workspace.tasks.find((item) => item.id === focusTaskId)
@@ -187,8 +189,8 @@ export function TasksModule({ workspace, onUpdate, onError, focusTaskId, focusVe
     <span className="eyebrow">SERENITY TASKS</span><h1>Tasks</h1>
     <p>Plan what matters and connect it to your people, projects, or any other entities.</p>
     <div className="task-view-toggle" role="group" aria-label="Task view">
-      <button type="button" aria-pressed={presentation === 'list'} className={presentation === 'list' ? 'active' : ''} onClick={() => setPresentation('list')}>List</button>
-      <button type="button" aria-pressed={presentation === 'board'} className={presentation === 'board' ? 'active' : ''} onClick={() => setPresentation('board')}>Board</button>
+      <button type="button" aria-pressed={presentation === 'list'} className={presentation === 'list' ? 'active' : ''} onClick={() => onTaskPresentationChange?.('list')}>List</button>
+      <button type="button" aria-pressed={presentation === 'board'} className={presentation === 'board' ? 'active' : ''} onClick={() => onTaskPresentationChange?.('board')}>Board</button>
     </div>
     <div className={`tasks-layout ${presentation === 'board' ? 'board-layout' : ''}`}>
       <div>

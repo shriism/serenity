@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { Workspace } from '../src/main/workspace'
 import { dragDivider, isWorkbenchView, layoutGeometry, maxEditorGroups, parseLayout, removeFromLayout, splitLayout } from '../src/shared/layout'
 import { parseResourceUri, resourceUri } from '../src/shared/resources'
-import { activeTabOf, closeGroup, emptyGroup, enterView, findGroup, focusedGroup, initialWorkbench, moveTab, presentTab, removeTab, nextGroupId, orderedGroups, pruneWorkbench, restoreWorkbench, showTab, showView, splitWorkbench, updateGroup, workbenchSession } from '../src/renderer/src/workbench-groups'
+import { activeTabOf, closeGroup, emptyGroup, enterView, findGroup, focusedGroup, initialWorkbench, moveTab, presentTab, presentView, removeTab, nextGroupId, orderedGroups, pruneWorkbench, restoreWorkbench, showTab, showView, splitWorkbench, updateGroup, workbenchSession } from '../src/renderer/src/workbench-groups'
 
 const parse = (value: unknown) => parseLayout(value, isWorkbenchView, (uri) => parseResourceUri(uri) !== null)
 
@@ -31,6 +31,7 @@ test('saved layouts are rejected unless every group appears exactly once within 
   assert.equal(parse({ root: { split: 'row', children: many.map((id) => ({ group: id })) }, groups: many.map((id) => ({ id, view: 'home', openUris: [] })), focused: 'g0' }), null, 'more panes than the policy allows')
   assert.ok(parse({ root: { split: 'row', children: [{ group: 'main' }, { split: 'column', children: [{ group: 'group-2' }, { group: 'x' }] }] }, groups: [...groups, { id: 'x', view: 'home', openUris: [] }], focused: 'x' }), 'nested splits of several panes are valid')
   assert.equal(parse({ root: { group: 'main', script: 'x' }, groups: [groups[0]], focused: 'main' }), null)
+  assert.equal(parse({ root: { group: 'main' }, groups: [{ ...groups[0], viewPresentations: { unknown: 'board' } }], focused: 'main' }), null)
 })
 
 test('editor groups split, focus, close, and serialize as independent places', () => {
@@ -83,6 +84,24 @@ test('a two-group session restores through the main process and drops unavailabl
     const pruned = pruneWorkbench(restored, { ...snapshot, entities: [] }, () => true)
     assert.equal(activeTabOf(orderedGroups(pruned)[0]), undefined)
     assert.equal(pruneWorkbench(restored, snapshot, () => true), restored)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('a module presentation survives a single-pane workspace session', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-module-view-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const board = updateGroup(initialWorkbench, 'main', (group) => presentView(showView(group, 'tasks'), 'tasks', 'board'))
+    assert.equal(focusedGroup(splitWorkbench(board)!).viewPresentations.tasks, 'board', 'a second pane keeps the shown module presentation')
+    const saved = workbenchSession(board, 'home')
+    assert.equal(saved.layout?.groups[0].viewPresentations?.tasks, 'board')
+    await workspace.saveSession(saved)
+    const loaded = (await workspace.loadSession())!
+    const restored = restoreWorkbench(loaded, await workspace.snapshot(), () => true)
+    assert.equal(restored.groups[0].view, 'tasks')
+    assert.equal(restored.groups[0].viewPresentations.tasks, 'board')
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

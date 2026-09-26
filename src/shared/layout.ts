@@ -11,7 +11,7 @@ export type SplitDirection = 'row' | 'column'
 export type LayoutNode = { group: string } | { split: SplitDirection; children: LayoutNode[]; sizes?: number[] }
 
 /** `presentations` maps an open resource URI to how this group shows it, when not the resource's default view. */
-export interface SessionGroup { id: string; view: string; openUris: string[]; activeUri?: string; presentations?: Record<string, string> }
+export interface SessionGroup { id: string; view: string; openUris: string[]; activeUri?: string; presentations?: Record<string, string>; viewPresentations?: Record<string, string> }
 export interface SessionLayout { root: LayoutNode; groups: SessionGroup[]; focused: string }
 
 /** Policy cap on panes, well beyond what fits on a screen; the saved format itself has no limit. */
@@ -105,9 +105,12 @@ export function parseLayout(value: unknown, isView: (view: string) => boolean, i
       !Array.isArray(item.openUris) || item.openUris.length > maxTabsPerGroup || item.openUris.some((uri) => typeof uri !== 'string' || !isUri(uri)) ||
       (item.activeUri !== undefined && (typeof item.activeUri !== 'string' || !isUri(item.activeUri))) ||
       (item.presentations !== undefined && (!record(item.presentations) || Object.entries(item.presentations).some(([uri, id]) =>
-        !(item.openUris as unknown[]).includes(uri) || typeof id !== 'string' || !presentationId.test(id))))) return null
+        !(item.openUris as unknown[]).includes(uri) || typeof id !== 'string' || !presentationId.test(id)))) ||
+      (item.viewPresentations !== undefined && (!record(item.viewPresentations) || Object.entries(item.viewPresentations).some(([view, id]) =>
+        !isWorkbenchView(view) || typeof id !== 'string' || !presentationId.test(id))))) return null
     groups.push({ id: item.id, view: item.view, openUris: item.openUris as string[], ...(item.activeUri ? { activeUri: item.activeUri as string } : {}),
-      ...(item.presentations && Object.keys(item.presentations).length ? { presentations: item.presentations as Record<string, string> } : {}) })
+      ...(item.presentations && Object.keys(item.presentations).length ? { presentations: item.presentations as Record<string, string> } : {}),
+      ...(item.viewPresentations && Object.keys(item.viewPresentations).length ? { viewPresentations: item.viewPresentations as Record<string, string> } : {}) })
   }
   const ids = layoutGroupIds(root)
   const known = new Set(groups.map((group) => group.id))

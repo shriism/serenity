@@ -133,7 +133,8 @@ This is an **implemented desktop foundation**, not a finished general workbench.
 
 - Done: resource routing, per-command handlers and workspace keymaps, editor-owned drafts, Obsidian-style panes on the split tree (resizable, drag-and-drop tabs, narrow fallback), per-tab presentations, session restore of all of it, and snapshot ordering so late replies cannot overwrite newer state.
 - Done: directional pane focus by the neighboring pane's position, and a task board that groups existing tasks by due date without adding a workflow status to stored records.
-- Remaining: presentations for other kinds (e.g. a document outline), persistent presentation selection for module views, and further keyboard focus polish. The search palette now traps Tab and restores focus when closed.
+- Done: the Tasks list/board choice is saved per pane in the workspace session; the search palette traps Tab and restores focus when closed.
+- Remaining: presentations for other kinds (e.g. a document outline) and further keyboard focus polish.
 
 ### 2. Make customization coherent, then consider installed extensions
 

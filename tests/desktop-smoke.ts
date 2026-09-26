@@ -280,6 +280,13 @@ try {
   assert.equal(tasksView, 'Tasks')
   const taskBoard = await evaluate(pageUrl, `(async () => { document.querySelector('.task-view-toggle button:last-child')?.click(); await new Promise((resolve) => setTimeout(resolve, 50)); const card = [...document.querySelectorAll('.task-board-card')].find((item) => item.querySelector('strong')?.textContent === 'Call Alex'); const column = card?.closest('.task-board-column')?.querySelector('h2')?.textContent?.trim(); [...(card?.querySelectorAll('button') ?? [])].find((item) => item.textContent === 'Edit')?.click(); await new Promise((resolve) => requestAnimationFrame(resolve)); return { columns: document.querySelectorAll('.task-board-column').length, column, editFocused: document.activeElement === document.querySelector('.module-aside .module-form input'), pressed: document.querySelector('.task-view-toggle button:last-child')?.getAttribute('aria-pressed') } })()`)
   assert.deepEqual(taskBoard, { columns: 5, column: 'Next 7 days 1', editFocused: true, pressed: 'true' }, 'The task board should group due tasks and move keyboard focus to Edit')
+  let savedTaskBoard = false
+  for (let i = 0; i < 30 && !savedTaskBoard; i++) {
+    const taskSession = YAML.parse(await readFile(join(workspace, '.serenity', 'session.yaml'), 'utf8')) as { layout?: { groups: { viewPresentations?: { tasks?: string } }[] } }
+    savedTaskBoard = Boolean(taskSession.layout?.groups.some((group) => group.viewPresentations?.tasks === 'board'))
+    if (!savedTaskBoard) await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  assert.equal(savedTaskBoard, true, 'The task board choice should persist with this workspace')
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-tasks.png'), await captureScreenshot(pageUrl))
   const chatView = await evaluate(pageUrl, `Boolean(document.querySelector('.assistant-sidebar .conversation-panel'))`)
   assert.equal(chatView, true)
@@ -374,9 +381,9 @@ try {
   assert.deepEqual(split, { groups: 2, focused: true }, 'Splitting should show the same page in a second, focused editor group')
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-split.png'), await captureScreenshot(pageUrl))
   let savedLayout: { groups?: unknown[] } | undefined
-  for (let i = 0; i < 30 && !savedLayout; i++) {
+  for (let i = 0; i < 30 && savedLayout?.groups?.length !== 2; i++) {
     savedLayout = (YAML.parse(await readFile(join(workspace, '.serenity', 'session.yaml'), 'utf8')) as { layout?: { groups?: unknown[] } }).layout
-    if (!savedLayout) await new Promise((resolve) => setTimeout(resolve, 100))
+    if (savedLayout?.groups?.length !== 2) await new Promise((resolve) => setTimeout(resolve, 100))
   }
   assert.equal(savedLayout?.groups?.length, 2, 'The two-group layout should be saved in workspace session state')
   const closedSplit = await evaluate(pageUrl, `(async () => { document.querySelectorAll('.group-actions button[aria-label^="Close pane"]')[1]?.click(); for (let i = 0; i < 30; i++) { if (document.querySelectorAll('.editor-group').length === 1) return document.querySelector('.page-prose h1')?.textContent; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)

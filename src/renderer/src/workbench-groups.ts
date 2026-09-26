@@ -17,11 +17,13 @@ export interface EditorGroup {
   recent: Partial<Record<View, string>>
   /** How a tab is presented when not its resource's default view, keyed by tab. */
   presentations: Record<string, string>
+  /** How a module view is presented in this pane, independently of any resource tab. */
+  viewPresentations: Partial<Record<View, string>>
 }
 
 export interface Workbench { root: LayoutNode; groups: EditorGroup[]; focused: string }
 
-export const emptyGroup = (id: string, view: View = 'home'): EditorGroup => ({ id, view, tabs: [], activeTab: null, creatingEntity: false, recent: {}, presentations: {} })
+export const emptyGroup = (id: string, view: View = 'home'): EditorGroup => ({ id, view, tabs: [], activeTab: null, creatingEntity: false, recent: {}, presentations: {}, viewPresentations: {} })
 
 // Returning to Knowledge reopens the entity last shown there; choosing it again from that entity shows the library.
 const resumingViews: ReadonlySet<View> = new Set(['knowledge'])
@@ -79,6 +81,10 @@ export function presentTab(group: EditorGroup, key: string, presentation: string
   return { ...group, presentations: presentation ? { ...others, [key]: presentation } : others }
 }
 
+export function presentView(group: EditorGroup, view: View, presentation: string): EditorGroup {
+  return { ...group, viewPresentations: { ...group.viewPresentations, [view]: presentation } }
+}
+
 export function nextGroupId(workbench: Workbench, from: string = workbench.focused, step = 1): string | null {
   const ids = layoutGroupIds(workbench.root)
   if (ids.length < 2) return null
@@ -126,7 +132,8 @@ export function splitWorkbench(workbench: Workbench, options: { from?: string; d
   while (taken.has(`group-${index}`)) index++
   const id = `group-${index}`
   const shown = activeTabOf(from)
-  const group = options.duplicate === false ? emptyGroup(id) : shown ? presentTab(showTab(emptyGroup(id), shown), tabKey(shown), from.presentations[tabKey(shown)]) : emptyGroup(id, from.view)
+  const group = options.duplicate === false ? emptyGroup(id) : shown ? presentTab(showTab(emptyGroup(id), shown), tabKey(shown), from.presentations[tabKey(shown)]) :
+    { ...emptyGroup(id, from.view), viewPresentations: { ...from.viewPresentations } }
   return { root: splitLayout(workbench.root, from.id, id, options.direction ?? 'row', options.before), groups: [...workbench.groups, group], focused: id }
 }
 
@@ -165,19 +172,20 @@ export function workbenchSession(workbench: Workbench, homePage: string, assista
     const activeUri = shownUri(group, homePage)
     const tabs = group.tabs.slice(-maxTabsPerGroup)
     const presentations = Object.fromEntries(tabs.flatMap((tab) => group.presentations[tabKey(tab)] ? [[tabUri(tab), group.presentations[tabKey(tab)]]] : []))
-    return { id: group.id, view: group.view, openUris: tabs.map(tabUri), ...(activeUri ? { activeUri } : {}), ...(Object.keys(presentations).length ? { presentations } : {}) }
+    return { id: group.id, view: group.view, openUris: tabs.map(tabUri), ...(activeUri ? { activeUri } : {}), ...(Object.keys(presentations).length ? { presentations } : {}),
+      ...(Object.keys(group.viewPresentations).length ? { viewPresentations: group.viewPresentations } : {}) }
   })
   const focused = groups.find((group) => group.id === workbench.focused) ?? groups[0]
   return { view: focused.view, openUris: focused.openUris, activeUri: focused.activeUri, ...(assistantUri ? { assistantUri } : {}),
-    ...(groups.length > 1 || groups.some((group) => group.presentations) ? { layout: { root: workbench.root, groups, focused: focused.id } } : {}) }
+    ...(groups.length > 1 || groups.some((group) => group.presentations || group.viewPresentations) ? { layout: { root: workbench.root, groups, focused: focused.id } } : {}) }
 }
 
 function restoreGroup(id: string, view: string, openUris: readonly string[], activeUri: string | undefined, workspace: WorkspaceSnapshot, available: ViewAvailability,
-  saved: Readonly<Record<string, string>> = {}): EditorGroup {
+  saved: Readonly<Record<string, string>> = {}, viewPresentations: Readonly<Record<string, string>> = {}): EditorGroup {
   const target: View = isView(view) && available(view) ? view : 'home'
   const tabs = restoreTabs(workspace, openUris, available)
   const presentations = Object.fromEntries(tabs.flatMap((tab) => saved[tabUri(tab)] ? [[tabKey(tab), saved[tabUri(tab)]]] : []))
-  const group = { ...emptyGroup(id, target), tabs, presentations }
+  const group = { ...emptyGroup(id, target), tabs, presentations, viewPresentations }
   const active = activeUri ? routeResource(workspace, activeUri, available) : null
   return active?.action === 'tab' && active.view === target ? showTab(group, active.tab) : group
 }
@@ -186,7 +194,7 @@ export function restoreWorkbench(session: WorkbenchSession, workspace: Workspace
   const layout = session.layout
   if (layout) {
     return { root: layout.root, focused: layout.focused,
-      groups: layout.groups.map((group) => restoreGroup(group.id, group.view, group.openUris, group.activeUri, workspace, available, group.presentations)) }
+      groups: layout.groups.map((group) => restoreGroup(group.id, group.view, group.openUris, group.activeUri, workspace, available, group.presentations, group.viewPresentations)) }
   }
   return { ...initialWorkbench, groups: [restoreGroup('main', session.view, session.openUris, session.activeUri, workspace, available)] }
 }

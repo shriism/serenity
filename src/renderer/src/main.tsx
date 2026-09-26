@@ -14,7 +14,7 @@ import type { View } from './views'
 import { WorkspaceTabs } from './workspace-tabs'
 import { routeResource, tabKey, tabPath, tabTitle, type TabRef } from './resource-routing'
 import { presentationFor } from './presentations'
-import { activeTabOf, closeGroup, emptyGroup, enterView, moveTab, presentTab, findGroup, focusedGroup, initialWorkbench, nextGroupId, orderedGroups, pruneWorkbench, removeTab, restoreWorkbench, showTab, showView, shownUri, splitWorkbench, updateGroup, workbenchSession, type EditorGroup, type Workbench } from './workbench-groups'
+import { activeTabOf, closeGroup, emptyGroup, enterView, moveTab, presentTab, presentView, findGroup, focusedGroup, initialWorkbench, nextGroupId, orderedGroups, pruneWorkbench, removeTab, restoreWorkbench, showTab, showView, shownUri, splitWorkbench, updateGroup, workbenchSession, type EditorGroup, type Workbench } from './workbench-groups'
 import { layoutGeometry, maxEditorGroups, neighborGroup, resizeSplit, type PaneDirection, type SplitDirection } from '../../shared/layout'
 import { PaneDivider, dropZoneAt, percentRect, tabDragType, type DropZone } from './pane-layout'
 import { CommandRegistry, type CommandContribution, type CommandHost } from './commands'
@@ -528,6 +528,8 @@ function App() {
       entityId: tab?.kind === 'entity' ? tab.id : undefined, creatingEntity: group.creatingEntity,
       presentation: tab ? group.presentations[tabKey(tab)] : undefined,
       onPresentationChange: (id) => { if (tab) changePresentation(group.id, tab, id) },
+      taskPresentation: group.viewPresentations.tasks === 'board' ? 'board' : 'list',
+      onTaskPresentationChange: (presentation) => setWorkbench((current) => updateGroup(current, group.id, (item) => presentView(item, 'tasks', presentation))),
       onOpenEntity: (id) => { openEntity(id, group.id) }, onNewEntity: () => newEntity(group.id), onDiscuss: startConversation,
       onEntityCreated: (id) => setWorkbench((current) => updateGroup(current, group.id, (item) => showTab(item, { kind: 'entity', id })))
     }

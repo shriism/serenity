@@ -26,7 +26,7 @@ keybindings:
   assistant.toggle: null
 ```
 
-Tasks can be viewed as a list or a due-date board with Overdue, Next 7 days, Later, No date, and Completed columns. Both views use the same workspace task files; the board groups tasks for viewing and does not add a stored task status.
+Tasks can be viewed as a list or a due-date board with Overdue, Next 7 days, Later, No date, and Completed columns. Both views use the same workspace task files; the board groups tasks for viewing and does not add a stored task status. Each pane remembers its list or board choice in the workspace session.
 
 Chords need Mod, Ctrl, or Alt unless they are function keys. Unknown commands and conflicting chords appear as workspace warnings instead of being silently ignored. The app starts in Dark appearance, with Light and System options in the navigation dock.
 

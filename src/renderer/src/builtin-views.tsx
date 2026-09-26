@@ -32,6 +32,8 @@ export interface BuiltinViewContext {
   /** How the shown resource is presented, if not its default view. */
   presentation?: string
   onPresentationChange(id: string): void
+  taskPresentation: 'list' | 'board'
+  onTaskPresentationChange(presentation: 'list' | 'board'): void
   onUpdate(snapshot: WorkspaceSnapshot): void
   onError(message: string): void
   onDirtyChange(dirty: boolean): void
@@ -72,8 +74,9 @@ builtinViews.register({ id: 'home', render: (context) => context.page ? <Workspa
   <section className="page"><h1>Home page unavailable</h1><p>Check the configured page in this workspace. Serenity will not replace a page it cannot read.</p></section> })
 builtinViews.register({ id: 'calendar', module: 'calendar', render: ({ workspace, onUpdate, onError, focusedEventId, focusVersion }) =>
   <CalendarModule workspace={workspace} onUpdate={onUpdate} onError={onError} focusEventId={focusedEventId} focusVersion={focusVersion}/> })
-builtinViews.register({ id: 'tasks', module: 'tasks', render: ({ workspace, onUpdate, onError, focusedTaskId, focusVersion }) =>
-  <TasksModule workspace={workspace} onUpdate={onUpdate} onError={onError} focusTaskId={focusedTaskId} focusVersion={focusVersion}/> })
+builtinViews.register({ id: 'tasks', module: 'tasks', render: ({ workspace, onUpdate, onError, focusedTaskId, focusVersion, taskPresentation, onTaskPresentationChange }) =>
+  <TasksModule workspace={workspace} onUpdate={onUpdate} onError={onError} focusTaskId={focusedTaskId} focusVersion={focusVersion}
+    taskPresentation={taskPresentation} onTaskPresentationChange={onTaskPresentationChange}/> })
 builtinViews.register({ id: 'review', render: ({ workspace, onResolve, onAttach, onOpenSource, onOpenResource, onUpdate, onError }) =>
   <ReviewPanel workspace={workspace} onResolve={onResolve} onAttach={onAttach} onOpenSource={onOpenSource} onOpenResource={(uri, side) => onOpenResource(uri, side)}
     onUpdate={onUpdate} onError={onError}/> })

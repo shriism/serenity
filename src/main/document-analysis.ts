@@ -16,7 +16,11 @@ export async function analyzeChangedDocument(workspace: Workspace, filename: str
   let processed: Record<string, string> = {}
   try {
     const raw: unknown = YAML.parse(await workspace.readSettingsFile('analyzed-documents.yaml'))
-    if (raw && typeof raw === 'object' && !Array.isArray(raw)) processed = raw as Record<string, string>
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw) ||
+      Object.entries(raw).some(([, value]) => typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value))) {
+      throw new Error('Invalid document-analysis tracking; repair .serenity/analyzed-documents.yaml before retrying')
+    }
+    processed = raw as Record<string, string>
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
   if (processed[filename] === hash) return
   if (signal?.aborted) throw new Error('AI request cancelled')

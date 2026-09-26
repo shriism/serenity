@@ -504,6 +504,27 @@ test('automatic document analysis is opt-in and runs once per document version',
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
+test('invalid document-analysis tracking pauses provider calls without replacing the file', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-analysis-state-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    await writeFile(join(directory, 'documents', 'notes.txt'), 'Meeting on Tuesday')
+    await workspace.setModule('documentAnalysis', true)
+    const state = join(directory, '.serenity', 'analyzed-documents.yaml')
+    const invalid = YAML.stringify({ 'notes.txt': 42 })
+    await writeFile(state, invalid)
+    let calls = 0
+    await assert.rejects(analyzeChangedDocument(workspace, 'notes.txt', async () => {
+      calls++
+      return workspace.snapshot()
+    }), /Invalid document-analysis tracking/)
+    assert.equal(calls, 0)
+    assert.equal(await readFile(state, 'utf8'), invalid)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
 test('an unavailable saved provider pauses background AI until the user selects an available provider', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
   try {

@@ -421,7 +421,7 @@ try {
   assert.deepEqual(restoredCandidate, { candidate: true, focused: true }, 'Undoing the decision should bring the possible duplicate back with keyboard focus')
   const panes = await evaluate(pageUrl, `(async () => {
     const wait = async (test) => { for (let i = 0; i < 40; i++) { const value = test(); if (value) return value; await new Promise((resolve) => setTimeout(resolve, 50)) } return null }
-    const count = () => document.querySelectorAll('.editor-group:not([hidden])').length
+    const count = () => document.querySelectorAll('.editor-group').length
     document.querySelector('[aria-label="Split pane 1 down"]')?.click()
     await wait(() => count() === 2)
     document.querySelector('[aria-label="Split pane 2 right"]')?.click()

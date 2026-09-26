@@ -302,3 +302,16 @@
 .serenity-studio .duplicate-reasons { margin: 8px 0 12px; padding-left: 18px; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .serenity-studio .duplicate-card .review-actions button { display: inline-flex; align-items: center; gap: 6px; }
 .serenity-studio .workspace-tab[data-insert-before] { box-shadow: inset 2px 0 0 var(--accent); }
+
+/* Knowledge drawn from a document. */
+.serenity-studio .document-knowledge h2 { margin: 30px 0 10px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--subtle); }
+.serenity-studio .knowledge-from { list-style: none; margin: 0; padding: 0; max-width: 720px; }
+.serenity-studio .knowledge-from > li { padding: 10px 0; border-top: 1px solid var(--border); }
+.serenity-studio .knowledge-from.flat > li { padding: 6px 0; }
+.serenity-studio .knowledge-from-entity { display: inline-flex; align-items: center; gap: 8px; padding: 0; border: 0; background: none; color: var(--text); text-align: left; }
+.serenity-studio .knowledge-from-entity small { color: var(--subtle); font-size: 11px; }
+.serenity-studio .knowledge-from-entity:hover strong { color: var(--accent); }
+.serenity-studio .knowledge-from ul { list-style: none; margin: 6px 0 0 22px; padding: 0; }
+.serenity-studio .knowledge-from ul li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; color: var(--muted); font-size: 12px; line-height: 1.8; }
+.serenity-studio .knowledge-from ul li small { color: var(--subtle); font-size: 11px; }
+.serenity-studio .knowledge-from ul li.retracted span { text-decoration: line-through; text-decoration-color: var(--subtle); }

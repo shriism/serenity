@@ -10,6 +10,7 @@ import { KnowledgeView } from './knowledge-view'
 import { EntityEditor } from './entity-editor'
 import { EntityTimeline } from './entity-timeline'
 import { EntityConnections } from './entity-connections'
+import { DocumentKnowledgeView } from './document-knowledge'
 import { PresentationSwitcher, presentationFor } from './presentations'
 import type { CommandContribution } from './commands'
 import { resourceUri } from '../../shared/resources'
@@ -73,8 +74,12 @@ builtinViews.register({ id: 'tasks', module: 'tasks', render: ({ workspace, onUp
 builtinViews.register({ id: 'review', render: ({ workspace, onResolve, onAttach, onOpenSource, onOpenResource, onUpdate, onError }) =>
   <ReviewPanel workspace={workspace} onResolve={onResolve} onAttach={onAttach} onOpenSource={onOpenSource} onOpenResource={(uri, side) => onOpenResource(uri, side)}
     onUpdate={onUpdate} onError={onError}/> })
-builtinViews.register({ id: 'documents', render: ({ workspace, activeDocument, onImport, onOpenDocument, onOpenSource, onError, onAnalyze, onResolve, onAttach }) =>
-  activeDocument ? <DocumentPreview name={activeDocument} workspace={workspace} onOpen={onOpenSource} onError={onError} onResolve={onResolve} onAttach={onAttach} onOpenSource={onOpenSource}/> :
+builtinViews.register({ id: 'documents', render: ({ workspace, activeDocument, onImport, onOpenDocument, onOpenSource, onError, onAnalyze, onResolve, onAttach, presentation, onPresentationChange, onOpenResource }) =>
+  activeDocument ? <div className="presented-resource">
+    <PresentationSwitcher kind="document" active={presentationFor('document', presentation)!} onChange={onPresentationChange}/>
+    {presentationFor('document', presentation) === 'knowledge' ? <DocumentKnowledgeView name={activeDocument} workspace={workspace} onOpenResource={(uri, side) => onOpenResource(uri, side)}/> :
+      <DocumentPreview name={activeDocument} workspace={workspace} onOpen={onOpenSource} onError={onError} onResolve={onResolve} onAttach={onAttach} onOpenSource={onOpenSource}/>}
+  </div> :
     <DocumentsPanel workspace={workspace} onImport={onImport} onOpen={onOpenDocument} onAnalyze={onAnalyze}/> })
 builtinViews.register({ id: 'activity', render: ({ workspace, activity }) => <ActivityPanel workspace={workspace} activity={activity}/> })
 builtinViews.register({ id: 'settings', render: ({ workspace, onUpdate, onError }) => <SettingsPanel workspace={workspace} onUpdate={onUpdate} onError={onError}/> })

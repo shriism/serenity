@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { Columns2 } from 'lucide-react'
 import type { WorkspaceSnapshot } from '../../shared/types'
 import { proposalsBySource } from '../../shared/proposals'
@@ -15,7 +16,8 @@ export function ReviewPanel({ workspace, onOpenResource, onUpdate, onError, ...a
   onError(message: string): void
 }) {
   const sources = proposalsBySource(workspace.proposals)
-  const duplicates = duplicateCandidates(workspace)
+  // Recomputed only when the entities, claims, or merge history change, not on every render.
+  const duplicates = useMemo(() => duplicateCandidates(workspace), [workspace.entities, workspace.claims, workspace.mergeHistory])
   const entityUri = (entity: Entity): string => resourceUri({ kind: 'entity', id: entity.id })
   async function keep(survivor: Entity, duplicate: Entity): Promise<void> {
     if (!window.confirm(`Archive ${duplicate.title} and link its claims to ${survivor.title}? The archived file and merge record remain, and the merge can be undone.`)) return

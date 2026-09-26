@@ -45,3 +45,14 @@ test('possible duplicates come with evidence and respect an undone merge', async
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
+
+test('duplicate suggestions stay fast when many entities share a common name word', async () => {
+  const { duplicateCandidates } = await import('../src/shared/identity')
+  const entities = Array.from({ length: 3000 }, (_, index) => ({ id: `e${index}`, title: `Alex ${['Rivera', 'Kim', 'Patel'][index % 3]} ${index}`, type: 'person', body: '' }))
+  const claims = entities.map((entity, index) => ({ id: `c${index}`, subject: entity.id, key: 'type', value: 'student', source: 'Me', origin: 'human' as const, status: 'confirmed' as const, recordedAt: '' }))
+  entities.push({ id: 'twin', title: 'Alex Rivera 0', type: 'person', body: '' })
+  const started = performance.now()
+  const pairs = duplicateCandidates({ entities, claims, mergeHistory: [] })
+  assert.ok(performance.now() - started < 2000, 'quadratic pairing on common words would take minutes')
+  assert.deepEqual(pairs.map((pair) => [pair.a.id, pair.b.id].sort()), [['e0', 'twin']], 'identical titles are still found')
+})

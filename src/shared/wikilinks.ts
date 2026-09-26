@@ -52,3 +52,30 @@ export function linkWikilinks(markdown: string, resolve: (target: string) => Wik
     })).join('')
   }).join('\n')
 }
+
+export interface Mention { uri: string; title: string; excerpt: string }
+
+/**
+ * Pages and entity narratives whose wikilinks resolve to `uri`: the resource's backlinks. Ambiguous names are not
+ * counted, since the writer's intent is unknown. The excerpt is the line holding the first mention.
+ */
+export function wikilinkMentions(snapshot: Pick<WorkspaceSnapshot, 'pages' | 'entities' | 'documents'>, uri: string): Mention[] {
+  const cache = new Map<string, WikiResolution>()
+  const resolve = (target: string): WikiResolution => {
+    const key = normalized(target)
+    if (!cache.has(key)) cache.set(key, resolveWikilink(snapshot, target))
+    return cache.get(key)!
+  }
+  const sources = [
+    ...snapshot.pages.map((page) => ({ uri: resourceUri({ kind: 'page', id: page.id }), title: page.title, text: page.body })),
+    ...snapshot.entities.map((entity) => ({ uri: resourceUri({ kind: 'entity', id: entity.id }), title: entity.title, text: entity.body }))
+  ]
+  return sources.flatMap((source) => {
+    if (source.uri === uri || !source.text.includes('[[')) return []
+    const line = source.text.split('\n').find((text) => [...text.matchAll(wikilink)].some((match) => {
+      const result = resolve(match[1])
+      return result.kind === 'resolved' && result.uri === uri
+    }))
+    return line ? [{ uri: source.uri, title: source.title, excerpt: line.trim().slice(0, 200) }] : []
+  })
+}

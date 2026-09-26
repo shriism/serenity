@@ -1,6 +1,9 @@
+import { useMemo } from 'react'
 import { ArrowLeft, ArrowRight, CalendarDays, ListTodo, Minus } from 'lucide-react'
 import type { WorkspaceSnapshot } from '../../shared/types'
 import { entityConnections, type ConnectionLink } from '../../shared/entity-history'
+import { wikilinkMentions } from '../../shared/wikilinks'
+import { parseResourceUri, resourceUri } from '../../shared/resources'
 
 const maxDrawn = 14
 const shorten = (text: string, length: number): string => text.length > length ? `${text.slice(0, length - 1)}…` : text
@@ -11,14 +14,16 @@ function linkLabel(link: ConnectionLink, title: string, subject: string): string
 }
 
 /** An entity's neighborhood: confirmed relationships in either direction and records it shares with others. */
-export function EntityConnections({ workspace, entityId, onOpenEntity }: {
+export function EntityConnections({ workspace, entityId, onOpenEntity, onOpenResource }: {
   workspace: WorkspaceSnapshot
   entityId: string
-  /** `side` opens in the other editor group. */
+  /** `side` opens in the next pane. */
   onOpenEntity(id: string, side: boolean): void
+  onOpenResource(uri: string, side: boolean): void
 }) {
   const entity = workspace.entities.find((item) => item.id === entityId)
-  const connections = entityConnections(workspace, entityId)
+  const connections = useMemo(() => entityConnections(workspace, entityId), [workspace, entityId])
+  const mentions = useMemo(() => wikilinkMentions(workspace, resourceUri({ kind: 'entity', id: entityId })), [workspace.pages, workspace.entities, workspace.documents, entityId])
   const drawn = connections.slice(0, maxDrawn)
   const size = 420
   const center = size / 2
@@ -31,7 +36,7 @@ export function EntityConnections({ workspace, entityId, onOpenEntity }: {
   return <section className="page entity-connections" aria-label={`${entity?.title ?? 'Entity'} connections`}>
     <h1>{entity?.title}</h1>
     <p>Entities linked to {entity?.title ?? 'this'} by confirmed claims or shared events and tasks. Open a neighbor to keep exploring; ⌘/Ctrl-click opens it to the side.</p>
-    {connections.length === 0 ? <p className="hint">No connections yet. Add a claim that links another entity, or relate an event or task.</p> : <>
+    {connections.length === 0 ? mentions.length === 0 && <p className="hint">No connections yet. Add a claim that links another entity, relate an event or task, or mention [[{entity?.title}]] in a page or note.</p> : <>
       <svg className="connections-graph" viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${entity?.title} and ${connections.length} connected ${connections.length === 1 ? 'entity' : 'entities'}`}>
         {drawn.map((connection, index) => { const { x, y } = position(index); return <line key={connection.entityId} x1={center} y1={center} x2={x} y2={y}
           className={connection.links.some((link) => link.via === 'claim') ? 'claim-edge' : 'shared-edge'} strokeWidth={Math.min(1 + connection.links.length * 0.6, 4)}/> })}
@@ -54,5 +59,9 @@ export function EntityConnections({ workspace, entityId, onOpenEntity }: {
         })}</ul>
       </li>)}</ul>
     </>}
+    {mentions.length > 0 && <><h2>Mentioned in</h2><ul className="connections-list">{mentions.map((mention) => <li key={mention.uri}>
+      <button className="connection-name" onClick={(event) => onOpenResource(mention.uri, event.metaKey || event.ctrlKey)}><strong>{mention.title}</strong><small>{parseResourceUri(mention.uri)?.kind}</small></button>
+      <p className="mention-excerpt">{mention.excerpt}</p>
+    </li>)}</ul></>}
   </section>
 }

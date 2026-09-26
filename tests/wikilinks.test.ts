@@ -22,3 +22,15 @@ test('wikilinks become Markdown links outside code, keeping labels and leaving e
   assert.equal(linkWikilinks(text, resolve), 'Met [my friend](serenity:entity/e1) and [Sam](serenity-wikilink:ambiguous/Sam%20%28person%29%20%C2%B7%20Sam%20%28dog%29) about [Research](serenity:page/research).\n' +
     '`[[Alex]]` stays, ![[syllabus.pdf]] too.\n```\n[[Alex]]\n```\nSee [Nobody](serenity-wikilink:missing/Nobody).')
 })
+
+test('backlinks list the pages and notes whose wikilinks resolve to a resource', async () => {
+  const { wikilinkMentions } = await import('../src/shared/wikilinks')
+  const withNotes = { ...snapshot,
+    pages: [{ ...snapshot.pages[0], body: 'Plan:\nMeet [[alex]] on Friday.' }],
+    entities: [...snapshot.entities, { id: 'e4', title: 'Club', type: 'group', body: 'Founded by [[Alex|our founder]].' }, { id: 'e5', title: 'Note', type: 'note', body: 'Ask [[Sam]].' }] }
+  assert.deepEqual(wikilinkMentions(withNotes, 'serenity:entity/e1'), [
+    { uri: 'serenity:page/research', title: 'Research', excerpt: 'Meet [[alex]] on Friday.' },
+    { uri: 'serenity:entity/e4', title: 'Club', excerpt: 'Founded by [[Alex|our founder]].' }
+  ])
+  assert.deepEqual(wikilinkMentions(withNotes, 'serenity:entity/e2'), [], 'an ambiguous name is not a mention')
+})

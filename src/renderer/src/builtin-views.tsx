@@ -60,7 +60,7 @@ builtinViews.register({ id: 'knowledge', render: (context) => {
     <PresentationSwitcher kind="entity" active={presentation} onChange={context.onPresentationChange}/>
     {presentation === 'timeline' ? <EntityTimeline workspace={context.workspace} entityId={entityId} onOpenResource={context.onOpenResource} onOpenSource={context.onOpenSource}/> :
       presentation === 'connections' ? <EntityConnections workspace={context.workspace} entityId={entityId}
-        onOpenEntity={(id, side) => context.onOpenResource(resourceUri({ kind: 'entity', id }), side)}/> : entityEditor(context)}
+        onOpenEntity={(id, side) => context.onOpenResource(resourceUri({ kind: 'entity', id }), side)} onOpenResource={(uri, side) => context.onOpenResource(uri, side)}/> : entityEditor(context)}
   </div>
 } })
 builtinViews.register({ id: 'home', render: (context) => context.page ? <WorkspacePageView key={context.page.id} page={context.page} workspace={context.workspace}

@@ -172,6 +172,7 @@ export class Workspace {
 
   private snapshotGeneration = 0
   private identityMutation: Promise<void> = Promise.resolve()
+  private sessionMutation: Promise<void> = Promise.resolve()
   private rootRealpath: string | null = null
   private fileCache = new Map<string, { version: string; text: string; parsed: Map<string, unknown> }>()
   /** Files read since the cache was last swept; anything else is gone or unused and can be forgotten. */
@@ -640,8 +641,14 @@ export class Workspace {
   }
 
   async saveSession(session: WorkbenchSession): Promise<void> {
-    const validated = await this.validatedSession(session)
-    await atomicWrite(join(this.path, '.serenity', 'session.yaml'), YAML.stringify(validated))
+    const previous = this.sessionMutation
+    let release!: () => void
+    this.sessionMutation = new Promise<void>((resolve) => { release = resolve })
+    await previous
+    try {
+      const validated = await this.validatedSession(session)
+      await atomicWrite(join(this.path, '.serenity', 'session.yaml'), YAML.stringify(validated))
+    } finally { release() }
   }
 
   private async validatedSession(value: unknown): Promise<WorkbenchSession> {

@@ -94,6 +94,26 @@ test('the last open resource is restored from workspace-local session metadata',
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
+test('overlapping session saves retain the latest requested layout', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-session-order-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const snapshot = workspace.snapshot.bind(workspace)
+    let calls = 0
+    workspace.snapshot = async () => {
+      if (++calls === 1) await new Promise<void>((resolve) => setTimeout(resolve, 100))
+      return snapshot()
+    }
+    await Promise.all([
+      workspace.saveSession({ view: 'home', openUris: [] }),
+      workspace.saveSession({ view: 'knowledge', openUris: [] })
+    ])
+    assert.equal((await workspace.loadSession())?.view, 'knowledge')
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
 test('a damaged session is preserved and a fresh session can be saved', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-session-recovery-'))
   try {

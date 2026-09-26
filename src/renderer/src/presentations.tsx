@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from 'react'
 import type { TabKind } from './resource-routing'
 
 export interface Presentation { id: string; title: string }
@@ -15,8 +16,19 @@ export function presentationFor(kind: TabKind, requested: string | undefined): s
 
 export function PresentationSwitcher({ kind, active, onChange }: { kind: TabKind; active: string; onChange(id: string): void }) {
   const options = presentations[kind] ?? []
-  return <div className="presentation-switcher" role="tablist" aria-label="View as">
-    {options.map((option) => <button key={option.id} role="tab" aria-selected={option.id === active} className={option.id === active ? 'active' : ''}
-      onClick={() => { if (option.id !== active) onChange(option.id) }}>{option.title}</button>)}
+  // Tab-list keyboard pattern: one tab stop, arrow keys (and Home/End) move between views.
+  const move = (event: KeyboardEvent<HTMLDivElement>): void => {
+    const index = options.findIndex((option) => option.id === active)
+    const next = event.key === 'ArrowRight' ? index + 1 : event.key === 'ArrowLeft' ? index - 1 : event.key === 'Home' ? 0 : event.key === 'End' ? options.length - 1 : null
+    if (next === null || !options.length) return
+    event.preventDefault()
+    const list = event.currentTarget
+    const target = options[(next + options.length) % options.length]
+    onChange(target.id)
+    requestAnimationFrame(() => list.querySelector<HTMLButtonElement>(`[data-presentation="${target.id}"]`)?.focus())
+  }
+  return <div className="presentation-switcher" role="tablist" aria-label="View as" onKeyDown={move}>
+    {options.map((option) => <button key={option.id} role="tab" data-presentation={option.id} aria-selected={option.id === active} tabIndex={option.id === active ? 0 : -1}
+      className={option.id === active ? 'active' : ''} onClick={() => { if (option.id !== active) onChange(option.id) }}>{option.title}</button>)}
   </div>
 }

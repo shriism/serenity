@@ -1,8 +1,8 @@
-import { useEffect, useId, useState, type FormEvent } from 'react'
+import { memo, useEffect, useId, useMemo, useState, type FormEvent } from 'react'
 import { Plus } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import type { Entity, WorkspaceSnapshot } from '../../shared/types'
+import type { Claim, Entity, WorkspaceSnapshot } from '../../shared/types'
 import { identityCandidates } from '../../shared/identity'
 import { ClaimCard } from './claim-card'
 
@@ -22,6 +22,27 @@ export interface EntityEditorProps {
 }
 
 const blank: Entity = { id: '', title: '', type: '', body: '' }
+
+/** The entity list beside the editor. Memoized so typing in a large workspace does not redraw every entry. */
+const EntityLibrary = memo(function EntityLibrary({ entities, selected, onOpenEntity, onNewEntity }: {
+  entities: Entity[]
+  selected: string | null
+  onOpenEntity(id: string): void
+  onNewEntity(): void
+}) {
+  return <aside className="knowledge-list-panel"><div className="list-heading"><span className="eyebrow">LIBRARY <span className="count">{entities.length}</span></span><button className="icon-button" onClick={onNewEntity} aria-label="New entity" title="New entity"><Plus size={15}/></button></div>
+    <nav className="entity-list" aria-label="Entities">{entities.map((entity) => <button key={entity.id} className={`entity-link ${selected === entity.id ? 'active' : ''}`} aria-current={selected === entity.id ? 'page' : undefined} onClick={() => onOpenEntity(entity.id)}><span className="entity-icon">{entity.title.slice(0, 1).toUpperCase()}</span><span><strong>{entity.title}</strong><small>{entity.type}</small></span></button>)}</nav>
+  </aside>
+})
+
+function claimSummary(allClaims: Claim[], selected: string | null) {
+  const claims = allClaims.filter((item) => item.subject === selected)
+  const incoming = allClaims.filter((item) => item.value === selected && item.subject !== selected && item.status === 'confirmed')
+  const activeClaims = claims.filter((item) => item.status !== 'retracted')
+  const conflicts = [...new Set(activeClaims.map((item) => item.key))].filter((key) => new Set(activeClaims.filter((item) => item.key === key).map((item) => item.value)).size > 1 && !activeClaims.some((item) => item.key === key && item.isCurrent))
+  const resolvedKeys = [...new Set(activeClaims.filter((item) => item.isCurrent).map((item) => item.key))]
+  return { claims, incoming, activeClaims, conflicts, resolvedKeys }
+}
 const emptyClaim = { key: '', value: '', source: 'Me' }
 
 /** Edits one entity's narrative and its sourced claims. Each open editor owns its own draft. */
@@ -93,18 +114,12 @@ export function EntityEditor(props: EntityEditorProps) {
     if (reason?.trim()) void run(() => window.serenity.unmergeEntities(source, reason))
   }
 
-  const claims = workspace.claims.filter((item) => item.subject === selected)
-  const incoming = workspace.claims.filter((item) => item.value === selected && item.subject !== selected && item.status === 'confirmed')
-  const activeClaims = claims.filter((item) => item.status !== 'retracted')
-  const conflicts = [...new Set(activeClaims.map((item) => item.key))].filter((key) => new Set(activeClaims.filter((item) => item.key === key).map((item) => item.value)).size > 1 && !activeClaims.some((item) => item.key === key && item.isCurrent))
-  const resolvedKeys = [...new Set(activeClaims.filter((item) => item.isCurrent).map((item) => item.key))]
-  const candidates = !draft.id ? identityCandidates(draft.title, draft.type, workspace.entities).slice(0, 4) : []
-  const others = workspace.entities.filter((entity) => entity.id !== selected)
+  const { claims, incoming, activeClaims, conflicts, resolvedKeys } = useMemo(() => claimSummary(workspace.claims, selected), [workspace.claims, selected])
+  const candidates = useMemo(() => !draft.id ? identityCandidates(draft.title, draft.type, workspace.entities).slice(0, 4) : [], [draft.id, draft.title, draft.type, workspace.entities])
+  const others = useMemo(() => workspace.entities.filter((entity) => entity.id !== selected), [workspace.entities, selected])
 
   return <div className="content">
-    <aside className="knowledge-list-panel"><div className="list-heading"><span className="eyebrow">LIBRARY <span className="count">{workspace.entities.length}</span></span><button className="icon-button" onClick={props.onNewEntity} aria-label="New entity" title="New entity"><Plus size={15}/></button></div>
-      <nav className="entity-list" aria-label="Entities">{workspace.entities.map((entity) => <button key={entity.id} className={`entity-link ${selected === entity.id ? 'active' : ''}`} onClick={() => props.onOpenEntity(entity.id)}><span className="entity-icon">{entity.title.slice(0, 1).toUpperCase()}</span><span><strong>{entity.title}</strong><small>{entity.type}</small></span></button>)}</nav>
-    </aside>
+    <EntityLibrary entities={workspace.entities} selected={selected} onOpenEntity={props.onOpenEntity} onNewEntity={props.onNewEntity}/>
     <section className="editor"><form onSubmit={(event) => void save(event)}>
       <label className={draft.id ? 'sr-only' : 'field-label'} htmlFor={`${id}-title`}>Name</label>
       <input id={`${id}-title`} className="title-input" placeholder="What is it called?" value={draft.title} required onChange={(event) => change({ ...draft, title: event.target.value })}/>

@@ -1,11 +1,12 @@
 import type { WorkspaceSnapshot } from './types'
 import { resourceUri } from './resources'
 
-export type ActivityKind = 'claim' | 'merge' | 'resolution' | 'event' | 'task' | 'proposal' | 'message'
+export type ActivityKind = 'claim' | 'merge' | 'resolution' | 'identity' | 'event' | 'task' | 'proposal' | 'message'
 export interface ActivityItem { id: string; at: string; kind: ActivityKind; title: string; detail: string; uri?: string }
 
 export const activityKinds: { kind: ActivityKind; label: string }[] = [
   { kind: 'claim', label: 'Claims' }, { kind: 'resolution', label: 'Decisions' }, { kind: 'merge', label: 'Merges' },
+  { kind: 'identity', label: 'Identities' },
   { kind: 'proposal', label: 'Proposals' }, { kind: 'message', label: 'Conversations' }, { kind: 'task', label: 'Tasks' }, { kind: 'event', label: 'Events' }
 ]
 
@@ -22,6 +23,13 @@ export function workspaceActivity(snapshot: WorkspaceSnapshot): ActivityItem[] {
     ]),
     ...snapshot.resolutions.map((item) => ({ id: `resolution:${item.id}`, at: item.recordedAt, kind: 'resolution' as const,
       title: `${item.currentClaimId ? 'Chose current' : 'Cleared current'} ${item.key} for ${titles.get(item.subject) ?? 'an entity'}`, detail: item.reason, uri: entityUri(item.subject) })),
+    ...snapshot.identityDecisions.flatMap((item) => {
+      const pair = `${titles.get(item.left) ?? item.left} and ${titles.get(item.right) ?? item.right}`
+      return [{ id: `identity:${item.id}`, at: item.recordedAt, kind: 'identity' as const, title: `Marked ${pair} distinct`,
+        detail: item.reason ?? 'Human identity decision', uri: entityUri(item.left) },
+      ...(item.undoneAt ? [{ id: `identity-undo:${item.id}`, at: item.undoneAt, kind: 'identity' as const,
+        title: `Reopened identity review for ${pair}`, detail: 'Distinct decision undone', uri: entityUri(item.left) }] : [])]
+    }),
     ...(snapshot.modules.calendar ? snapshot.events.map((item) => ({ id: `event:${item.id}`, at: item.start, kind: 'event' as const, title: item.title,
       detail: `${item.notes}${item.source ? ` · Source: ${item.source}` : ''}`, uri: resourceUri({ kind: 'event', id: item.id }) })) : []),
     ...(snapshot.modules.tasks ? snapshot.tasks.map((item) => ({ id: `task:${item.id}`, at: item.recordedAt ?? item.due ?? '', kind: 'task' as const, title: item.title,

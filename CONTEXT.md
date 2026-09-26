@@ -44,6 +44,7 @@ my-workspace/
   entities/<uuid>.md            # narrative and flexible entity metadata
   claims/<uuid>.yaml            # sourced assertions and relationships
   resolutions/                 # append-only current-answer decisions
+  identity-decisions/          # reversible human decisions that two entity IDs are distinct
   documents/                   # copied imported originals
   conversations/               # retained conversation transcripts and settings
   proposals/                   # AI-suggested changes and review decisions
@@ -104,7 +105,7 @@ limit: 5
 
 `.serenity/workbench.yaml` points `homePage` at an existing page ID and lists navigation groups with registered command IDs. Adding page text or rearranging navigation requires no React edit. Adding a new kind of executable behavior does.
 
-**Knowledge and AI.** Entities have stable IDs and editable Markdown narratives. Claims keep individual sourced assertions, confirmations, proposed/retracted states, and conflicts. Current-answer resolutions can be reversed; merging duplicates archives the original and retains redirects/history. Human-reviewed AI proposals can create sourced claims/entities/tasks/events, or attach suggested entity context to an existing identity without replacing its narrative. Conversation read scope defaults to the chosen workspace and can be restricted to selected resources; it is enforced when constructing context and when accepting affected writes. For oversized workspaces, local retrieval selects excerpts while keeping the full eligible workspace available for later retrieval. Conversation messages record references, sizes, offsets, and checksums of transmitted context. Provider activity records operation, references, prompt size/checksum, and outcome, not extra raw prompts.
+**Knowledge and AI.** Entities have stable IDs and editable Markdown narratives. Claims keep individual sourced assertions, confirmations, proposed/retracted states, and conflicts. Current-answer resolutions can be reversed; merging duplicates archives the original and retains redirects/history. A human can also mark two active entity IDs as distinct in a versioned YAML record under `identity-decisions/`; the decision suppresses that duplicate suggestion and blocks merging the pair until it is undone, without deleting the record. Human-reviewed AI proposals can create sourced claims/entities/tasks/events, or attach suggested entity context to an existing identity without replacing its narrative. Conversation read scope defaults to the chosen workspace and can be restricted to selected resources; it is enforced when constructing context and when accepting affected writes. For oversized workspaces, local retrieval selects excerpts while keeping the full eligible workspace available for later retrieval. Conversation messages record references, sizes, offsets, and checksums of transmitted context. Provider activity records operation, references, prompt size/checksum, and outcome, not extra raw prompts.
 
 **Modules and search.** Calendar and Tasks are internal modules linking to entities by ID. Disabling a module retains its files but hides its view and blocks its writes/AI context. Automatic document analysis and AI semantic indexing are separate opt-in modules, off by default; both may send content to the selected provider. SQLite provides rebuildable local text search. An optional generated topic-term index supports local sparse-vector-style matching; on-demand Copilot/Codex semantic search is separate. This is **not** a persistent neural-embedding database. Imported text, Markdown, CSV, JSON, YAML, PDF and DOCX are text-extractable; other formats can still be kept and opened natively.
 
@@ -115,7 +116,7 @@ Before the workspace-page and contribution work, a screen such as Home was prima
 ## What works today
 
 - Choose a workspace and use a packaged Electron app on macOS, Windows, or Linux; dark-first shell with Light/System themes, navigation dock, central content, search/actions palette, and AI rail.
-- Create/edit knowledge entities, sourced claims, corrections and current-answer resolutions; merge and undo duplicate entities with history retained.
+- Create/edit knowledge entities, sourced claims, corrections and current-answer resolutions; merge and undo duplicate entities with history retained, or mark a suggested pair distinct and undo that decision later.
 - Import documents as owned copies; search and preview supported content; open files natively; request analysis or opt into automatic analysis.
 - Use internal linked calendar and tasks, archive/restore them, toggle modules without deleting their records.
 - Hold retained or ephemeral conversations with Copilot or Codex, switch providers within visible conversation history, inspect shared context, cancel requests, review proposed writes, choose read scope and bounded autonomy.
@@ -149,7 +150,8 @@ This is an **implemented desktop foundation**, not a finished general workbench.
 ### 3. Deepen the actual personal-knowledge experience
 
 - Done in the September 2026 pass: entity timelines and connections, citations checked against sent context, duplicate-identity review with evidence, review beside the source document, document provenance, wikilinks and backlinks, search ranking, and large-workspace performance (about 140 ms snapshots and 11 ms duplicate detection for 2,000 entities and 8,000 claims).
-- Remaining: deeper temporal views and page/task presentations, richer retrieval ergonomics, and explicit entity-resolution decisions when a person judges two entities distinct (approved by the owner; see below).
+- Done: explicit, reversible distinct-identity decisions in workspace YAML, with duplicate suppression, a merge guard, review UI, and read-scope-aware AI context.
+- Remaining: deeper temporal views and page/task presentations, and richer retrieval ergonomics.
 - Continue iteration on accessibility, focus/keyboard behavior, responsive window sizes, empty/error states, and the quiet native-workbench UI based on actual use.
 
 ### 4. Product hardening and later platforms
@@ -158,7 +160,7 @@ This is an **implemented desktop foundation**, not a finished general workbench.
 - Exercise migrations, recovery, performance, packaging and real-provider behavior against larger and older workspaces. Keep the data format readable, recoverable and reversible when settings or indexes are damaged.
 - Decide if and when to support external integrations/actions, cloud/device sync, local models, mobile access, or simultaneous workspaces. These are **future goals**, not existing features. External calendar sync is not the same as Serenity's internal Calendar.
 
-The owner chose to finish and harden the desktop workbench as the first release milestone, and approved an explicit, reversible workspace record for "these two entities are not the same." Decisions still waiting: whether drag-and-drop import may pass file paths from the renderer to the main process (a boundary the architecture currently avoids), and whether to run a live Copilot/Codex smoke turn to confirm providers return citations in practice.
+The owner chose to finish and harden the desktop workbench as the first release milestone, and approved the now-implemented explicit, reversible workspace record for "these two entities are not the same." Decisions still waiting: whether drag-and-drop import may pass file paths from the renderer to the main process (a boundary the architecture currently avoids), and whether to run a live Copilot/Codex smoke turn to confirm providers return citations in practice.
 
 There is no final approved specification yet for general panes, installable plugins, external actions, or a mobile/sync architecture. Before choosing an irreversible knowledge representation, ontology, memory rule, autonomy boundary, or extension trust model, explain the problem, options, tradeoffs and recommendation to the human and let them decide. Prefer incremental improvements with tests for storage, scope and restoration invariants rather than declaring the whole architecture complete at once.
 

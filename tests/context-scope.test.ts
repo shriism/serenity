@@ -16,6 +16,7 @@ test('selected read scope excludes other entities and documents even when search
     const second = (await workspace.saveEntity({ id: '', title: 'Private Project', type: 'project', body: 'Secret code violet nebula' })).entities.find((entity) => entity.id !== first.id)!
     await workspace.addClaim({ subject: first.id, key: 'birthday', value: 'September 7', source: 'Alex' })
     await workspace.addClaim({ subject: second.id, key: 'password hint', value: 'violet nebula', source: 'Private note' })
+    await workspace.markDistinctEntities(first.id, second.id)
     const snapshot = await workspace.snapshot()
     const all = contextRecords(snapshot, [{ name: 'private.txt', text: 'violet nebula document' }])
     const scope = validateReadScope({ mode: 'selected', entityIds: [first.id], documentNames: [],
@@ -26,6 +27,10 @@ test('selected read scope excludes other entities and documents even when search
     assert.equal(permitted.some((record) => record.ref === `entity:${second.id}`), false)
     assert.equal(permitted.some((record) => record.ref === 'document:private.txt'), false)
     assert.equal(permitted.filter((record) => record.ref.startsWith('claim:')).length, 1)
+    assert.equal(permitted.some((record) => record.ref.startsWith('identity-decision:')), false, 'a decision naming another identity stays outside selected scope')
+    const both = scopeContextRecords(snapshot, all, validateReadScope({ mode: 'selected', entityIds: [first.id, second.id], documentNames: [],
+      includeOtherConversations: false, includeCalendarAndTasks: false }))
+    assert.equal(both.some((record) => record.ref.startsWith('identity-decision:')), true)
     const foundOutside = await workspace.search('violet nebula')
     assert.ok(foundOutside.length > 0)
     const prepared = prepareContext(permitted, 'violet nebula', foundOutside)

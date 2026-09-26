@@ -46,6 +46,47 @@ test('possible duplicates come with evidence and respect an undone merge', async
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
+test('a distinct-identity decision persists, hides the pair, blocks merging, and can be undone', async () => {
+  const { mkdtemp, readFile, rm, writeFile } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const YAML = (await import('yaml')).default
+  const { Workspace } = await import('../src/main/workspace')
+  const { duplicateCandidates } = await import('../src/shared/identity')
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-distinct-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const first = (await workspace.saveEntity({ id: '', title: 'Alex', type: 'person', body: '' })).entities[0]
+    const second = (await workspace.saveEntity({ id: '', title: 'Alex M.', type: 'person', body: '' })).entities.find((entity) => entity.id !== first.id)!
+    assert.equal(duplicateCandidates(await workspace.snapshot()).length, 1)
+    const decided = await workspace.markDistinctEntities(second.id, first.id)
+    assert.equal(decided.identityDecisions.length, 1)
+    const decision = decided.identityDecisions[0]
+    const saved = YAML.parse(await readFile(join(directory, 'identity-decisions', `${decision.id}.yaml`), 'utf8'))
+    assert.deepEqual([saved.left, saved.right], [first.id, second.id].sort())
+    assert.equal(saved.version, 1)
+    assert.equal(duplicateCandidates(decided).length, 0)
+    await assert.rejects(workspace.markDistinctEntities(first.id, second.id), /already marked distinct/)
+    await assert.rejects(workspace.mergeEntities(first.id, second.id), /Undo that decision/)
+    workspace.close()
+    const reopened = new Workspace(directory)
+    await reopened.initialize()
+    assert.equal(duplicateCandidates(await reopened.snapshot()).length, 0)
+    const undone = await reopened.undoIdentityDecision(decision.id)
+    assert.ok(undone.identityDecisions[0].undoneAt)
+    assert.equal(duplicateCandidates(undone).length, 1)
+    await assert.rejects(reopened.undoIdentityDecision(decision.id), /already undone/)
+    const malformedId = '123e4567-e89b-42d3-a456-426614174082'
+    await writeFile(join(directory, 'identity-decisions', `${malformedId}.yaml`), YAML.stringify({ version: 2, id: malformedId, kind: 'distinct', left: first.id, right: second.id, recordedAt: '2026-09-26' }))
+    const inspected = await reopened.snapshot()
+    assert.equal(inspected.identityDecisions.length, 1, 'an unsupported record version is not applied')
+    assert.ok(inspected.errors.some((error) => error.includes(`identity-decisions/${malformedId}.yaml`)))
+    assert.equal((await reopened.mergeEntities(first.id, second.id)).merges.length, 1)
+    reopened.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
 test('duplicate suggestions stay fast when many entities share a common name word', async () => {
   const { duplicateCandidates } = await import('../src/shared/identity')
   const entities = Array.from({ length: 3000 }, (_, index) => ({ id: `e${index}`, title: `Alex ${['Rivera', 'Kim', 'Patel'][index % 3]} ${index}`, type: 'person', body: '' }))

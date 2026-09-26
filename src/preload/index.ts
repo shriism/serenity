@@ -39,6 +39,8 @@ const api: SerenityAPI = {
   restoreTask: (id) => ipcRenderer.invoke('task:restore', id),
   mergeEntities: (source, target) => ipcRenderer.invoke('entity:merge', source, target),
   unmergeEntities: (source, reason) => ipcRenderer.invoke('entity:unmerge', source, reason),
+  markDistinctEntities: (left, right) => ipcRenderer.invoke('identity:distinct', left, right),
+  undoIdentityDecision: (id) => ipcRenderer.invoke('identity:undo', id),
   setSemanticProvider: (provider) => ipcRenderer.invoke('semantic:provider', provider),
   onIndexError: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, message: string): void => callback(message)

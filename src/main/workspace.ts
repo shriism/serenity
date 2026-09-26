@@ -4,7 +4,7 @@ import type { Stats } from 'node:fs'
 import { basename, extname, isAbsolute, join, relative, sep } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import YAML from 'yaml'
-import type { Autonomy, CalendarEvent, Claim, ClaimResolution, Conversation, DocumentInfo, Entity, MergeRecord, Proposal, Provider, ProviderActivity, ReadScope, SearchResult, TaskItem, WorkflowPermissions, WorkbenchConfig, WorkbenchSession, WorkspacePage, WorkspaceSnapshot } from '../shared/types'
+import type { Autonomy, CalendarEvent, Claim, ClaimResolution, Conversation, DocumentInfo, Entity, IdentityDecision, MergeRecord, Proposal, Provider, ProviderActivity, ReadScope, SearchResult, TaskItem, WorkflowPermissions, WorkbenchConfig, WorkbenchSession, WorkspacePage, WorkspaceSnapshot } from '../shared/types'
 import { parseResourceUri, workspaceResources } from '../shared/resources'
 import { modules, type ModuleId } from '../shared/modules'
 import { defaultHome } from '../shared/default-home'
@@ -179,7 +179,7 @@ export class Workspace {
   constructor(readonly path: string) {}
 
   get directories(): string[] {
-    return ['entities', 'claims', 'documents', 'conversations', 'proposals', 'calendar', 'tasks', 'resolutions', 'activity'].map((name) => join(this.path, name))
+    return ['entities', 'claims', 'documents', 'conversations', 'proposals', 'calendar', 'tasks', 'resolutions', 'activity', 'identity-decisions'].map((name) => join(this.path, name))
   }
 
   get pagesDirectory(): string { return join(this.path, 'pages') }
@@ -279,6 +279,7 @@ export class Workspace {
     const archivedTasks: TaskItem[] = []
     const merges: MergeRecord[] = []
     const mergeHistory: MergeRecord[] = []
+    const identityDecisions: IdentityDecision[] = []
     const archivedEntities: Entity[] = []
     const errors: string[] = []
     for (const name of (await readdir(this.pagesDirectory)).filter((item) => item.endsWith('.md')).sort()) {
@@ -393,6 +394,16 @@ export class Workspace {
           sequence: typeof data.sequence === 'number' && Number.isSafeInteger(data.sequence) ? data.sequence : undefined })
       } catch (error) { errors.push(`resolutions/${name}: ${String(error)}`) }
     }
+    for (const name of (await readdir(this.directories[9])).filter((entry) => entry.endsWith('.yaml')).sort()) {
+      try {
+        const data = (await this.readOwnedParsed<unknown>(join(this.directories[9], name), 'yaml', parseYaml)).value
+        if (!record(data) || data.version !== 1 || data.kind !== 'distinct' || id(data.id) !== name.slice(0, -5) ||
+          id(data.left) >= id(data.right) || typeof data.recordedAt !== 'string' || !data.recordedAt.trim() ||
+          (data.reason !== undefined && typeof data.reason !== 'string') ||
+          (data.undoneAt !== undefined && (typeof data.undoneAt !== 'string' || !data.undoneAt.trim()))) throw new Error('Invalid identity decision')
+        identityDecisions.push(data as unknown as IdentityDecision)
+      } catch (error) { errors.push(`identity-decisions/${name}: ${String(error)}`) }
+    }
     for (const name of (await readdir(this.directories[8])).filter((entry) => entry.endsWith('.yaml')).sort()) {
       try {
         const data = (await this.readOwnedParsed<unknown>(join(this.directories[8], name), 'yaml', parseYaml)).value
@@ -492,7 +503,7 @@ export class Workspace {
     for (const path of this.fileCache.keys()) if (!this.readSinceSweep.has(path)) this.fileCache.delete(path)
     this.readSinceSweep = new Set()
     return { path: this.path, generation, pages, workbench, entities, archivedEntities, claims, resolutions, conversations, proposals, documents,
-      events, archivedEvents, tasks, archivedTasks, merges, mergeHistory, modules: enabled, semanticProvider,
+      events, archivedEvents, tasks, archivedTasks, merges, mergeHistory, identityDecisions, modules: enabled, semanticProvider,
       backgroundProviderNeedsChoice, semanticIndex, providerActivity, errors }
   }
 
@@ -708,6 +719,10 @@ export class Workspace {
     const snapshot = await this.snapshot()
     const original = snapshot.entities.find((entity) => entity.id === source)
     if (!original || !snapshot.entities.some((entity) => entity.id === target)) throw new Error('Both entities must be active before merging')
+    if (snapshot.identityDecisions.some((decision) => !decision.undoneAt &&
+      ((decision.left === source && decision.right === target) || (decision.left === target && decision.right === source)))) {
+      throw new Error('These entities were marked distinct. Undo that decision before merging them.')
+    }
     const from = join(this.directories[0], `${source}.md`)
     const archived = join(this.path, 'archive', 'entities', `${source}.md`)
     const record: MergeRecord = { id: source, target, title: original.title, recordedAt: new Date().toISOString() }
@@ -747,6 +762,32 @@ export class Workspace {
       await rename(active, archived).catch(() => undefined)
       throw error
     }
+    this.markDirty()
+    return this.snapshot()
+  }
+
+  async markDistinctEntities(leftId: string, rightId: string): Promise<WorkspaceSnapshot> {
+    const [left, right] = [id(leftId), id(rightId)].sort()
+    if (left === right) throw new Error('Choose two different entities')
+    const snapshot = await this.snapshot()
+    if (!snapshot.entities.some((entity) => entity.id === left) || !snapshot.entities.some((entity) => entity.id === right)) {
+      throw new Error('Both entities must be active before marking them distinct')
+    }
+    if (snapshot.identityDecisions.some((decision) => !decision.undoneAt && decision.left === left && decision.right === right)) {
+      throw new Error('These entities are already marked distinct')
+    }
+    const decision: IdentityDecision = { version: 1, id: randomUUID(), kind: 'distinct', left, right, recordedAt: new Date().toISOString() }
+    await writeFile(join(this.directories[9], `${decision.id}.yaml`), YAML.stringify(decision), { flag: 'wx' })
+    this.markDirty()
+    return this.snapshot()
+  }
+
+  async undoIdentityDecision(decisionId: string): Promise<WorkspaceSnapshot> {
+    const path = join(this.directories[9], `${id(decisionId)}.yaml`)
+    const original = await this.readOwnedText(path)
+    const decision = (await this.snapshot()).identityDecisions.find((item) => item.id === decisionId)
+    if (!decision || decision.undoneAt) throw new Error('This distinct-identity decision is unavailable or already undone')
+    await atomicWrite(path, updateYaml(original, { undoneAt: new Date().toISOString() }))
     this.markDirty()
     return this.snapshot()
   }

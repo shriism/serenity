@@ -16,6 +16,7 @@ const maxContext = 180000
 const maxExcerpt = 9000
 
 export function contextRecords(snapshot: WorkspaceSnapshot, documents: { name: string; text: string }[]): ContextRecord[] {
+  const activeEntities = new Set(snapshot.entities.map((entity) => entity.id))
   return [
     ...snapshot.pages.map((item) => ({ ref: `page:${item.id}`, title: item.title, text: item.body })),
     ...snapshot.entities.map((item) => ({ ref: `entity:${item.id}`, title: item.title, text: JSON.stringify({ title: item.title, type: item.type, body: item.body, source: item.source, metadata: item.metadata }) })),
@@ -24,6 +25,9 @@ export function contextRecords(snapshot: WorkspaceSnapshot, documents: { name: s
     ...snapshot.proposals.filter((item) => item.status === 'pending').map((item) => ({ ref: `proposal:${item.id}`, title: `Unconfirmed ${item.kind}`, text: JSON.stringify(item) })),
     ...snapshot.merges.map((item) => ({ ref: `merge:${item.id}`, title: `Merge ${item.title}`, text: JSON.stringify(item) })),
     ...snapshot.mergeHistory.filter((item) => item.undoneAt).map((item) => ({ ref: `merge-history:${item.id}:${item.recordedAt}`, title: `Reversed merge ${item.title}`, text: JSON.stringify(item) })),
+    ...snapshot.identityDecisions.filter((item) => !item.undoneAt && activeEntities.has(item.left) && activeEntities.has(item.right))
+      .map((item) => ({ ref: `identity-decision:${item.id}`, title: 'Distinct identities',
+        text: JSON.stringify({ kind: item.kind, left: item.left, right: item.right, recordedAt: item.recordedAt }) })),
     ...snapshot.resolutions.map((item) => ({ ref: `resolution:${item.id}`, title: `Resolution ${item.key}`, text: JSON.stringify(item) })),
     ...(snapshot.modules.tasks ? snapshot.tasks.map((item) => ({ ref: `task:${item.id}`, title: item.title, text: JSON.stringify(item) })) : []),
     ...(snapshot.modules.calendar ? snapshot.events.map((item) => ({ ref: `event:${item.id}`, title: item.title, text: JSON.stringify(item) })) : []),
@@ -50,6 +54,10 @@ export function scopeContextRecords(snapshot: WorkspaceSnapshot, records: Contex
     if (kind === 'merge-history') {
       const historical = snapshot.mergeHistory.find((item) => `${item.id}:${item.recordedAt}` === identifier)
       return Boolean(historical && (entities.has(historical.id) || entities.has(historical.target)))
+    }
+    if (kind === 'identity-decision') {
+      const decision = snapshot.identityDecisions.find((item) => item.id === identifier && !item.undoneAt)
+      return Boolean(decision && entities.has(decision.left) && entities.has(decision.right))
     }
     if (kind === 'document') return documents.has(identifier)
     if (kind === 'conversation') return scope.includeOtherConversations

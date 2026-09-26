@@ -36,9 +36,9 @@ const maxCandidates = 200
 
 /**
  * Pairs of existing entities that may describe the same identity, with the evidence for each. These are prompts for a
- * human decision, never automatic merges. A pair whose merge was undone was judged distinct and is not suggested again.
+ * human decision, never automatic merges. An undone merge or active distinct-identity decision suppresses its pair.
  */
-export function duplicateCandidates(snapshot: Pick<WorkspaceSnapshot, 'entities' | 'claims' | 'mergeHistory'>): DuplicateCandidate[] {
+export function duplicateCandidates(snapshot: Pick<WorkspaceSnapshot, 'entities' | 'claims' | 'mergeHistory'> & Partial<Pick<WorkspaceSnapshot, 'identityDecisions'>>): DuplicateCandidate[] {
   const entities = new Map(snapshot.entities.map((entity) => [entity.id, entity]))
   const facts = new Map<string, Map<string, string>>()
   for (const claim of snapshot.claims) {
@@ -55,6 +55,10 @@ export function duplicateCandidates(snapshot: Pick<WorkspaceSnapshot, 'entities'
     for (const fact of facts.get(entity.id)?.keys() ?? []) add(`fact\u0000${fact}`, entity.id)
   }
   const separated = new Set(snapshot.mergeHistory.filter((merge) => merge.undoneAt).flatMap((merge) => [`${merge.id}|${merge.target}`, `${merge.target}|${merge.id}`]))
+  for (const decision of snapshot.identityDecisions ?? []) if (!decision.undoneAt) {
+    separated.add(`${decision.left}|${decision.right}`)
+    separated.add(`${decision.right}|${decision.left}`)
+  }
   const seen = new Set<string>()
   const candidates: DuplicateCandidate[] = []
   for (const [bucket, ids] of buckets) {

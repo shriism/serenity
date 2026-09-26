@@ -59,6 +59,7 @@ export interface WorkspaceSnapshot {
   archivedTasks: TaskItem[]
   merges: MergeRecord[]
   mergeHistory: MergeRecord[]
+  identityDecisions: IdentityDecision[]
   archivedEntities: Entity[]
   semanticProvider: Provider
   backgroundProviderNeedsChoice: boolean
@@ -112,6 +113,18 @@ export interface MergeRecord {
   recordedAt: string
   undoneAt?: string
   undoReason?: string
+}
+
+/** A human judgment that two active entity IDs refer to different identities; undo keeps the record. */
+export interface IdentityDecision {
+  version: 1
+  id: string
+  kind: 'distinct'
+  left: string
+  right: string
+  recordedAt: string
+  reason?: string
+  undoneAt?: string
 }
 
 export interface CalendarEvent {
@@ -260,6 +273,8 @@ export interface SerenityAPI {
   restoreTask(id: string): Promise<WorkspaceSnapshot>
   mergeEntities(source: string, target: string): Promise<WorkspaceSnapshot>
   unmergeEntities(source: string, reason: string): Promise<WorkspaceSnapshot>
+  markDistinctEntities(left: string, right: string): Promise<WorkspaceSnapshot>
+  undoIdentityDecision(id: string): Promise<WorkspaceSnapshot>
   setSemanticProvider(provider: Provider): Promise<WorkspaceSnapshot>
   onIndexError(callback: (message: string) => void): () => void
   onWorkspaceChange(callback: () => void): () => void

@@ -19,6 +19,8 @@ The chosen directory contains Markdown pages and entities, YAML claims and conve
 
 Record IDs are stable UUIDs. Types and relationship names are ordinary user-chosen strings, not a fixed ontology. Sourced claims keep confirmations, conflicts, and retractions distinct. Current-answer choices are append-only records under `resolutions/`, so selecting or undoing a correction does not rewrite its original claims. Edits to a known field update YAML nodes without dropping unknown fields or comments. A stale editor save fails rather than silently replacing an entity, event, task, or conversation changed on disk.
 
+Human judgments that two active entity IDs are distinct are version 1 YAML records under `identity-decisions/`, keyed by their own UUID and storing a canonical ordered pair. Active decisions suppress that pair in duplicate review and prevent a direct merge until undone. Undo writes `undoneAt` into the same record, preserving the judgment's history. The main process validates externally edited files and surfaces invalid ones as workspace errors. AI context includes active decisions only when the workflow can read both named entities.
+
 The renderer reports unsaved entity and page edits to the main process, which asks before closing or switching workspaces. Only the current workspace path can be revealed in the OS file manager; the renderer cannot pass arbitrary paths to that operation.
 
 ## Resources, commands, and authored pages

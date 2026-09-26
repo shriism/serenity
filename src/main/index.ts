@@ -114,7 +114,7 @@ async function openWorkspace(path: string): Promise<WorkspaceSnapshot> {
   await next.initialize()
   workspace = next
   const settingsDirectory = join(next.path, '.serenity')
-  watcher = chokidar.watch([...next.directories.slice(0, 8), next.pagesDirectory, join(next.path, 'archive'), settingsDirectory], {
+  watcher = chokidar.watch([...next.directories.slice(0, 8), next.directories[9], next.pagesDirectory, join(next.path, 'archive'), settingsDirectory], {
     ignoreInitial: true,
     ignored: (watchedPath) => watchedPath.startsWith(`${settingsDirectory}${sep}`) &&
       !['modules.yaml', 'semantic-provider.yaml', 'workbench.yaml'].includes(basename(watchedPath)),
@@ -295,6 +295,8 @@ app.whenReady().then(async () => {
   ipcMain.handle('task:restore', (_event, id: string) => currentWorkspace().restoreTask(id))
   ipcMain.handle('entity:merge', (_event, source: string, target: string) => currentWorkspace().mergeEntities(source, target))
   ipcMain.handle('entity:unmerge', (_event, source: string, reason: string) => currentWorkspace().unmergeEntities(source, reason))
+  ipcMain.handle('identity:distinct', (_event, left: string, right: string) => currentWorkspace().markDistinctEntities(left, right))
+  ipcMain.handle('identity:undo', (_event, id: string) => currentWorkspace().undoIdentityDecision(id))
   if (background && process.platform === 'darwin') app.setActivationPolicy('accessory')
   const selected = process.argv.find((argument) => argument.startsWith('--workspace='))?.slice('--workspace='.length)
   if (selected) {

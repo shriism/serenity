@@ -222,6 +222,7 @@ try {
     source: 'research.pdf', origin: 'ai-statement', provider: 'codex', conversationId: '123e4567-e89b-42d3-a456-426614174093', status: 'pending', recordedAt: new Date().toISOString() }))
   const besideDocument = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 40; i++) { const suggestion = [...document.querySelectorAll('.document-suggestions h2')].find((item) => item.textContent === 'Read the comet chapter'); if (suggestion) return document.querySelector('.document-suggestions > small')?.textContent; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
   assert.match(String(besideDocument), /1 waiting for your review/, 'A document should show the proposals drawn from it beside its text')
+  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-document-suggestions.png'), await captureScreenshot(pageUrl))
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-documents.png'), await captureScreenshot(pageUrl))
   const invalidOpen = await evaluate(pageUrl, `window.serenity.openDocument('../outside').then(() => 'allowed', (error) => String(error))`) as string
   assert.match(invalidOpen, /Invalid document name/)

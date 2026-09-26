@@ -412,6 +412,19 @@ try {
     return { ...result, remaining: document.querySelectorAll('.editor-group').length }
   })()`)
   assert.deepEqual(narrowPanes, { switcher: 4, visible: 1, remaining: 1 }, 'A narrow window should show one pane at a time with a switcher, and panes should close back to one')
+  const wikilinks = await evaluate(pageUrl, `(async () => {
+    const page = (await window.serenity.refresh()).pages.find((item) => item.id === 'research')
+    await window.serenity.savePage({ id: page.id, path: page.path, revision: page.revision, text: page.text + '\\nSee [[Untitled page]] and [[Someone new]].\\n' })
+    ;[...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Home'))?.click()
+    for (let i = 0; i < 40; i++) {
+      const link = [...document.querySelectorAll('.page-prose .page-link')].find((item) => item.textContent?.includes('Untitled page'))
+      const missing = document.querySelector('.page-prose .wikilink-unresolved.missing')?.textContent
+      if (link && missing) return { link: true, missing }
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    return { link: false, missing: null }
+  })()`)
+  assert.deepEqual(wikilinks, { link: true, missing: 'Someone new' }, 'Wikilinks should link named resources and mark names that match nothing')
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) {
     const narrow = await evaluate(pageUrl, `(async () => { window.resizeTo(900, 760); for (let i = 0; i < 30 && innerWidth <= 1020 && !document.querySelector('.serenity-studio')?.classList.contains('left-collapsed'); i++) await new Promise((resolve) => setTimeout(resolve, 100)); return { width: innerWidth, main: document.querySelector('#workspace-main')?.getBoundingClientRect().width, right: Boolean(document.querySelector('.assistant-sidebar')), rail: document.querySelector('.serenity-studio')?.classList.contains('left-collapsed') } })()`) as { width: number; main: number; right: boolean; rail: boolean }
     if (narrow.width <= 1020) {

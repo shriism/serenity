@@ -315,3 +315,5 @@
 .serenity-studio .knowledge-from ul li { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; color: var(--muted); font-size: 12px; line-height: 1.8; }
 .serenity-studio .knowledge-from ul li small { color: var(--subtle); font-size: 11px; }
 .serenity-studio .knowledge-from ul li.retracted span { text-decoration: line-through; text-decoration-color: var(--subtle); }
+.serenity-studio .wikilink-unresolved { border-bottom: 1px dashed var(--warning-text); color: var(--text); cursor: help; }
+.serenity-studio .wikilink-unresolved.missing { border-bottom-color: var(--subtle); color: var(--muted); }

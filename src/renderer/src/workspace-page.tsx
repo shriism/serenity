@@ -1,11 +1,12 @@
-import { useEffect, useState, isValidElement } from 'react'
+import { useEffect, useMemo, useState, isValidElement } from 'react'
 import { ArrowUpRight, Pencil, Save, X } from 'lucide-react'
-import ReactMarkdown, { defaultUrlTransform } from 'react-markdown'
+import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import YAML from 'yaml'
 import type { WorkspacePage, WorkspaceSnapshot } from '../../shared/types'
 import { evaluateWorkspaceQuery } from '../../shared/query'
-import { parseResourceUri } from '../../shared/resources'
+import { linkWikilinks, resolveWikilink } from '../../shared/wikilinks'
+import { markdownUrlTransform, workspaceLink } from './markdown-links'
 import type { CommandContribution } from './commands'
 
 function LiveQuery({ source, workspace, onOpen }: { source: string; workspace: WorkspaceSnapshot; onOpen(uri: string, side?: boolean): void }) {
@@ -58,7 +59,7 @@ export function WorkspacePageView({ page, workspace, commands, onUpdate, onError
     setEditing(false)
   }
 
-  const urlTransform = (url: string): string => parseResourceUri(url) || /^serenity:command\/[a-z0-9.-]+$/.test(url) ? url : defaultUrlTransform(url)
+  const body = useMemo(() => linkWikilinks(page.body, (target) => resolveWikilink(workspace, target)), [page.body, workspace.pages, workspace.entities, workspace.documents])
 
   return <section className="workspace-page home-page" aria-label={page.title}>
     <header className="page-toolbar"><span title={page.path}>{page.path}</span><div>
@@ -67,10 +68,10 @@ export function WorkspacePageView({ page, workspace, commands, onUpdate, onError
     </div></header>
     {editing ? <div className="page-source"><label htmlFor="page-source">Markdown with YAML frontmatter</label><textarea id="page-source" value={draft} disabled={busy}
       onChange={(event) => { setDraft(event.target.value); setDirty(event.target.value !== page.text) }} spellCheck={false}/><small>Changes to this file stay in {page.path}. Query blocks read this workspace only.</small></div>
-      : <article className="page-prose"><ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={urlTransform} components={{
+      : <article className="page-prose"><ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={markdownUrlTransform} components={{
         a: ({ children, href }) => {
-          const ref = href ? parseResourceUri(href) : null
-          if (ref) return <button className="page-link" onClick={(event) => onOpen(href!, event.metaKey || event.ctrlKey)}>{children}<ArrowUpRight size={14}/></button>
+          const link = workspaceLink(href, children, onOpen)
+          if (link) return link
           const command = href?.startsWith('serenity:command/') ? decodeURIComponent(href.slice('serenity:command/'.length)) : null
           if (command && commands.some((item) => item.id === command)) return <button className="page-link" onClick={() => onCommand(command)}>{children}<ArrowUpRight size={14}/></button>
           return <span title={href}>{children}</span>
@@ -79,6 +80,6 @@ export function WorkspacePageView({ page, workspace, commands, onUpdate, onError
           <LiveQuery source={String(children).trim()} workspace={workspace} onOpen={onOpen}/> : <code className={className}>{children}</code>,
         pre: ({ children }) => isValidElement(children) && children.type === LiveQuery ? <>{children}</> : <pre>{children}</pre>,
         img: ({ alt }) => <span className="preview-image">[Image: {alt || 'no description'}]</span>
-      }}>{page.body}</ReactMarkdown></article>}
+      }}>{body}</ReactMarkdown></article>}
   </section>
 }

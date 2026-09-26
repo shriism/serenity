@@ -50,7 +50,7 @@ export interface BuiltinViewContext {
 export const builtinViews = new ViewRegistry<BuiltinViewContext>()
 const entityEditor = (context: BuiltinViewContext) => <EntityEditor key={context.entityId ?? 'new'} workspace={context.workspace} entityId={context.entityId ?? null}
   onUpdate={context.onUpdate} onError={context.onError} onDirtyChange={context.onDirtyChange} onOpenEntity={context.onOpenEntity} onNewEntity={context.onNewEntity}
-  onCreated={context.onEntityCreated} onDiscuss={context.onDiscuss} onOpenSource={context.onOpenSource}/>
+  onCreated={context.onEntityCreated} onDiscuss={context.onDiscuss} onOpenSource={context.onOpenSource} onOpenResource={(uri, side) => context.onOpenResource(uri, side)}/>
 builtinViews.register({ id: 'knowledge', render: (context) => {
   if (!context.entityId) return context.creatingEntity ? entityEditor(context) :
     <KnowledgeView workspace={context.workspace} onOpenEntity={context.onOpenEntity} onNewEntity={context.onNewEntity}/>

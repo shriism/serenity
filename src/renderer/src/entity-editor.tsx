@@ -5,6 +5,8 @@ import remarkGfm from 'remark-gfm'
 import type { Claim, Entity, WorkspaceSnapshot } from '../../shared/types'
 import { identityCandidates } from '../../shared/identity'
 import { ClaimCard } from './claim-card'
+import { linkWikilinks, resolveWikilink } from '../../shared/wikilinks'
+import { markdownUrlTransform, workspaceLink } from './markdown-links'
 
 export interface EntityEditorProps {
   workspace: WorkspaceSnapshot
@@ -19,6 +21,8 @@ export interface EntityEditorProps {
   onCreated(id: string): void
   onDiscuss(question: string): void
   onOpenSource(name: string): void
+  /** Opens a linked resource from the narrative; `side` opens it in the next pane. */
+  onOpenResource(uri: string, side: boolean): void
 }
 
 const blank: Entity = { id: '', title: '', type: '', body: '' }
@@ -116,6 +120,7 @@ export function EntityEditor(props: EntityEditorProps) {
 
   const { claims, incoming, activeClaims, conflicts, resolvedKeys } = useMemo(() => claimSummary(workspace.claims, selected), [workspace.claims, selected])
   const candidates = useMemo(() => !draft.id ? identityCandidates(draft.title, draft.type, workspace.entities).slice(0, 4) : [], [draft.id, draft.title, draft.type, workspace.entities])
+  const linkedBody = useMemo(() => linkWikilinks(draft.body, (target) => resolveWikilink(workspace, target)), [draft.body, workspace.pages, workspace.entities, workspace.documents])
   const others = useMemo(() => workspace.entities.filter((entity) => entity.id !== selected), [workspace.entities, selected])
 
   return <div className="content">
@@ -129,10 +134,10 @@ export function EntityEditor(props: EntityEditorProps) {
       <label className="sr-only" htmlFor={`${id}-body`}>Context · Markdown</label>
       <div className="body-tabs"><button type="button" className={bodyMode === 'preview' ? 'active' : ''} onClick={() => setBodyMode('preview')}>Read</button><button type="button" className={bodyMode === 'edit' ? 'active' : ''} onClick={() => setBodyMode('edit')}>Edit</button></div>
       {bodyMode === 'edit' ? <textarea id={`${id}-body`} placeholder="Tell the story in your own words..." value={draft.body} onChange={(event) => change({ ...draft, body: event.target.value })}/> :
-        <div className="markdown-preview">{draft.body.trim() ? <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
-          a: ({ children, href }) => <span className="preview-link" title={href}>{children}</span>,
+        <div className="markdown-preview">{draft.body.trim() ? <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={markdownUrlTransform} components={{
+          a: ({ children, href }) => workspaceLink(href, children, props.onOpenResource) ?? <span className="preview-link" title={href}>{children}</span>,
           img: ({ alt }) => <span className="preview-image">[Image: {alt || 'no description'}]</span>
-        }}>{draft.body}</ReactMarkdown> : <p className="hint">Nothing written yet. Switch to Edit Markdown to add context.</p>}</div>}
+        }}>{linkedBody}</ReactMarkdown> : <p className="hint">Nothing written yet. Switch to Edit Markdown to add context.</p>}</div>}
       <div className="form-actions"><span>{dirty ? 'Unsaved changes' : draft.id ? 'Saved' : 'Ready to create'}</span>{(dirty || !draft.id) && <button className="primary" type="submit">{draft.id ? 'Save changes' : 'Create entity'}</button>}</div>
     </form></section>
     <section className="details"><details className="knowledge-details" open={conflicts.length > 0 ? true : undefined}><summary><span>Facts & sources</span><small>{claims.length} {claims.length === 1 ? 'claim' : 'claims'}{conflicts.length ? ` · ${conflicts.length} to clarify` : ''}</small></summary><div className="knowledge-details-body">

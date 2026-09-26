@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Columns2 } from 'lucide-react'
 import type { WorkspaceSnapshot } from '../../shared/types'
 import { proposalsBySource } from '../../shared/proposals'
@@ -7,8 +7,6 @@ import { duplicateCandidates } from '../../shared/identity'
 import type { Entity } from '../../shared/types'
 import { ProposalCard, type ProposalActions } from './proposal-card'
 
-const shownDuplicates = 12
-
 export function ReviewPanel({ workspace, onOpenResource, onUpdate, onError, ...actions }: ProposalActions & {
   workspace: WorkspaceSnapshot
   onOpenResource(uri: string, side: boolean): void
@@ -16,13 +14,23 @@ export function ReviewPanel({ workspace, onOpenResource, onUpdate, onError, ...a
   onError(message: string): void
 }) {
   const sources = proposalsBySource(workspace.proposals)
+  const [shownDuplicates, setShownDuplicates] = useState(12)
   const [shownDecisions, setShownDecisions] = useState(12)
+  const [focusTarget, setFocusTarget] = useState<{ kind: 'decision' | 'candidate'; key: string; generation: number } | null>(null)
+  const reviewRef = useRef<HTMLElement>(null)
   const entities = useMemo(() => new Map(workspace.entities.map((entity) => [entity.id, entity])), [workspace.entities])
   // Recomputed only when the entities, claims, or merge history change, not on every render.
   const duplicates = useMemo(() => duplicateCandidates(workspace), [workspace.entities, workspace.claims, workspace.mergeHistory, workspace.identityDecisions])
   const distinct = workspace.identityDecisions.filter((item) => !item.undoneAt && entities.has(item.left) && entities.has(item.right))
     .sort((a, b) => b.recordedAt.localeCompare(a.recordedAt))
   const entityUri = (entity: Entity): string => resourceUri({ kind: 'entity', id: entity.id })
+  useEffect(() => {
+    if (!focusTarget || workspace.generation < focusTarget.generation) return
+    const selector = focusTarget.kind === 'decision' ? `[data-decision-id="${focusTarget.key}"] button` :
+      `[data-identity-pair="${focusTarget.key}"] button:last-child`
+    ;(reviewRef.current?.querySelector<HTMLElement>(selector) ?? reviewRef.current?.querySelector<HTMLElement>('h1'))?.focus()
+    setFocusTarget(null)
+  }, [focusTarget, workspace.generation])
   async function keep(survivor: Entity, duplicate: Entity): Promise<void> {
     if (!window.confirm(`Archive ${duplicate.title} and link its claims to ${survivor.title}? The archived file and merge record remain, and the merge can be undone.`)) return
     try { onUpdate(await window.serenity.mergeEntities(duplicate.id, survivor.id)); onError('') }
@@ -30,19 +38,36 @@ export function ReviewPanel({ workspace, onOpenResource, onUpdate, onError, ...a
   }
   async function markDistinct(a: Entity, b: Entity): Promise<void> {
     if (!window.confirm(`Record that ${a.title} and ${b.title} are different identities? This removes the duplicate suggestion. You can undo the decision here later.`)) return
-    try { onUpdate(await window.serenity.markDistinctEntities(a.id, b.id)); onError('') }
+    try {
+      const next = await window.serenity.markDistinctEntities(a.id, b.id)
+      onUpdate(next)
+      const decision = next.identityDecisions.find((item) => !item.undoneAt && [item.left, item.right].sort().join('|') === [a.id, b.id].sort().join('|'))
+      if (decision) setFocusTarget({ kind: 'decision', key: decision.id, generation: next.generation })
+      onError('')
+    }
     catch (error) { onError(String(error)) }
   }
   async function undoDistinct(id: string): Promise<void> {
-    try { onUpdate(await window.serenity.undoIdentityDecision(id)); onError('') }
+    try {
+      const decision = workspace.identityDecisions.find((item) => item.id === id)
+      const next = await window.serenity.undoIdentityDecision(id)
+      onUpdate(next)
+      if (decision) {
+        const key = [decision.left, decision.right].sort().join('|')
+        const position = duplicateCandidates(next).findIndex(({ a, b }) => [a.id, b.id].sort().join('|') === key)
+        if (position >= shownDuplicates) setShownDuplicates(Math.ceil((position + 1) / 12) * 12)
+        setFocusTarget({ kind: 'candidate', key, generation: next.generation })
+      }
+      onError('')
+    }
     catch (error) { onError(String(error)) }
   }
-  return <section className="page">
-    <span className="eyebrow">KNOWLEDGE REVIEW</span><h1>Proposals & activity</h1>
+  return <section className="page" ref={reviewRef}>
+    <span className="eyebrow">KNOWLEDGE REVIEW</span><h1 tabIndex={-1}>Proposals & activity</h1>
     <p>Decide which suggested knowledge belongs in your workspace. Suggestions are grouped by their source; previous decisions remain visible.</p>
     {duplicates.length > 0 && <section className="review-source" aria-label="Possible duplicates">
       <header className="review-source-header"><div><h2>Same identity?</h2><small>{duplicates.length} possible {duplicates.length === 1 ? 'duplicate' : 'duplicates'} · similar names are not proof</small></div></header>
-      {duplicates.slice(0, shownDuplicates).map(({ a, b, reasons }) => <article key={`${a.id}|${b.id}`} className="review-card duplicate-card">
+      {duplicates.slice(0, shownDuplicates).map(({ a, b, reasons }) => <article key={`${a.id}|${b.id}`} data-identity-pair={[a.id, b.id].sort().join('|')} className="review-card duplicate-card">
         <span className="eyebrow">{a.type} · {b.type}</span>
         <h2>{a.title} <span aria-hidden="true">·</span> {b.title}</h2>
         <ul className="duplicate-reasons">{reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul>
@@ -53,14 +78,14 @@ export function ReviewPanel({ workspace, onOpenResource, onUpdate, onError, ...a
           <button className="secondary" onClick={() => void markDistinct(a, b)}>Mark as distinct</button>
         </div>
       </article>)}
-      {duplicates.length > shownDuplicates && <p className="hint">Showing the {shownDuplicates} strongest of {duplicates.length}.</p>}
+      {duplicates.length > shownDuplicates && <button className="text-button" onClick={() => setShownDuplicates((count) => count + 12)}>Show more possible duplicates ({duplicates.length - shownDuplicates} remaining)</button>}
     </section>}
     {distinct.length > 0 && <section className="review-source" aria-label="Distinct identity decisions">
       <header className="review-source-header"><div><h2>Marked as distinct</h2><small>{distinct.length} {distinct.length === 1 ? 'decision' : 'decisions'} · stored in this workspace</small></div></header>
       {distinct.slice(0, shownDecisions).map((decision) => {
         const left = entities.get(decision.left)!
         const right = entities.get(decision.right)!
-        return <article key={decision.id} className="review-card distinct-card">
+        return <article key={decision.id} data-decision-id={decision.id} className="review-card distinct-card">
           <h3>{left.title} <span aria-hidden="true">·</span> {right.title}</h3>
           <p>These remain separate identities. Undo to review them again.</p>
           <button className="text-button" onClick={() => void undoDistinct(decision.id)}>Undo decision</button>

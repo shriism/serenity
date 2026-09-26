@@ -338,3 +338,17 @@
 .serenity-studio .library-types button.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text); }
 .serenity-studio .library-list-filter { width: 100%; box-sizing: border-box; margin: 0 0 8px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); font-size: 11px; }
 .serenity-studio .library-more { display: block; padding: 8px 10px; color: var(--subtle); font-size: 10px; }
+
+/* Library display switch and workspace graph. */
+.serenity-studio .library-mode { display: flex; gap: 2px; width: fit-content; padding: 3px; border-radius: 9px; background: var(--surface-hover); }
+.serenity-studio .library-mode button { display: inline-flex; align-items: center; gap: 6px; border: 0; border-radius: 7px; padding: 5px 11px; background: transparent; color: var(--muted); font-size: 11px; }
+.serenity-studio .library-mode button.active { background: var(--studio-base, var(--surface)); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / 18%); }
+.serenity-studio .workspace-graph svg { display: block; width: 100%; height: auto; max-height: 70vh; border: 1px solid var(--border); border-radius: 12px; background: color-mix(in srgb, var(--surface) 55%, transparent); }
+.serenity-studio .workspace-graph line { stroke: color-mix(in srgb, var(--accent) 35%, var(--border)); transition: opacity 120ms; }
+.serenity-studio .workspace-graph line.active { stroke: var(--accent); }
+.serenity-studio .workspace-graph line.dim { opacity: .15; }
+.serenity-studio .graph-node { cursor: pointer; outline: none; transition: opacity 120ms; }
+.serenity-studio .graph-node circle { fill: var(--surface-hover); stroke: color-mix(in srgb, var(--accent) 60%, var(--border)); stroke-width: 1.5; }
+.serenity-studio .graph-node.active circle, .serenity-studio .graph-node:focus-visible circle { fill: var(--accent); stroke: var(--accent); }
+.serenity-studio .graph-node text { fill: var(--muted); font-size: 13px; pointer-events: none; }
+.serenity-studio .graph-node.dim { opacity: .25; }

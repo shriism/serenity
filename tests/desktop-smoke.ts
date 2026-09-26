@@ -171,6 +171,8 @@ try {
   const entityId = await evaluate(pageUrl, `window.serenity.saveEntity({ id: '', title: 'Alex', type: 'person', body: '# Alex\\nFrom **AI Club**.' }).then((snapshot) => snapshot.entities[0].id)`) as string
   assert.match(entityId, /^[a-f0-9-]{36}$/)
   assert.match(await readFile(join(workspace, 'entities', `${entityId}.md`), 'utf8'), /AI Club/)
+  const graphMode = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 40 && !document.querySelector('.library-mode'); i++) await new Promise((resolve) => setTimeout(resolve, 50)); [...document.querySelectorAll('.library-mode button')].find((item) => item.textContent?.includes('Graph'))?.click(); let nodes = 0; for (let i = 0; i < 40 && !nodes; i++) { nodes = document.querySelectorAll('.graph-node').length; await new Promise((resolve) => setTimeout(resolve, 50)) } [...document.querySelectorAll('.library-mode button')].find((item) => item.textContent?.includes('Tiles'))?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return nodes })()`)
+  assert.ok(Number(graphMode) >= 1, 'The Knowledge library should draw its entities as a graph')
   const preview = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const button = [...document.querySelectorAll('.entity-link, .knowledge-tiles button')].find((item) => item.textContent?.includes('Alex')); if (button) { button.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.markdown-preview strong')?.textContent ?? null } await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
   assert.equal(preview, 'AI Club')
   const activeEntityTab = await evaluate(pageUrl, `document.querySelector('.workspace-tab.active')?.textContent ?? null`)

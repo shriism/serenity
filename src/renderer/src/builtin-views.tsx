@@ -53,7 +53,8 @@ const entityEditor = (context: BuiltinViewContext) => <EntityEditor key={context
   onCreated={context.onEntityCreated} onDiscuss={context.onDiscuss} onOpenSource={context.onOpenSource} onOpenResource={(uri, side) => context.onOpenResource(uri, side)}/>
 builtinViews.register({ id: 'knowledge', render: (context) => {
   if (!context.entityId) return context.creatingEntity ? entityEditor(context) :
-    <KnowledgeView workspace={context.workspace} onOpenEntity={context.onOpenEntity} onNewEntity={context.onNewEntity}/>
+    <KnowledgeView workspace={context.workspace} onOpenEntity={context.onOpenEntity} onNewEntity={context.onNewEntity}
+      onOpenInPane={(id, side) => context.onOpenResource(resourceUri({ kind: 'entity', id }), side)}/>
   const entityId = context.entityId
   const presentation = presentationFor('entity', context.presentation)!
   return <div className="presented-resource">

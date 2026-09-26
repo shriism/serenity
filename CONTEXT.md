@@ -143,7 +143,7 @@ This is an **implemented desktop foundation**, not a finished general workbench.
 ### 3. Deepen the actual personal-knowledge experience
 
 - Done in the September 2026 pass: entity timelines and connections, citations checked against sent context, duplicate-identity review with evidence, review beside the source document, document provenance, wikilinks and backlinks, search ranking, and large-workspace performance (about 140 ms snapshots and 11 ms duplicate detection for 2,000 entities and 8,000 claims).
-- Remaining: a whole-workspace graph, temporal views beyond a single entity, page and task presentations, richer retrieval ergonomics, and entity-resolution decisions recorded when the person judges two entities distinct (see decisions below).
+- Remaining: temporal views beyond a single entity, page and task presentations, richer retrieval ergonomics, and entity-resolution decisions recorded when the person judges two entities distinct (see decisions below).
 - Continue iteration on accessibility, focus/keyboard behavior, responsive window sizes, empty/error states, and the quiet native-workbench UI based on actual use.
 
 ### 4. Product hardening and later platforms

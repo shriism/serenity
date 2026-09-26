@@ -4,9 +4,9 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Workspace } from '../src/main/workspace'
-import { isWorkbenchView, parseLayout, removeFromLayout, splitLayout } from '../src/shared/layout'
+import { dragDivider, isWorkbenchView, layoutGeometry, maxEditorGroups, parseLayout, removeFromLayout, splitLayout } from '../src/shared/layout'
 import { parseResourceUri, resourceUri } from '../src/shared/resources'
-import { activeTabOf, closeGroup, emptyGroup, enterView, focusedGroup, initialWorkbench, removeTab, nextGroupId, orderedGroups, pruneWorkbench, restoreWorkbench, showTab, showView, splitWorkbench, updateGroup, workbenchSession } from '../src/renderer/src/workbench-groups'
+import { activeTabOf, closeGroup, emptyGroup, enterView, focusedGroup, initialWorkbench, moveTab, presentTab, removeTab, nextGroupId, orderedGroups, pruneWorkbench, restoreWorkbench, showTab, showView, splitWorkbench, updateGroup, workbenchSession } from '../src/renderer/src/workbench-groups'
 
 const parse = (value: unknown) => parseLayout(value, isWorkbenchView, (uri) => parseResourceUri(uri) !== null)
 
@@ -27,7 +27,9 @@ test('saved layouts are rejected unless every group appears exactly once within 
   assert.equal(parse({ root: { split: 'row', children: [{ group: 'main' }, { group: 'main' }] }, groups, focused: 'main' }), null)
   assert.equal(parse({ root, groups: [groups[0], { ...groups[1], view: 'shell' }], focused: 'main' }), null)
   assert.equal(parse({ root, groups: [groups[0], { ...groups[1], openUris: ['file:///etc/passwd'] }], focused: 'main' }), null)
-  assert.equal(parse({ root: { split: 'row', children: [{ group: 'main' }, { group: 'group-2' }, { group: 'x' }] }, groups: [...groups, { id: 'x', view: 'home', openUris: [] }], focused: 'x' }), null, 'more groups than the current policy allows')
+  const many = Array.from({ length: maxEditorGroups + 1 }, (_, index) => `g${index}`)
+  assert.equal(parse({ root: { split: 'row', children: many.map((id) => ({ group: id })) }, groups: many.map((id) => ({ id, view: 'home', openUris: [] })), focused: 'g0' }), null, 'more panes than the policy allows')
+  assert.ok(parse({ root: { split: 'row', children: [{ group: 'main' }, { split: 'column', children: [{ group: 'group-2' }, { group: 'x' }] }] }, groups: [...groups, { id: 'x', view: 'home', openUris: [] }], focused: 'x' }), 'nested splits of several panes are valid')
   assert.equal(parse({ root: { group: 'main', script: 'x' }, groups: [groups[0]], focused: 'main' }), null)
 })
 
@@ -38,7 +40,9 @@ test('editor groups split, focus, close, and serialize as independent places', (
   assert.equal(split.groups.length, 2)
   assert.equal(split.focused, 'group-2')
   assert.deepEqual(activeTabOf(focusedGroup(split)), alex, 'a split shows the same resource as a second perspective')
-  assert.equal(splitWorkbench(split), null, 'the group limit is enforced')
+  let full = split
+  while (full.groups.length < maxEditorGroups) full = splitWorkbench(full, { direction: full.groups.length % 2 ? 'column' : 'row' })!
+  assert.equal(splitWorkbench(full), null, 'the pane cap is enforced')
   const empty = splitWorkbench(start, { duplicate: false })!
   assert.equal(focusedGroup(empty).view, 'home')
   assert.equal(nextGroupId(split), 'main')
@@ -94,4 +98,49 @@ test('returning to Knowledge resumes the last entity; choosing Knowledge again s
   assert.equal(activeTabOf(group), undefined, 'the library')
   assert.equal(activeTabOf(enterView(enterView(group, 'review'), 'knowledge')), undefined, 'leaving from the library returns to it')
   assert.equal(enterView(removeTab(showTab(group, alex), 'entity:alex'), 'knowledge').activeTab, null, 'a closed tab is not resumed')
+})
+
+test('split sizes stay valid through resizing, adding, removing, and restoring', async () => {
+  const { normalizeSizes, resizeSplit, minSplitShare } = await import('../src/shared/layout')
+  const close = (actual: number[] | undefined, expected: number[]) => assert.deepEqual(actual?.map((value) => Math.round(value * 1000) / 1000), expected)
+  close(normalizeSizes([3, 1], 2), [0.75, 0.25])
+  close(normalizeSizes([0.99, 0.01], 2), [1 - minSplitShare, minSplitShare])
+  assert.equal(normalizeSizes([1, -1], 2), undefined)
+  assert.equal(normalizeSizes([1], 2), undefined)
+  const row = resizeSplit(splitLayout({ group: 'a' }, 'a', 'b', 'row'), [], [0.7, 0.3])
+  close('split' in row ? row.sizes : undefined, [0.7, 0.3])
+  const three = splitLayout(row, 'a', 'c', 'row')
+  close('split' in three ? three.sizes : undefined, [0.35, 0.35, 0.3])
+  const back = removeFromLayout(three, 'c')!
+  close('split' in back ? back.sizes : undefined, [0.538, 0.462])
+  assert.deepEqual(removeFromLayout(row, 'b'), { group: 'a' })
+  const saved = parse({ root: { split: 'row', children: [{ group: 'main' }, { group: 'group-2' }], sizes: ['wide', 1] },
+    groups: [{ id: 'main', view: 'home', openUris: [] }, { id: 'group-2', view: 'home', openUris: [] }], focused: 'main' })
+  assert.ok(saved && 'split' in saved.root && saved.root.sizes === undefined, 'unusable sizes fall back to equal shares without discarding the layout')
+})
+
+test('pane geometry places every pane and divider, and dividers resize only their neighbors', () => {
+  const root = { split: 'row' as const, sizes: [0.6, 0.4], children: [{ group: 'a' }, { split: 'column' as const, children: [{ group: 'b' }, { group: 'c' }] }] }
+  const { groups, dividers } = layoutGeometry(root)
+  assert.deepEqual(groups.get('a'), { x: 0, y: 0, width: 0.6, height: 1 })
+  assert.deepEqual(groups.get('c'), { x: 0.6, y: 0.5, width: 0.4, height: 0.5 })
+  assert.deepEqual(dividers.map((divider) => [divider.path, divider.index, divider.direction]), [[[], 1, 'row'], [[1], 1, 'column']])
+  assert.deepEqual(dividers[1].line, { x: 0.6, y: 0.5, width: 0.4, height: 0 })
+  assert.deepEqual(dragDivider([0.2, 0.3, 0.5], 2, 0.3), [0.2, 0.15, 0.65], 'the dragged pair keeps its total and the minimum share')
+  assert.deepEqual(dragDivider([0.5, 0.5], 1, 0.7), [0.7, 0.30000000000000004])
+  assert.deepEqual(splitLayout({ group: 'a' }, 'a', 'b', 'column', true), { split: 'column', children: [{ group: 'b' }, { group: 'a' }] }, 'a pane can be added before another')
+})
+
+test('tabs move between panes with their presentation, and closing a pane keeps the others', () => {
+  const alex = { kind: 'entity' as const, id: 'alex' }
+  let bench = updateGroup(initialWorkbench, 'main', (group) => presentTab(showTab(group, alex), 'entity:alex', 'timeline'))
+  bench = splitWorkbench(bench, { duplicate: false, direction: 'column' })!
+  const moved = moveTab(bench, 'main', 'entity:alex', 'group-2')
+  assert.equal(moved.focused, 'group-2')
+  assert.deepEqual(activeTabOf(focusedGroup(moved)), alex)
+  assert.equal(focusedGroup(moved).presentations['entity:alex'], 'timeline')
+  assert.equal(orderedGroups(moved)[0].tabs.length, 0)
+  assert.equal(moveTab(moved, 'group-2', 'entity:alex', 'group-2'), moved, 'moving to the same pane changes nothing')
+  const three = splitWorkbench(moved, { from: 'main', direction: 'row' })!
+  assert.deepEqual(orderedGroups(closeGroup(three, 'group-2')).map((group) => group.id), ['main', 'group-3'])
 })

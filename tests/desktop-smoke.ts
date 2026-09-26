@@ -347,7 +347,7 @@ try {
   assert.deepEqual(customWorkbench, { group: 'My space', chosen: 'Research notebook', linked: 'My own workspace' }, 'A workspace YAML edit should recompose Home and the navigation without new UI code')
   const createdPage = await evaluate(pageUrl, `(async () => { document.querySelector('.topbar-more summary')?.click(); [...document.querySelectorAll('.topbar-menu button')].find((button) => button.textContent?.includes('New page'))?.click(); for (let i = 0; i < 30; i++) { const path = document.querySelector('.page-toolbar > span')?.textContent; if (path?.startsWith('pages/page-') && document.querySelector('.page-prose h1')?.textContent === 'Untitled page') return path; await new Promise((resolve) => setTimeout(resolve, 100)) } return JSON.stringify({ path: document.querySelector('.page-toolbar > span')?.textContent, heading: document.querySelector('.page-prose h1')?.textContent, tabs: [...document.querySelectorAll('.workspace-tab')].map((item) => item.textContent), title: document.querySelector('.breadcrumbs')?.textContent, notices: [...document.querySelectorAll('.notice')].map((item) => item.textContent), menu: document.querySelector('.topbar-more')?.hasAttribute('open') }) })()`)
   assert.match(String(createdPage), /^pages\/page-[a-f0-9-]{36}\.md$/, 'New page should create and open a Markdown file owned by this workspace')
-  const split = await evaluate(pageUrl, `(async () => { document.querySelector('.topbar-icon[aria-label="Split editor"]')?.click(); for (let i = 0; i < 30; i++) { const groups = [...document.querySelectorAll('.editor-group')]; if (groups.length === 2 && groups.every((group) => group.querySelector('.page-prose h1')?.textContent === 'Untitled page')) return { groups: groups.length, focused: groups[1].classList.contains('focused') }; await new Promise((resolve) => setTimeout(resolve, 100)) } return { groups: document.querySelectorAll('.editor-group').length } })()`)
+  const split = await evaluate(pageUrl, `(async () => { document.querySelector('.topbar-icon[aria-label="Split right"]')?.click(); for (let i = 0; i < 30; i++) { const groups = [...document.querySelectorAll('.editor-group')]; if (groups.length === 2 && groups.every((group) => group.querySelector('.page-prose h1')?.textContent === 'Untitled page')) return { groups: groups.length, focused: groups[1].classList.contains('focused') }; await new Promise((resolve) => setTimeout(resolve, 100)) } return { groups: document.querySelectorAll('.editor-group').length } })()`)
   assert.deepEqual(split, { groups: 2, focused: true }, 'Splitting should show the same page in a second, focused editor group')
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-split.png'), await captureScreenshot(pageUrl))
   let savedLayout: { groups?: unknown[] } | undefined
@@ -356,15 +356,58 @@ try {
     if (!savedLayout) await new Promise((resolve) => setTimeout(resolve, 100))
   }
   assert.equal(savedLayout?.groups?.length, 2, 'The two-group layout should be saved in workspace session state')
-  const closedSplit = await evaluate(pageUrl, `(async () => { document.querySelectorAll('.group-actions button[aria-label^="Close editor group"]')[1]?.click(); for (let i = 0; i < 30; i++) { if (document.querySelectorAll('.editor-group').length === 1) return document.querySelector('.page-prose h1')?.textContent; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
+  const closedSplit = await evaluate(pageUrl, `(async () => { document.querySelectorAll('.group-actions button[aria-label^="Close pane"]')[1]?.click(); for (let i = 0; i < 30; i++) { if (document.querySelectorAll('.editor-group').length === 1) return document.querySelector('.page-prose h1')?.textContent; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
   assert.equal(closedSplit, 'Untitled page', 'Closing the second group should leave the first group as it was')
   assert.match(await readFile(join(workspace, String(createdPage)), 'utf8'), /# Untitled page/)
   const lastPage = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const session = await window.serenity.loadSession(); if (session?.activeUri?.startsWith('serenity:page/page-')) return session.activeUri; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
   assert.match(String(lastPage), /^serenity:page\/page-[a-f0-9-]{36}$/, 'The last worked-on page should be remembered inside the workspace')
   assert.doesNotMatch(await readFile(join(workspace, '.serenity', 'session.yaml'), 'utf8'), new RegExp(workspace.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
   await evaluate(pageUrl, `window.serenity.saveEntity({ id: '', title: 'Alex M.', type: 'person', body: '' }).then(() => true)`)
-  const compared = await evaluate(pageUrl, `(async () => { const wait = async (test) => { for (let i = 0; i < 40; i++) { const value = test(); if (value) return value; await new Promise((resolve) => setTimeout(resolve, 100)) } return null }; [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Review'))?.click(); const card = await wait(() => [...document.querySelectorAll('.duplicate-card')].find((item) => item.querySelector('h2')?.textContent?.includes('Alex M.'))); [...(card?.querySelectorAll('button') ?? [])].find((item) => item.textContent?.includes('Compare side by side'))?.click(); const shown = await wait(() => { const titles = [...document.querySelectorAll('.editor-group .editor .title-input')].map((input) => input.value); return titles.length === 2 && titles }); document.querySelectorAll('.group-actions button[aria-label^="Close editor group"]')[1]?.click(); return shown })()`)
+  const compared = await evaluate(pageUrl, `(async () => { const wait = async (test) => { for (let i = 0; i < 40; i++) { const value = test(); if (value) return value; await new Promise((resolve) => setTimeout(resolve, 100)) } return null }; [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Review'))?.click(); const card = await wait(() => [...document.querySelectorAll('.duplicate-card')].find((item) => item.querySelector('h2')?.textContent?.includes('Alex M.'))); [...(card?.querySelectorAll('button') ?? [])].find((item) => item.textContent?.includes('Compare side by side'))?.click(); const shown = await wait(() => { const titles = [...document.querySelectorAll('.editor-group .editor .title-input')].map((input) => input.value); return titles.length === 2 && titles }); document.querySelectorAll('.group-actions button[aria-label^="Close pane"]')[1]?.click(); return shown })()`)
   assert.deepEqual(compared, ['Alex', 'Alex M.'], 'A possible duplicate should open both entities side by side for comparison')
+  const panes = await evaluate(pageUrl, `(async () => {
+    const wait = async (test) => { for (let i = 0; i < 40; i++) { const value = test(); if (value) return value; await new Promise((resolve) => setTimeout(resolve, 50)) } return null }
+    const count = () => document.querySelectorAll('.editor-group:not([hidden])').length
+    document.querySelector('[aria-label="Split pane 1 down"]')?.click()
+    await wait(() => count() === 2)
+    document.querySelector('[aria-label="Split pane 2 right"]')?.click()
+    await wait(() => count() === 3)
+    const dividers = document.querySelectorAll('.pane-divider').length
+    const rootDivider = [...document.querySelectorAll('.pane-divider')].find((item) => item.getAttribute('aria-orientation') === 'horizontal')
+    rootDivider?.focus(); rootDivider?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', shiftKey: true, bubbles: true }))
+    const resized = await wait(() => rootDivider?.getAttribute('aria-valuenow') === '60' && '60')
+    const source = document.querySelector('[data-group="main"] .workspace-tab')
+    const title = source?.textContent
+    const target = document.querySelectorAll('.editor-group')[2]
+    const box = target.getBoundingClientRect()
+    const transfer = new DataTransfer()
+    source?.dispatchEvent(new DragEvent('dragstart', { dataTransfer: transfer, bubbles: true }))
+    const at = { dataTransfer: transfer, bubbles: true, cancelable: true, clientX: box.right - 4, clientY: box.top + box.height / 2 }
+    target.dispatchEvent(new DragEvent('dragover', at))
+    target.dispatchEvent(new DragEvent('drop', at))
+    await wait(() => count() === 4)
+    const focused = document.querySelector('.editor-group.focused .workspace-tab.active')?.textContent
+    return { dividers, resized, afterDrop: count(), movedToNewPane: focused === title }
+  })()`)
+  assert.deepEqual(panes, { dividers: 2, resized: '60', afterDrop: 4, movedToNewPane: true }, 'Panes should split both ways, resize, and accept a tab dropped on an edge as a new pane')
+  let paneSession: { groups?: unknown[]; root?: { sizes?: number[] } } | undefined
+  for (let i = 0; i < 30 && paneSession?.groups?.length !== 4; i++) {
+    paneSession = (YAML.parse(await readFile(join(workspace, '.serenity', 'session.yaml'), 'utf8')) as { layout?: typeof paneSession }).layout
+    await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  assert.equal(paneSession?.groups?.length, 4, 'The four-pane arrangement should be saved with the workspace')
+  assert.ok(Math.abs((paneSession?.root?.sizes?.[0] ?? 0) - 0.6) < 0.01, 'Pane sizes should be saved with the arrangement')
+  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-panes.png'), await captureScreenshot(pageUrl))
+  const narrowPanes = await evaluate(pageUrl, `(async () => {
+    const area = document.querySelector('.editor-groups'); area.style.width = '420px'
+    for (let i = 0; i < 40 && !document.querySelector('.pane-switcher'); i++) await new Promise((resolve) => setTimeout(resolve, 50))
+    const result = { switcher: document.querySelectorAll('.pane-switcher button').length, visible: document.querySelectorAll('.editor-group:not([hidden])').length }
+    area.style.width = ''
+    for (let i = 0; i < 40 && document.querySelector('.pane-switcher'); i++) await new Promise((resolve) => setTimeout(resolve, 50))
+    for (let i = 0; i < 6 && document.querySelectorAll('.editor-group').length > 1; i++) { document.querySelector('.group-actions button[aria-label^="Close pane"]')?.click(); await new Promise((resolve) => setTimeout(resolve, 80)) }
+    return { ...result, remaining: document.querySelectorAll('.editor-group').length }
+  })()`)
+  assert.deepEqual(narrowPanes, { switcher: 4, visible: 1, remaining: 1 }, 'A narrow window should show one pane at a time with a switcher, and panes should close back to one')
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) {
     const narrow = await evaluate(pageUrl, `(async () => { window.resizeTo(900, 760); for (let i = 0; i < 30 && innerWidth <= 1020 && !document.querySelector('.serenity-studio')?.classList.contains('left-collapsed'); i++) await new Promise((resolve) => setTimeout(resolve, 100)); return { width: innerWidth, main: document.querySelector('#workspace-main')?.getBoundingClientRect().width, right: Boolean(document.querySelector('.assistant-sidebar')), rail: document.querySelector('.serenity-studio')?.classList.contains('left-collapsed') } })()`) as { width: number; main: number; right: boolean; rail: boolean }
     if (narrow.width <= 1020) {

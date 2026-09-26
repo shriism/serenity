@@ -65,3 +65,9 @@ test('workbench YAML keybindings are validated by the main process', async () =>
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
+
+test('punctuation chords match the physical key whatever Shift types', () => {
+  assert.equal(eventKeybinding(key({ key: '|', code: 'Backslash', metaKey: true, shiftKey: true }), true), 'Mod+Shift+\\')
+  assert.equal(eventKeybinding(key({ key: '\\', code: 'Backslash', ctrlKey: true }), false), 'Mod+\\')
+  assert.equal(normalizeKeybinding('mod+shift+\\'), 'Mod+Shift+\\')
+})

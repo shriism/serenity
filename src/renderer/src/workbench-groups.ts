@@ -79,10 +79,21 @@ export function presentTab(group: EditorGroup, key: string, presentation: string
   return { ...group, presentations: presentation ? { ...others, [key]: presentation } : others }
 }
 
-export function nextGroupId(workbench: Workbench, from: string = workbench.focused): string | null {
+export function nextGroupId(workbench: Workbench, from: string = workbench.focused, step = 1): string | null {
   const ids = layoutGroupIds(workbench.root)
   if (ids.length < 2) return null
-  return ids[(ids.indexOf(from) + 1) % ids.length]
+  return ids[(ids.indexOf(from) + step + ids.length) % ids.length]
+}
+
+/** Moves a tab to another group, keeping how it was presented, and focuses that group. */
+export function moveTab(workbench: Workbench, from: string, key: string, to: string): Workbench {
+  const source = findGroup(workbench, from)
+  const tab = source?.tabs.find((item) => tabKey(item) === key)
+  if (!source || !tab || from === to || !findGroup(workbench, to)) return workbench
+  const presentation = source.presentations[key]
+  const moved = updateGroup(updateGroup(workbench, from, (group) => removeTab(group, key)), to,
+    (group) => presentTab(showTab(group, tab), key, presentation ?? group.presentations[key]))
+  return { ...moved, focused: to }
 }
 
 /**
@@ -90,7 +101,7 @@ export function nextGroupId(workbench: Workbench, from: string = workbench.focus
  * a second perspective on it; pass `duplicate: false` for an empty group to open something else in. Returns null at
  * the group limit.
  */
-export function splitWorkbench(workbench: Workbench, options: { from?: string; direction?: SplitDirection; duplicate?: boolean } = {}): Workbench | null {
+export function splitWorkbench(workbench: Workbench, options: { from?: string; direction?: SplitDirection; before?: boolean; duplicate?: boolean } = {}): Workbench | null {
   const from = findGroup(workbench, options.from ?? workbench.focused)
   if (!from || workbench.groups.length >= maxEditorGroups) return null
   const taken = new Set(workbench.groups.map((group) => group.id))
@@ -99,7 +110,7 @@ export function splitWorkbench(workbench: Workbench, options: { from?: string; d
   const id = `group-${index}`
   const shown = activeTabOf(from)
   const group = options.duplicate === false ? emptyGroup(id) : shown ? presentTab(showTab(emptyGroup(id), shown), tabKey(shown), from.presentations[tabKey(shown)]) : emptyGroup(id, from.view)
-  return { root: splitLayout(workbench.root, from.id, id, options.direction ?? 'row'), groups: [...workbench.groups, group], focused: id }
+  return { root: splitLayout(workbench.root, from.id, id, options.direction ?? 'row', options.before), groups: [...workbench.groups, group], focused: id }
 }
 
 /** Closes a group and its tabs. The last remaining group cannot be closed. */

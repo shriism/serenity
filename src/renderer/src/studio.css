@@ -77,7 +77,7 @@
 .serenity-studio .topbar-search, .serenity-studio .topbar-icon, .serenity-studio .topbar-more > summary { display: grid; place-items: center; width: 34px; min-width: 34px; height: 34px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--subtle); }
 .serenity-studio .topbar-search:hover, .serenity-studio .topbar-icon:hover, .serenity-studio .topbar-more > summary:hover { background: var(--surface-hover); color: var(--text); }
 .serenity-studio .topbar-more { order: 3; }
-.serenity-studio .workspace-tabs { min-height: 36px; padding-left: clamp(23px, 4vw, 57px); gap: 3px; border-color: transparent; background: transparent; }
+.serenity-studio .workspace-tabs { min-height: 36px; padding-left: clamp(12px, 4cqi, 57px); gap: 3px; border-color: transparent; background: transparent; }
 .serenity-studio .workspace-tab.active { border-radius: 7px; background: var(--surface-hover); }
 .serenity-studio .workspace-tab-label { font-size: 10px; }
 .serenity-studio .assistant-sidebar { width: auto; min-width: 0; border: 0; background: var(--studio-base); box-shadow: inset 1px 0 var(--studio-line); }
@@ -115,7 +115,7 @@
 .serenity-studio .thinking-mark i:nth-child(2) { animation-delay: 140ms; }
 .serenity-studio .thinking-mark i:nth-child(3) { animation-delay: 280ms; }
 .serenity-studio .assistant-sidebar .ai-context-strip { padding: 10px 22px; }
-.serenity-studio .page, .serenity-studio .home-page { padding: 40px clamp(31px, 6vw, 86px) 90px; }
+.serenity-studio .page, .serenity-studio .home-page { padding: 40px clamp(18px, 6cqi, 86px) 90px; }
 .serenity-studio .workspace-page { max-width: 1080px; }
 .workspace-page .page-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; max-width: 760px; margin-bottom: 62px; color: var(--subtle); font-size: 10px; }
 .workspace-page .page-toolbar > div { display: flex; gap: 8px; }
@@ -123,7 +123,7 @@
 .workspace-page .page-toolbar button:hover { background: var(--surface-hover); color: var(--text); }
 .workspace-page .page-toolbar .page-save { background: var(--accent-soft); color: var(--text); }
 .workspace-page .page-prose, .workspace-page .page-source { max-width: 760px; color: var(--text); }
-.workspace-page .page-prose h1 { margin: 0 0 22px; font-size: clamp(31px, 3vw, 43px); font-weight: 630; letter-spacing: -.055em; }
+.workspace-page .page-prose h1 { margin: 0 0 22px; font-size: clamp(25px, 4.5cqi, 43px); font-weight: 630; letter-spacing: -.055em; }
 .workspace-page .page-prose h2 { margin: 57px 0 15px; font-size: 14px; font-weight: 630; }
 .workspace-page .page-prose h3 { margin: 30px 0 12px; font-size: 12px; }
 .workspace-page .page-prose p { margin: 0 0 20px; color: var(--muted); font-size: 12px; line-height: 1.8; }
@@ -146,7 +146,7 @@
 .workspace-page .page-source small { color: var(--subtle); font-size: 10px; }
 .serenity-studio .home-page { max-width: 1080px; }
 .serenity-studio .page > .eyebrow { display: none; }
-.serenity-studio .page h1 { font-size: clamp(27px, 2.8vw, 34px); font-weight: 620; }
+.serenity-studio .page h1 { font-size: clamp(22px, 4cqi, 34px); font-weight: 620; }
 .serenity-studio .page > p { max-width: 660px; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .serenity-studio .module-page .calendar-layout, .serenity-studio .module-page .tasks-layout { grid-template-columns: minmax(0, 1fr); max-width: 760px; gap: 41px; }
 .serenity-studio .module-page .module-aside { border-left: 0; border-top: 1px solid var(--studio-line); padding: 32px 0 0; }
@@ -156,11 +156,11 @@
 .serenity-studio .review-card { border: 0; border-bottom: 1px solid var(--studio-line); border-radius: 0; background: transparent; box-shadow: none; padding: 22px 0; }
 .serenity-studio .content { display: block; overflow: auto; }
 .serenity-studio .knowledge-list-panel { display: none; }
-.serenity-studio .editor { padding: 63px clamp(31px, 6vw, 86px) 30px; }
+.serenity-studio .editor { padding: 63px clamp(18px, 6cqi, 86px) 30px; }
 .serenity-studio .editor, .serenity-studio .details { width: 100%; min-width: 0; overflow: visible; border: 0; background: transparent; }
-.serenity-studio .details { padding: 30px clamp(31px, 6vw, 86px) 90px; }
+.serenity-studio .details { padding: 30px clamp(18px, 6cqi, 86px) 90px; }
 .serenity-studio .editor form, .serenity-studio .knowledge-details { max-width: 690px; }
-.serenity-studio .title-input { font-size: clamp(34px, 3vw, 43px); }
+.serenity-studio .title-input { font-size: clamp(26px, 5cqi, 43px); }
 .serenity-studio .entity-type-input { width: fit-content; min-width: 110px; max-width: 100%; border: 0; border-radius: 5px; background: transparent; color: var(--subtle); padding: 4px 1px; margin: 7px 0 39px; }
 .serenity-studio .body-tabs { gap: 17px; margin-bottom: 23px; }
 .serenity-studio .body-tabs button { border: 0; border-radius: 0; background: transparent; color: var(--subtle); padding: 5px 0; }
@@ -194,25 +194,39 @@
   .serenity-studio .workspace-body, .serenity-studio .assistant-sidebar, .serenity-studio .message, .serenity-studio .command-palette, .serenity-studio .thinking-mark i { animation: none !important; }
 }
 
-/* Editor groups: each group is its own place with tabs and a view; views size to their group. */
-.serenity-studio .editor-groups { flex: 1; min-height: 0; display: flex; }
-.serenity-studio .editor-split { flex: 1; min-width: 0; min-height: 0; display: flex; }
-.serenity-studio .editor-split.column { flex-direction: column; }
-.serenity-studio .editor-group { position: relative; flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; container-type: inline-size; outline: none; }
-.serenity-studio .editor-split.row > * + * { border-left: 1px solid var(--border); }
-.serenity-studio .editor-split.column > * + * { border-top: 1px solid var(--border); }
+/* Panes: each pane is its own place with tabs and a view. Panes are positioned from the layout tree, so the tree can
+   change without remounting them; views size to their own pane. */
+.serenity-studio .editor-groups { position: relative; flex: 1; min-height: 0; }
+.serenity-studio .editor-group { position: absolute; inset: 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; container-type: inline-size; outline: none; }
+.serenity-studio .editor-group[hidden] { display: none; }
+.serenity-studio .editor-groups.split:not(.stacked) .editor-group { box-shadow: inset 0 0 0 .5px var(--border); }
 .serenity-studio .editor-groups.split .editor-group.focused::before { content: ''; position: absolute; inset: 0 0 auto; height: 2px; z-index: 2; background: color-mix(in srgb, var(--accent) 75%, transparent); pointer-events: none; }
+.serenity-studio .pane-divider { position: absolute; z-index: 3; touch-action: none; outline: none; }
+.serenity-studio .pane-divider.row { min-width: 9px; margin-left: -4px; cursor: col-resize; }
+.serenity-studio .pane-divider.column { min-height: 9px; margin-top: -4px; cursor: row-resize; }
+.serenity-studio .pane-divider::after { content: ''; position: absolute; background: transparent; transition: background 120ms; }
+.serenity-studio .pane-divider.row::after { top: 0; bottom: 0; left: 4px; width: 1px; }
+.serenity-studio .pane-divider.column::after { left: 0; right: 0; top: 4px; height: 1px; }
+.serenity-studio .pane-divider:hover::after, .serenity-studio .pane-divider:focus-visible::after { background: var(--accent); }
+.serenity-studio .pane-divider.row:hover::after, .serenity-studio .pane-divider.row:focus-visible::after { left: 3px; width: 3px; }
+.serenity-studio .pane-divider.column:hover::after, .serenity-studio .pane-divider.column:focus-visible::after { top: 3px; height: 3px; }
+.serenity-studio .pane-drop-overlay { position: absolute; z-index: 4; pointer-events: none; border-radius: 6px; background: color-mix(in srgb, var(--accent) 18%, transparent); outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: -2px; }
+.serenity-studio .pane-drop-overlay.zone-center { inset: 4px; }
+.serenity-studio .pane-drop-overlay.zone-left { inset: 4px 50% 4px 4px; }
+.serenity-studio .pane-drop-overlay.zone-right { inset: 4px 4px 4px 50%; }
+.serenity-studio .pane-drop-overlay.zone-top { inset: 4px 4px 50% 4px; }
+.serenity-studio .pane-drop-overlay.zone-bottom { inset: 50% 4px 4px 4px; }
+.serenity-studio .pane-switcher { flex: none; display: flex; gap: 4px; overflow-x: auto; padding: 6px 12px; border-bottom: 1px solid var(--border); scrollbar-width: thin; }
+.serenity-studio .pane-switcher button { flex: none; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: 0; border-radius: 7px; padding: 5px 10px; background: transparent; color: var(--muted); font-size: 11px; }
+.serenity-studio .pane-switcher button.active { background: var(--surface-hover); color: var(--text); }
+.serenity-studio .workspace-tab[draggable="true"] { cursor: grab; }
 .serenity-studio .group-bar { flex: none; display: flex; align-items: center; min-height: 36px; }
 .serenity-studio .group-bar .workspace-tabs { flex: 1; min-width: 0; }
-.serenity-studio .group-actions { display: flex; align-items: center; gap: 6px; margin-left: auto; padding: 0 10px 0 14px; }
-.serenity-studio .group-title { color: var(--subtle); font-size: 11px; white-space: nowrap; }
+.serenity-studio .group-actions { display: flex; align-items: center; gap: 2px; margin-left: auto; padding: 0 8px 0 12px; }
+.serenity-studio .group-title { margin-right: 6px; color: var(--subtle); font-size: 11px; white-space: nowrap; }
 .serenity-studio .group-actions button { display: grid; place-items: center; width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: var(--subtle); }
 .serenity-studio .group-actions button:hover { background: var(--surface-hover); color: var(--text); }
 .serenity-studio .editor-groups.split .editor-group:not(.focused) .workspace-tab.active { background: transparent; }
-@media (max-width: 900px) {
-  .serenity-studio .editor-split.row { flex-direction: column; }
-  .serenity-studio .editor-split.row > * + * { border-left: 0; border-top: 1px solid var(--border); }
-}
 /* Narrow groups: tabs keep a readable width and scroll; toolbar actions stay on one line while the path wraps. */
 .serenity-studio .workspace-tab { flex: none; }
 .workspace-page .page-toolbar > span { min-width: 0; overflow-wrap: anywhere; }
@@ -222,7 +236,7 @@
 /* Resource presentations: one resource, several views, chosen per tab. */
 .serenity-studio .presented-resource { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .serenity-studio .presented-resource > :not(.presentation-switcher) { flex: 1; min-height: 0; overflow: auto; }
-.serenity-studio .presentation-switcher { flex: none; display: flex; gap: 2px; margin: 14px clamp(31px, 6vw, 86px) 0; padding: 3px; width: fit-content; border-radius: 9px; background: var(--surface-hover); }
+.serenity-studio .presentation-switcher { flex: none; display: flex; gap: 2px; margin: 14px clamp(18px, 6cqi, 86px) 0; padding: 3px; width: fit-content; max-width: calc(100% - 36px); overflow-x: auto; border-radius: 9px; background: var(--surface-hover); }
 .serenity-studio .presentation-switcher button { border: 0; border-radius: 7px; padding: 5px 12px; background: transparent; color: var(--muted); font-size: 11px; }
 .serenity-studio .presentation-switcher button.active { background: var(--studio-base, var(--surface)); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / 18%); }
 .serenity-studio .entity-timeline h2, .serenity-studio .entity-connections h2 { margin: 34px 0 12px; font-size: 12px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--subtle); }

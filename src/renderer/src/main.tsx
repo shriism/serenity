@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ArrowRight, Columns2, FileText, FolderOpen, Maximize2, Minimize2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, RotateCw, Search, Sparkles, X } from 'lucide-react'
+import { ArrowRight, Columns2, Rows2, FileText, FolderOpen, Maximize2, Minimize2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, RotateCw, Search, Sparkles, X } from 'lucide-react'
 import type { Autonomy, Conversation, Provider, ReadScope, SearchResult, WorkflowPermissions, WorkspacePage, WorkspaceSnapshot } from '../../shared/types'
 import { ConversationPanel } from './conversation-panel'
 import { ConversationList } from './conversation-list'
@@ -13,8 +13,9 @@ import type { View } from './views'
 import { WorkspaceTabs } from './workspace-tabs'
 import { routeResource, tabKey, tabPath, tabTitle, type TabRef } from './resource-routing'
 import { presentationFor } from './presentations'
-import { activeTabOf, closeGroup, emptyGroup, enterView, presentTab, findGroup, focusedGroup, initialWorkbench, nextGroupId, orderedGroups, pruneWorkbench, removeTab, restoreWorkbench, showTab, showView, shownUri, splitWorkbench, updateGroup, workbenchSession, type EditorGroup, type Workbench } from './workbench-groups'
-import { layoutGroupIds, maxEditorGroups, type LayoutNode } from '../../shared/layout'
+import { activeTabOf, closeGroup, emptyGroup, enterView, moveTab, presentTab, findGroup, focusedGroup, initialWorkbench, nextGroupId, orderedGroups, pruneWorkbench, removeTab, restoreWorkbench, showTab, showView, shownUri, splitWorkbench, updateGroup, workbenchSession, type EditorGroup, type Workbench } from './workbench-groups'
+import { layoutGeometry, maxEditorGroups, resizeSplit, type SplitDirection } from '../../shared/layout'
+import { PaneDivider, dropZoneAt, percentRect, tabDragType, type DropZone } from './pane-layout'
 import { knownCommandIds, workspaceCommands, type CommandContribution, type CommandHost } from './commands'
 import { eventKeybinding, formatKeybinding, resolveKeymap, type KeymapResult } from '../../shared/keybindings'
 import { parseResourceUri, resourceUri } from '../../shared/resources'
@@ -65,6 +66,9 @@ function App() {
   const searchSequence = useRef(0)
   const commandContext = useRef<{ host: CommandHost; commands: CommandContribution[]; keymap: KeymapResult; escape(): void } | null>(null)
   const dirtyHandlers = useRef(new Map<string, (dirty: boolean) => void>())
+  const paneArea = useRef<HTMLDivElement>(null)
+  const [paneAreaSize, setPaneAreaSize] = useState({ width: 0, height: 0 })
+  const [dropTarget, setDropTarget] = useState<{ group: string; zone: DropZone } | null>(null)
   const focused = focusedGroup(workbench)
   const view = focused.view
   const activeTabRef = activeTabOf(focused)
@@ -154,6 +158,14 @@ function App() {
     window.addEventListener('keydown', onShortcut)
     return () => window.removeEventListener('keydown', onShortcut)
   }, [])
+
+  useEffect(() => {
+    const element = paneArea.current
+    if (!element) return
+    const observer = new ResizeObserver(([entry]) => setPaneAreaSize({ width: entry.contentRect.width, height: entry.contentRect.height }))
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [workspace !== null])
 
   async function chooseWorkspace() {
     try {
@@ -413,9 +425,13 @@ function App() {
     setWorkbench((current) => updateGroup(current, groupId, (group) => presentTab(group, tabKey(tab), presentation === fallback ? undefined : presentation)))
   }
 
-  function splitEditor(): void {
-    const next = splitWorkbench(workbench)
+  function splitPane(direction: SplitDirection = 'row', groupId: string = workbench.focused): void {
+    const next = splitWorkbench(workbench, { from: groupId, direction })
     if (next) setWorkbench(next)
+  }
+
+  function resizePanes(path: number[], sizes: number[]): void {
+    setWorkbench((current) => ({ ...current, root: resizeSplit(current.root, path, sizes) }))
   }
 
   function closeEditorGroup(groupId: string = workbench.focused): void {
@@ -424,8 +440,8 @@ function App() {
     setDirtyGroups(({ [groupId]: _closed, ...rest }) => rest)
   }
 
-  function focusNextGroup(): void {
-    const next = nextGroupId(workbench)
+  function focusNextGroup(step = 1): void {
+    const next = nextGroupId(workbench, workbench.focused, step)
     if (!next) return
     focusGroup(next)
     document.querySelector<HTMLElement>(`[data-group="${next}"]`)?.focus()
@@ -436,7 +452,21 @@ function App() {
     if (!tab || !confirmLeave(focused.id)) return
     const target = sideGroup(focused.id)
     if (target === focused.id) return
-    setWorkbench((current) => ({ ...updateGroup(updateGroup(current, focused.id, (group) => removeTab(group, tabKey(tab))), target, (group) => showTab(group, tab)), focused: target }))
+    setWorkbench((current) => moveTab(current, focused.id, tabKey(tab), target))
+  }
+
+  /** A tab dropped on a pane: into it at the center, or into a new pane split off toward the nearest edge. */
+  function dropTab(from: string, key: string, to: string, zone: DropZone): void {
+    const source = findGroup(workbench, from)
+    if (!source?.tabs.some((tab) => tabKey(tab) === key) || (zone === 'center' && from === to)) return
+    // The moved tab's editor opens again in its new pane, so its unsaved edits need the usual confirmation.
+    if (source.activeTab === key && !confirmLeave(from)) return
+    if (zone === 'center') { setWorkbench((current) => moveTab(current, from, key, to)); return }
+    const direction: SplitDirection = zone === 'left' || zone === 'right' ? 'row' : 'column'
+    setWorkbench((current) => {
+      const split = splitWorkbench(current, { from: to, direction, before: zone === 'left' || zone === 'top', duplicate: false })
+      return split ? moveTab(split, from, key, split.focused) : current
+    })
   }
 
   async function sendMessage(event: FormEvent) {
@@ -451,7 +481,7 @@ function App() {
         return ref ? `${ref.kind}:${ref.id}` : undefined
       }
       const next = await window.serenity.sendMessage({ conversationId: conversationId ?? undefined, text: message, provider, autonomy, retained, permissions, readScope,
-        activeRef: shownRef(focused), visibleRefs: groups.filter((group) => group.id !== focused.id).flatMap((group) => shownRef(group) ?? []),
+        activeRef: shownRef(focused), visibleRefs: stacked ? [] : groups.filter((group) => group.id !== focused.id).flatMap((group) => shownRef(group) ?? []),
         openRefs: [...new Set(groups.flatMap((group) => group.tabs.map(tabKey)))] })
       if (!conversationId) {
         const created = next.conversations.find((item) => !workspace.conversations.some((old) => old.id === item.id))
@@ -514,9 +544,9 @@ function App() {
     toggleSearch: () => { if (paletteOpen) closePalette(); else setPaletteOpen(true) },
     toggleNavigation: () => setLeftOpen((open) => !open),
     toggleAssistant: () => { setRightOpen((open) => !open); setAIExpanded(false) },
-    splitEditor,
+    splitEditor: (direction) => splitPane(direction),
     closeEditorGroup: () => closeEditorGroup(),
-    focusNextGroup,
+    focusNextGroup: (step) => focusNextGroup(step),
     moveTabToOtherGroup,
     refresh: () => { void refresh() }
   }
@@ -539,6 +569,11 @@ function App() {
   const title: Record<View, string> = { home: 'Home', knowledge: 'Knowledge', review: 'Review', documents: 'Documents', calendar: 'Calendar', tasks: 'Tasks', activity: 'Activity', settings: 'Settings' }
   const multipleGroups = workbench.groups.length > 1
   const canSplit = workbench.groups.length < maxEditorGroups
+  const geometry = useMemo(() => layoutGeometry(workbench.root), [workbench.root])
+  // When any pane would be too small to use, show one pane at a time with a switcher. Hidden panes stay mounted so
+  // their editors keep unsaved work.
+  const stacked = multipleGroups && paneAreaSize.width > 0 && [...geometry.groups.values()].some((rect) =>
+    rect.width * paneAreaSize.width < 220 || rect.height * paneAreaSize.height < 160)
   const pageFor = (group: EditorGroup): WorkspacePage | undefined => {
     const tab = activeTabOf(group)
     return workspace && group.view === 'home' ? workspace.pages.find((item) => item.id === (tab?.kind === 'page' ? tab.id : workspace.workbench.homePage)) : undefined
@@ -574,32 +609,67 @@ function App() {
     }
   }
 
+  function tabDrop(event: DragEvent<HTMLElement>): { group: string; key: string } | null {
+    try {
+      const data = JSON.parse(event.dataTransfer.getData(tabDragType)) as unknown
+      return data && typeof data === 'object' && typeof (data as { group?: unknown }).group === 'string' && typeof (data as { key?: unknown }).key === 'string'
+        ? data as { group: string; key: string } : null
+    } catch { return null }
+  }
+
   function renderGroup(group: EditorGroup, snapshot: WorkspaceSnapshot, position: number): ReactNode {
     const isFocused = group.id === workbench.focused
-    return <section key={group.id} data-group={group.id} tabIndex={-1} className={`editor-group ${isFocused ? 'focused' : ''}`}
-      aria-label={multipleGroups ? `${groupTitle(group)} · editor group ${position}` : undefined} aria-current={multipleGroups && isFocused ? 'true' : undefined}
-      onMouseDownCapture={() => focusGroup(group.id)} onFocusCapture={() => focusGroup(group.id)}>
+    const rect = geometry.groups.get(group.id)
+    const hidden = stacked && !isFocused
+    const zone = dropTarget?.group === group.id ? dropTarget.zone : null
+    return <section key={group.id} data-group={group.id} tabIndex={-1} hidden={hidden}
+      className={`editor-group ${isFocused ? 'focused' : ''}`} style={stacked || !rect ? undefined : percentRect(rect)}
+      aria-label={multipleGroups ? `${groupTitle(group)} · pane ${position}` : undefined} aria-current={multipleGroups && isFocused ? 'true' : undefined}
+      onMouseDownCapture={() => focusGroup(group.id)} onFocusCapture={() => focusGroup(group.id)}
+      onDragOver={(event) => {
+        if (!event.dataTransfer.types.includes(tabDragType)) return
+        event.preventDefault()
+        const next = dropZoneAt(event.currentTarget.getBoundingClientRect(), event.clientX, event.clientY)
+        if (dropTarget?.group !== group.id || dropTarget.zone !== next) setDropTarget({ group: group.id, zone: next })
+      }}
+      onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDropTarget(null) }}
+      onDrop={(event) => {
+        const dragged = tabDrop(event)
+        setDropTarget(null)
+        if (!dragged) return
+        event.preventDefault()
+        dropTab(dragged.group, dragged.key, group.id, dropZoneAt(event.currentTarget.getBoundingClientRect(), event.clientX, event.clientY))
+      }}>
       {(group.tabs.length > 0 || multipleGroups) && <div className="group-bar">
-        <WorkspaceTabs tabs={group.tabs.map((tab) => ({ key: tabKey(tab), kind: tab.kind, title: tabTitle(snapshot, tab) }))} active={group.activeTab}
+        <WorkspaceTabs group={group.id} tabs={group.tabs.map((tab) => ({ key: tabKey(tab), kind: tab.kind, title: tabTitle(snapshot, tab) }))} active={group.activeTab}
           onSelect={(key) => activateTab(key, group.id)} onClose={(key) => closeTab(key, group.id)}/>
-        {multipleGroups && <div className="group-actions">
+        <div className="group-actions">
           {!group.tabs.length && <span className="group-title">{groupTitle(group)}</span>}
-          <button onClick={() => closeEditorGroup(group.id)} aria-label={`Close editor group ${position}`} title="Close editor group"><X size={14}/></button>
-        </div>}
+          {canSplit && <button onClick={() => splitPane('row', group.id)} aria-label={`Split pane ${position} right`} title={withShortcut('Split right', 'layout.split')}><Columns2 size={14}/></button>}
+          {canSplit && <button onClick={() => splitPane('column', group.id)} aria-label={`Split pane ${position} down`} title={withShortcut('Split down', 'layout.split-down')}><Rows2 size={14}/></button>}
+          {multipleGroups && <button onClick={() => closeEditorGroup(group.id)} aria-label={`Close pane ${position}`} title="Close pane (files stay in your workspace)"><X size={14}/></button>}
+        </div>
       </div>}
       {group.view === 'review' && snapshot.proposals.some((item) => item.status === 'pending' && item.reviewReason) && <div className="notice warning" role="status">Some proposals involve similar entities. Verify the identity before accepting them.</div>}
       <div className="workspace-body" key={`${group.view}:${group.activeTab ?? ''}:${group.creatingEntity}`}>
         {builtinViews.render(group.view, viewContext(group, snapshot)) ?? <section className="page"><h1>View unavailable</h1><p>This module is not available in this workspace.</p></section>}
       </div>
+      {zone && <div className={`pane-drop-overlay zone-${zone}`} aria-hidden="true"/>}
     </section>
   }
 
-  function renderLayout(node: LayoutNode, snapshot: WorkspaceSnapshot): ReactNode {
-    if ('group' in node) {
-      const group = findGroup(workbench, node.group)
-      return group ? renderGroup(group, snapshot, layoutGroupIds(workbench.root).indexOf(group.id) + 1) : null
-    }
-    return <div className={`editor-split ${node.split}`} key={layoutGroupIds(node).join('+')}>{node.children.map((child) => renderLayout(child, snapshot))}</div>
+  function renderPanes(snapshot: WorkspaceSnapshot): ReactNode {
+    const ordered = orderedGroups(workbench)
+    return <>
+      {stacked && <nav className="pane-switcher" aria-label="Panes">{ordered.map((group, index) =>
+        <button key={group.id} className={group.id === workbench.focused ? 'active' : ''} aria-current={group.id === workbench.focused ? 'true' : undefined}
+          onClick={() => focusGroup(group.id)}>{index + 1}. {groupTitle(group)}</button>)}</nav>}
+      <div className={`editor-groups ${multipleGroups ? 'split' : ''} ${stacked ? 'stacked' : ''}`} ref={paneArea}>
+        {ordered.map((group, index) => renderGroup(group, snapshot, index + 1))}
+        {!stacked && geometry.dividers.map((divider) => <PaneDivider key={`${divider.path.join('.')}:${divider.index}`} divider={divider} area={paneArea}
+          onResize={resizePanes} onReset={(path) => resizePanes(path, divider.sizes.map(() => 1))}/>)}
+      </div>
+    </>
   }
 
   return <div className={`app serenity-studio ${leftOpen ? 'dock-open' : 'left-collapsed'} ${rightOpen ? '' : 'right-collapsed'} ${aiExpanded && rightOpen ? 'ai-expanded' : ''}`}>
@@ -630,7 +700,7 @@ function App() {
         <div className="breadcrumbs"><strong>{groupTitle(focused)}</strong></div>
         {workspace && <div className="topbar-actions">
           <button className="topbar-search" onClick={() => runCommand('workspace.search')} title={withShortcut('Search workspace', 'workspace.search')} aria-label="Search workspace"><Search size={18}/></button>
-          {canSplit && <button className="topbar-icon" onClick={() => runCommand('layout.split')} title={withShortcut('Split editor', 'layout.split')} aria-label="Split editor" aria-keyshortcuts={ariaShortcut('layout.split')}><Columns2 size={18}/></button>}
+          {canSplit && !multipleGroups && <button className="topbar-icon" onClick={() => runCommand('layout.split')} title={withShortcut('Split right', 'layout.split')} aria-label="Split right" aria-keyshortcuts={ariaShortcut('layout.split')}><Columns2 size={18}/></button>}
           {!rightOpen && <button className="topbar-icon show-ai" onClick={() => setRightOpen(true)} title={withShortcut('Show AI assistant', 'assistant.toggle')} aria-label="Show AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')}><PanelRightOpen size={18}/></button>}
           <details className="topbar-more"><summary aria-label="Workspace actions" title="Workspace actions"><MoreHorizontal size={19}/></summary><div className="topbar-menu"><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); runCommand('entity.create') }}><Plus size={15}/> New entity</button><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); runCommand('page.create') }}><FileText size={15}/> New page</button><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); runCommand('workspace.refresh') }}><RotateCw size={15}/> Refresh files</button></div></details>
         </div>}
@@ -639,7 +709,7 @@ function App() {
       {workspace?.errors.map((item) => <div key={item} className="notice warning" role="alert">Could not read {item}</div>)}
       {keymap.problems.map((item) => <div key={item} className="notice warning" role="alert">.serenity/workbench.yaml: {item}</div>)}
       {!workspace ? <div className="workspace-body"><section className="welcome-screen"><div className="welcome-visual"><img src={serenityIcon} alt=""/><span className="visual-orbit orbit-one"/><span className="visual-orbit orbit-two"/><span className="visual-dot dot-one"/><span className="visual-dot dot-two"/><span className="visual-dot dot-three"/></div><div className="welcome-copy"><span className="eyebrow">A SPACE FOR EVERYTHING THAT MATTERS</span><h1>Your world,<br/><em>more connected.</em></h1><p>A private workspace for your knowledge, relationships, plans, and the ideas in between. Choose a folder on your device to begin.</p><button className="primary welcome-action" onClick={() => void chooseWorkspace()}><FolderOpen size={18}/> Choose a workspace <ArrowRight size={17}/></button><small>Your files stay in a folder you control.</small></div></section></div>
-        : <div className={`editor-groups ${multipleGroups ? 'split' : ''}`}>{renderLayout(workbench.root, workspace)}</div>}
+        : renderPanes(workspace)}
     </main>
     {workspace && (rightOpen ? <aside className="assistant-sidebar" aria-label="AI assistant">
       <div className="assistant-toolbar"><div><Sparkles size={18}/><span>Assistant</span><small>WITH YOUR WORKSPACE</small></div><div className="assistant-toolbar-actions">

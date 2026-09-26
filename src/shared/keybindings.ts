@@ -23,13 +23,17 @@ export function normalizeKeybinding(value: string): string | null {
   return [...modifierOrder.filter((item) => modifiers.has(item)), normalizedKey].join('+')
 }
 
+// Shift changes what punctuation keys type (\ becomes |), so chords name the physical key's unshifted character.
+const punctuation: Record<string, string> = { Backslash: '\\', Slash: '/', Period: '.', Comma: ',', Semicolon: ';', Quote: "'",
+  BracketLeft: '[', BracketRight: ']', Minus: '-', Equal: '=', Backquote: '`' }
+
 export interface KeyEventLike { key: string; code: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean; shiftKey: boolean }
 
 export function eventKeybinding(event: KeyEventLike, mac: boolean): string | null {
   if (['Meta', 'Control', 'Alt', 'Shift', 'Dead', 'Unidentified'].includes(event.key)) return null
   // Physical letter and digit codes keep Shift- and Option-modified chords stable across layouts' shifted characters.
-  const key = /^Key[A-Z]$/.test(event.code) ? event.code.slice(3) : /^Digit\d$/.test(event.code) ? event.code.slice(5) :
-    event.key === ' ' ? 'Space' : [...event.key].length === 1 ? event.key.toUpperCase() : event.key
+  const key = /^Key[A-Z]$/.test(event.code) ? event.code.slice(3) : /^Digit\d$/.test(event.code) ? event.code.slice(5) : punctuation[event.code] ??
+    (event.key === ' ' ? 'Space' : [...event.key].length === 1 ? event.key.toUpperCase() : event.key)
   const modifiers = [(mac ? event.metaKey : event.ctrlKey) && 'Mod', mac && event.ctrlKey && 'Ctrl', event.altKey && 'Alt', event.shiftKey && 'Shift']
   return [...modifiers.filter(Boolean), key].join('+')
 }

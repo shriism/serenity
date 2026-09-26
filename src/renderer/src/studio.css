@@ -326,3 +326,13 @@
 .wikilink-suggestions li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 9px; border-radius: 6px; cursor: pointer; font-size: 12px; }
 .wikilink-suggestions li small { color: var(--subtle); }
 .wikilink-suggestions li.active, .wikilink-suggestions li:hover { background: var(--surface-hover); }
+
+/* Knowledge library filter. */
+.serenity-studio .library-filter { display: grid; gap: 10px; margin: 6px 0 18px; }
+.serenity-studio .library-search { display: flex; align-items: center; gap: 8px; max-width: 420px; padding: 0 11px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--subtle); }
+.serenity-studio .library-search input { flex: 1; min-width: 0; border: 0; padding: 9px 0; background: transparent; color: var(--text); font-size: 12px; outline: none; }
+.serenity-studio .library-search:focus-within { border-color: var(--accent); }
+.serenity-studio .library-types { display: flex; flex-wrap: wrap; gap: 6px; }
+.serenity-studio .library-types button { border: 1px solid var(--border); border-radius: 999px; padding: 4px 11px; background: transparent; color: var(--muted); font-size: 11px; }
+.serenity-studio .library-types button small { margin-left: 3px; color: var(--subtle); }
+.serenity-studio .library-types button.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text); }

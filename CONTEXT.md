@@ -122,6 +122,7 @@ Before the workspace-page and contribution work, a screen such as Home was prima
 - Search locally, run on-demand semantic search, and optionally generate/search a rebuildable topic index.
 - Edit `pages/Home.md` and create more workspace pages, embed bounded live queries and resource/command links, configure Home/navigation in workspace YAML, and restore session state from that workspace.
 - Split the center into any arrangement of resizable panes, drag tabs between them, open resources to the side, and restore that layout; view an entity as its profile, timeline of recorded/corrected knowledge, or connections; review AI suggestions grouped by source and beside the document they came from; rebind command shortcuts per workspace.
+- Link pages, entities, and documents with Obsidian-style `[[wikilinks]]` (with `[[` suggestions, backlinks in Connections, and link updates on rename); see what the workspace learned from each document; get answers that cite the records they used, with unverified citations flagged; review possible duplicate entities side by side; filter a large Knowledge library by name and type.
 - Run typecheck, unit tests, Electron smoke tests, and packaged smoke tests in the cross-platform CI workflow. Previous packaged macOS runs also exercised live Copilot and Codex with configured accounts; CI does not run live provider calls.
 
 This is an **implemented desktop foundation**, not a finished general workbench. The earlier rough estimate was **~35% of the full long-term vision**, with architecture foundations ~70%, today's usable product ~45%, and the specifically “neo-Emacs” interaction model ~20%. These are subjective planning indicators, **not** a computed completion metric or a promise of release timing. A narrower measure of the agreed initial desktop scope would be substantially higher; the 35% includes aspirational composition and extensibility.
@@ -141,14 +142,16 @@ This is an **implemented desktop foundation**, not a finished general workbench.
 
 ### 3. Deepen the actual personal-knowledge experience
 
-- Improve linked/relationship and temporal exploration, source-aware answers, entity-resolution review, and workflows that turn real documents (for example, a syllabus) into inspectable connected proposals. Do not collapse conflicting evidence into an unsourced single fact.
-- Make large/heterogeneous workspaces easier to navigate and understand; strengthen import and retrieval ergonomics, provenance presentation, page authoring, and search relevance with real user workflows.
+- Done in the September 2026 pass: entity timelines and connections, citations checked against sent context, duplicate-identity review with evidence, review beside the source document, document provenance, wikilinks and backlinks, search ranking, and large-workspace performance (about 140 ms snapshots and 11 ms duplicate detection for 2,000 entities and 8,000 claims).
+- Remaining: a whole-workspace graph, temporal views beyond a single entity, page and task presentations, richer retrieval ergonomics, and entity-resolution decisions recorded when the person judges two entities distinct (see decisions below).
 - Continue iteration on accessibility, focus/keyboard behavior, responsive window sizes, empty/error states, and the quiet native-workbench UI based on actual use.
 
 ### 4. Product hardening and later platforms
 
 - Exercise migrations, recovery, performance, packaging and real-provider behavior against larger and older workspaces. Keep the data format readable, recoverable and reversible when settings or indexes are damaged.
 - Decide if and when to support external integrations/actions, cloud/device sync, local models, mobile access, or simultaneous workspaces. These are **future goals**, not existing features. External calendar sync is not the same as Serenity's internal Calendar.
+
+Decisions waiting for the owner (September 2026): whether to add a workspace record type for "these two entities are not the same" (so dismissed duplicate suggestions stay dismissed; today only an undone merge counts); whether drag-and-drop import may pass file paths from the renderer to the main process (a boundary the architecture currently avoids); and whether to run a live Copilot/Codex smoke turn to confirm providers return citations in practice.
 
 There is no final approved specification yet for general panes, installable plugins, external actions, or a mobile/sync architecture. Before choosing an irreversible knowledge representation, ontology, memory rule, autonomy boundary, or extension trust model, explain the problem, options, tradeoffs and recommendation to the human and let them decide. Prefer incremental improvements with tests for storage, scope and restoration invariants rather than declaring the whole architecture complete at once.
 

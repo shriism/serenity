@@ -551,6 +551,7 @@ export class Workspace {
         throw new Error('This entity changed on disk. Refresh before saving to avoid overwriting it.')
       }
       if (!previous && input.revision) throw new Error('This entity was removed on disk. Refresh before saving.')
+      if (!previous && input.id) throw new Error('Create a new entity without an ID. Refresh before saving this entity.')
       if (typeof input.body !== 'string') throw new Error('Body must be text')
       const metadata = previous ? updateYaml(frontmatter.exec(previous)?.[1] ?? '',
         { id: entityId, title, type, source: input.source, origin: input.origin ?? 'human' }) :
@@ -761,27 +762,29 @@ export class Workspace {
     const source = id(sourceId)
     const target = id(targetId)
     if (source === target) throw new Error('Choose two different entities')
-    const snapshot = await this.snapshot()
-    const original = snapshot.entities.find((entity) => entity.id === source)
-    if (!original || !snapshot.entities.some((entity) => entity.id === target)) throw new Error('Both entities must be active before merging')
-    const proposedMerges = [...snapshot.merges, { id: source, target }]
-    if (snapshot.identityDecisions.some((decision) => !decision.undoneAt &&
-      new Set(distinctRepresentatives(decision, proposedMerges)).size === 1)) {
-      throw new Error('These entities were marked distinct. Undo that decision before merging them.')
-    }
     const from = join(this.directories[0], `${source}.md`)
-    const archived = join(this.path, 'archive', 'entities', `${source}.md`)
-    const record: MergeRecord = { id: source, target, title: original.title, recordedAt: new Date().toISOString() }
-    const history = join(this.path, 'archive', 'merges', `${source}.yaml`)
-    for (const path of [archived, history]) {
-      try { await lstat(path); throw new Error(`A prior merge file already exists: ${basename(path)}`) }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-    }
-    await rename(from, archived)
-    try { await writeFile(history, YAML.stringify(record), { flag: 'wx' }) }
-    catch (error) { await rename(archived, from); throw error }
-    this.markDirty()
-    return this.snapshot()
+    return this.withFileMutation(from, async () => {
+      const snapshot = await this.snapshot()
+      const original = snapshot.entities.find((entity) => entity.id === source)
+      if (!original || !snapshot.entities.some((entity) => entity.id === target)) throw new Error('Both entities must be active before merging')
+      const proposedMerges = [...snapshot.merges, { id: source, target }]
+      if (snapshot.identityDecisions.some((decision) => !decision.undoneAt &&
+        new Set(distinctRepresentatives(decision, proposedMerges)).size === 1)) {
+        throw new Error('These entities were marked distinct. Undo that decision before merging them.')
+      }
+      const archived = join(this.path, 'archive', 'entities', `${source}.md`)
+      const record: MergeRecord = { id: source, target, title: original.title, recordedAt: new Date().toISOString() }
+      const history = join(this.path, 'archive', 'merges', `${source}.yaml`)
+      for (const path of [archived, history]) {
+        try { await lstat(path); throw new Error(`A prior merge file already exists: ${basename(path)}`) }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+      }
+      await rename(from, archived)
+      try { await writeFile(history, YAML.stringify(record), { flag: 'wx' }) }
+      catch (error) { await rename(archived, from); throw error }
+      this.markDirty()
+      return this.snapshot()
+    })
   }
 
   async unmergeEntities(sourceId: string, reason: string): Promise<WorkspaceSnapshot> {
@@ -790,30 +793,32 @@ export class Workspace {
 
   private async unmergeEntitiesNow(sourceId: string, reason: string): Promise<WorkspaceSnapshot> {
     const source = id(sourceId)
-    if (!(await this.snapshot()).merges.some((item) => item.id === source)) throw new Error('This entity is not currently merged')
-    const archived = join(this.path, 'archive', 'entities', `${source}.md`)
     const active = join(this.directories[0], `${source}.md`)
-    const recordPath = join(this.path, 'archive', 'merges', `${source}.yaml`)
-    const previous = await this.readOwnedText(recordPath)
-    if (parseEntity(await this.readOwnedText(archived)).id !== source) throw new Error('Archived entity ID does not match the merge')
-    try { await lstat(active); throw new Error('An active entity already uses this ID') }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-    const historyDirectory = join(this.path, 'archive', 'merges', 'history', source)
-    await mkdir(historyDirectory, { recursive: true })
-    const history = join(historyDirectory, `${randomUUID()}.yaml`)
-    const updated = updateYaml(previous, { undoneAt: new Date().toISOString(), undoReason: requiredText(reason, 'Undo reason') })
-    await rename(archived, active)
-    try {
-      await atomicWrite(recordPath, updated)
-      await rename(recordPath, history)
-    } catch (error) {
-      await rename(history, recordPath).catch(() => undefined)
-      await atomicWrite(recordPath, previous).catch(() => undefined)
-      await rename(active, archived).catch(() => undefined)
-      throw error
-    }
-    this.markDirty()
-    return this.snapshot()
+    return this.withFileMutation(active, async () => {
+      if (!(await this.snapshot()).merges.some((item) => item.id === source)) throw new Error('This entity is not currently merged')
+      const archived = join(this.path, 'archive', 'entities', `${source}.md`)
+      const recordPath = join(this.path, 'archive', 'merges', `${source}.yaml`)
+      const previous = await this.readOwnedText(recordPath)
+      if (parseEntity(await this.readOwnedText(archived)).id !== source) throw new Error('Archived entity ID does not match the merge')
+      try { await lstat(active); throw new Error('An active entity already uses this ID') }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+      const historyDirectory = join(this.path, 'archive', 'merges', 'history', source)
+      await mkdir(historyDirectory, { recursive: true })
+      const history = join(historyDirectory, `${randomUUID()}.yaml`)
+      const updated = updateYaml(previous, { undoneAt: new Date().toISOString(), undoReason: requiredText(reason, 'Undo reason') })
+      await rename(archived, active)
+      try {
+        await atomicWrite(recordPath, updated)
+        await rename(recordPath, history)
+      } catch (error) {
+        await rename(history, recordPath).catch(() => undefined)
+        await atomicWrite(recordPath, previous).catch(() => undefined)
+        await rename(active, archived).catch(() => undefined)
+        throw error
+      }
+      this.markDirty()
+      return this.snapshot()
+    })
   }
 
   async markDistinctEntities(leftId: string, rightId: string): Promise<WorkspaceSnapshot> {

@@ -150,7 +150,7 @@ This is an **implemented desktop foundation**, not a finished general workbench.
 ### 3. Deepen the actual personal-knowledge experience
 
 - Done in the September 2026 pass: entity timelines and connections, citations checked against sent context, duplicate-identity review with evidence, review beside the source document, document provenance, wikilinks and backlinks, search ranking, and large-workspace performance (about 140 ms snapshots and 11 ms duplicate detection for 2,000 entities and 8,000 claims).
-- Done: explicit, reversible distinct-identity decisions in workspace YAML, with duplicate suppression, a merge guard, review UI, and read-scope-aware AI context. Concurrent identity writes are serialized within one running workspace so simultaneous decisions and merges cannot contradict one another.
+- Done: explicit, reversible distinct-identity decisions in workspace YAML, with duplicate suppression, a merge guard, review UI, and read-scope-aware AI context. Concurrent identity writes are serialized within one running workspace so simultaneous decisions and merges cannot contradict one another; an editor save cannot recreate a merged entity.
 - Remaining: deeper temporal views and page/task presentations, and richer retrieval ergonomics.
 - Continue iteration on accessibility, focus/keyboard behavior, responsive window sizes, empty/error states, and the quiet native-workbench UI based on actual use.
 

@@ -152,6 +152,29 @@ test('simultaneous edits to one record cannot silently replace each other', asyn
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
+test('an editor save cannot recreate an entity during a merge', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-merge-save-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const source = (await workspace.saveEntity({ id: '', title: 'Alex M.', type: 'person', body: 'Original' })).entities[0]
+    const target = (await workspace.saveEntity({ id: '', title: 'Alex', type: 'person', body: '' })).entities.find((item) => item.id !== source.id)!
+    const [saved, merged] = await Promise.allSettled([
+      workspace.saveEntity({ ...source, body: 'Editor update' }),
+      workspace.mergeEntities(source.id, target.id)
+    ])
+    assert.equal(merged.status, 'fulfilled')
+    const snapshot = await workspace.snapshot()
+    assert.equal(snapshot.merges.length, 1)
+    assert.equal(snapshot.entities.some((item) => item.id === source.id), false)
+    assert.equal(snapshot.archivedEntities.find((item) => item.id === source.id)?.body,
+      saved.status === 'fulfilled' ? 'Editor update' : 'Original')
+    await assert.rejects(workspace.saveEntity({ id: source.id, title: 'Alex M.', type: 'person', body: 'Unexpected' }),
+      /Create a new entity without an ID/)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
 test('editing in Serenity preserves custom YAML fields from external editors', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
   try {

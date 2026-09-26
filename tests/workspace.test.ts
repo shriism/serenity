@@ -340,6 +340,26 @@ test('calendar and tasks remain on disk when their modules are disabled', async 
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
+test('concurrent module switches keep both choices and order new writes', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-module-order-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    await Promise.all([workspace.setModule('calendar', false), workspace.setModule('tasks', false)])
+    assert.equal((await workspace.snapshot()).modules.calendar, false)
+    assert.equal((await workspace.snapshot()).modules.tasks, false)
+    await workspace.setModule('tasks', true)
+    const [disabled, saved] = await Promise.allSettled([
+      workspace.setModule('tasks', false),
+      workspace.saveTask({ id: '', title: 'Late task', completed: false, notes: '', relatedEntityIds: [] })
+    ])
+    assert.equal(disabled.status, 'fulfilled')
+    assert.equal(saved.status, 'rejected')
+    assert.equal((await workspace.snapshot()).tasks.length, 0)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
 test('calendar events and tasks can be archived and restored without losing their files', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
   try {

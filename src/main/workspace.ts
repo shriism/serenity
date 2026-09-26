@@ -1067,16 +1067,19 @@ export class Workspace {
 
   async setModule(moduleId: ModuleId, enabled: boolean): Promise<WorkspaceSnapshot> {
     if (!modules.some((item) => item.id === moduleId) || typeof enabled !== 'boolean') throw new Error('Invalid module setting')
-    const snapshot = await this.snapshot()
-    if (enabled && snapshot.backgroundProviderNeedsChoice && (moduleId === 'semanticIndex' || moduleId === 'documentAnalysis')) {
-      throw new Error('Choose a supported background AI provider before enabling this module')
-    }
-    const current = snapshot.modules
-    current[moduleId] = enabled
-    await this.archiveInvalidSetting('modules.yaml', record)
-    await atomicWrite(join(this.path, '.serenity', 'modules.yaml'), YAML.stringify(current))
-    this.markDirty()
-    return this.snapshot()
+    const path = join(this.path, '.serenity', 'modules.yaml')
+    return this.withFileMutation(path, async () => {
+      const snapshot = await this.snapshot()
+      if (enabled && snapshot.backgroundProviderNeedsChoice && (moduleId === 'semanticIndex' || moduleId === 'documentAnalysis')) {
+        throw new Error('Choose a supported background AI provider before enabling this module')
+      }
+      const current = snapshot.modules
+      current[moduleId] = enabled
+      await this.archiveInvalidSetting('modules.yaml', record)
+      await atomicWrite(path, YAML.stringify(current))
+      this.markDirty()
+      return this.snapshot()
+    })
   }
 
   async setSemanticProvider(provider: Provider): Promise<WorkspaceSnapshot> {
@@ -1107,16 +1110,20 @@ export class Workspace {
   }
 
   async saveEvent(value: CalendarEvent): Promise<WorkspaceSnapshot> {
-    if (!(await this.snapshot()).modules.calendar) throw new Error('Calendar module is disabled')
-    const event = parseEvent({ ...value, id: value.id || randomUUID(), recordedAt: value.recordedAt ?? new Date().toISOString() })
-    if (event.end && event.end < event.start) throw new Error('End date must follow start date')
-    return this.saveModuleRecord(this.directories[5], { ...event, revision: value.revision }, !value.id)
+    return this.withFileMutation(join(this.path, '.serenity', 'modules.yaml'), async () => {
+      if (!(await this.snapshot()).modules.calendar) throw new Error('Calendar module is disabled')
+      const event = parseEvent({ ...value, id: value.id || randomUUID(), recordedAt: value.recordedAt ?? new Date().toISOString() })
+      if (event.end && event.end < event.start) throw new Error('End date must follow start date')
+      return this.saveModuleRecord(this.directories[5], { ...event, revision: value.revision }, !value.id)
+    })
   }
 
   async saveTask(value: TaskItem): Promise<WorkspaceSnapshot> {
-    if (!(await this.snapshot()).modules.tasks) throw new Error('Tasks module is disabled')
-    const task = parseTask({ ...value, id: value.id || randomUUID(), recordedAt: value.recordedAt ?? new Date().toISOString() })
-    return this.saveModuleRecord(this.directories[6], { ...task, revision: value.revision }, !value.id)
+    return this.withFileMutation(join(this.path, '.serenity', 'modules.yaml'), async () => {
+      if (!(await this.snapshot()).modules.tasks) throw new Error('Tasks module is disabled')
+      const task = parseTask({ ...value, id: value.id || randomUUID(), recordedAt: value.recordedAt ?? new Date().toISOString() })
+      return this.saveModuleRecord(this.directories[6], { ...task, revision: value.revision }, !value.id)
+    })
   }
 
   private async archiveModuleRecord(directory: string, category: 'calendar' | 'tasks', recordId: string, revision: string): Promise<WorkspaceSnapshot> {
@@ -1135,16 +1142,18 @@ export class Workspace {
   }
 
   private async restoreModuleRecord(directory: string, category: 'calendar' | 'tasks', recordId: string): Promise<WorkspaceSnapshot> {
-    if (!(await this.snapshot()).modules[category]) throw new Error(`${category} module is disabled`)
     const file = `${id(recordId)}.yaml`
     const source = join(this.path, 'archive', category, file)
     const destination = join(directory, file)
-    return this.withFileMutation(destination, async () => {
-      try { await lstat(destination); throw new Error('An active item already uses this ID.') }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-      await rename(source, destination)
-      this.markDirty()
-      return this.snapshot()
+    return this.withFileMutation(join(this.path, '.serenity', 'modules.yaml'), async () => {
+      if (!(await this.snapshot()).modules[category]) throw new Error(`${category} module is disabled`)
+      return this.withFileMutation(destination, async () => {
+        try { await lstat(destination); throw new Error('An active item already uses this ID.') }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+        await rename(source, destination)
+        this.markDirty()
+        return this.snapshot()
+      })
     })
   }
 

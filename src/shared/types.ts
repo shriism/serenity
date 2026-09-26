@@ -1,4 +1,5 @@
 import type { ModuleId } from './modules'
+import type { SessionLayout } from './layout'
 
 export interface Entity {
   id: string
@@ -70,11 +71,13 @@ export interface WorkbenchConfig {
   keybindings?: Record<string, string | null>
 }
 
+/** Workspace-local UI state. The top-level view and URIs mirror the focused group for older readers. */
 export interface WorkbenchSession {
   view: string
   activeUri?: string
   assistantUri?: string
   openUris: string[]
+  layout?: SessionLayout
 }
 
 export interface WorkspacePage {
@@ -234,7 +237,7 @@ export interface SerenityAPI {
   search(query: string): Promise<SearchResult[]>
   semanticSearch(query: string, provider: Provider): Promise<SearchResult[]>
   searchSemanticIndex(query: string): Promise<SearchResult[]>
-  sendMessage(input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean; permissions?: WorkflowPermissions; readScope?: ReadScope; activeRef?: string; openRefs?: string[] }): Promise<WorkspaceSnapshot>
+  sendMessage(input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean; permissions?: WorkflowPermissions; readScope?: ReadScope; activeRef?: string; visibleRefs?: string[]; openRefs?: string[] }): Promise<WorkspaceSnapshot>
   cancelMessage(): Promise<boolean>
   updateConversationSettings(id: string, settings: { autonomy: Autonomy; permissions: WorkflowPermissions; retained: boolean; readScope?: ReadScope }): Promise<WorkspaceSnapshot>
   resolveProposal(id: string, accept: boolean): Promise<WorkspaceSnapshot>

@@ -9,6 +9,7 @@ import { modules, type ModuleId } from '../shared/modules'
 import { defaultHome } from '../shared/default-home'
 import { defaultWorkbench } from '../shared/default-workbench'
 import { normalizeKeybinding } from '../shared/keybindings'
+import { isWorkbenchView, parseLayout } from '../shared/layout'
 import { validateReadScope, validateWorkflowPermissions } from '../shared/workflow'
 import { canExtractText, extractDocument } from './documents'
 
@@ -507,14 +508,20 @@ export class Workspace {
   }
 
   private async validatedSession(value: unknown): Promise<WorkbenchSession> {
-    if (!record(value) || typeof value.view !== 'string' || !['home', 'knowledge', 'review', 'documents', 'calendar', 'tasks', 'activity', 'settings'].includes(value.view) ||
+    if (!record(value) || typeof value.view !== 'string' || !isWorkbenchView(value.view) ||
       !Array.isArray(value.openUris) || value.openUris.length > 30 || value.openUris.some((uri: unknown) => typeof uri !== 'string' || !parseResourceUri(uri)) ||
       (value.activeUri !== undefined && (typeof value.activeUri !== 'string' || !parseResourceUri(value.activeUri))) ||
       (value.assistantUri !== undefined && (typeof value.assistantUri !== 'string' || parseResourceUri(value.assistantUri)?.kind !== 'conversation'))) throw new Error('Invalid workspace session')
     const available = new Set(workspaceResources(await this.snapshot()).map((item) => item.uri))
-    return { view: value.view, openUris: [...new Set((value.openUris as string[]).filter((uri) => available.has(uri)))],
-      activeUri: typeof value.activeUri === 'string' && available.has(value.activeUri) ? value.activeUri : undefined,
-      ...(typeof value.assistantUri === 'string' && available.has(value.assistantUri) ? { assistantUri: value.assistantUri } : {}) }
+    const openUris = (uris: string[]): string[] => [...new Set(uris.filter((uri) => available.has(uri)))]
+    const activeUri = (uri: unknown): string | undefined => typeof uri === 'string' && available.has(uri) ? uri : undefined
+    const layout = value.layout === undefined ? null : parseLayout(value.layout, isWorkbenchView, (uri) => parseResourceUri(uri) !== null)
+    return { view: value.view, openUris: openUris(value.openUris as string[]), activeUri: activeUri(value.activeUri),
+      ...(typeof value.assistantUri === 'string' && available.has(value.assistantUri) ? { assistantUri: value.assistantUri } : {}),
+      ...(layout ? { layout: { ...layout, groups: layout.groups.map((group) => {
+        const active = activeUri(group.activeUri)
+        return { id: group.id, view: group.view, openUris: openUris(group.openUris), ...(active ? { activeUri: active } : {}) }
+      }) } } : {}) }
   }
 
   async addClaim(input: Pick<Claim, 'subject' | 'key' | 'value' | 'source'>): Promise<WorkspaceSnapshot> {

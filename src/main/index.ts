@@ -244,7 +244,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('workspace:search', (_event, query: string) => currentWorkspace().search(query))
   ipcMain.handle('workspace:semantic-search', (_event, query: string, provider: Provider) => withActiveRequest(() => semanticSearch(currentWorkspace(), query, provider)))
   ipcMain.handle('workspace:cached-semantic-search', (_event, query: string) => rankSemanticIndex(currentWorkspace(), query))
-  ipcMain.handle('conversation:send', async (_event, input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean; permissions?: WorkflowPermissions; readScope?: ReadScope; activeRef?: string; openRefs?: string[] }) => {
+  ipcMain.handle('conversation:send', async (_event, input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean; permissions?: WorkflowPermissions; readScope?: ReadScope; activeRef?: string; visibleRefs?: string[]; openRefs?: string[] }) => {
     if (conversationAbort) throw new Error('Another conversation request is still running')
     const controller = new AbortController()
     conversationAbort = controller

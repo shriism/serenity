@@ -1,1 +1,1 @@
-export type View = 'home' | 'knowledge' | 'review' | 'documents' | 'calendar' | 'tasks' | 'activity' | 'settings'
+export { workbenchViews as views, isWorkbenchView as isView, type WorkbenchView as View } from '../../shared/layout'

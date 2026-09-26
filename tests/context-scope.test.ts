@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Workspace } from '../src/main/workspace'
-import { contextRecords, prepareContext, scopeContextRecords } from '../src/main/context'
+import { contextRecords, openContextNote, prepareContext, scopeContextRecords } from '../src/main/context'
 import { validateReadScope } from '../src/shared/workflow'
 
 test('selected read scope excludes other entities and documents even when search finds them', async () => {
@@ -46,4 +46,12 @@ test('an open permitted document is sent first when the workspace needs retrieva
   assert.equal(prepared.shared.mode, 'retrieved')
   assert.equal(prepared.shared.records[0].ref, 'document:notes.md')
   assert.match(prepared.text, /robotics club/)
+})
+
+test('the provider is told which permitted records are shown side by side', () => {
+  const note = openContextNote('entity:alex', 'entities/alex.md', ['document:syllabus.pdf'], ['entity:alex', 'document:syllabus.pdf', 'page:research'])
+  assert.match(note, /Shown side by side with it: document:syllabus\.pdf/)
+  assert.match(note, /Other open records: page:research\./)
+  assert.doesNotMatch(openContextNote('entity:alex', 'entities/alex.md', [], ['entity:alex']), /side by side/)
+  assert.equal(openContextNote(undefined, undefined, ['document:syllabus.pdf'], []), '')
 })

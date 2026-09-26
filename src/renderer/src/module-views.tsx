@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { filterEntities } from '../../shared/library'
+import { ResourcePicker } from './resource-picker'
 import type { CalendarEvent, TaskItem, WorkspaceSnapshot } from '../../shared/types'
 
 type Props = {
@@ -13,25 +13,16 @@ type Props = {
 
 function today(): string { return new Date().toLocaleDateString('en-CA') }
 
-/** Linked entities as removable chips, plus a search to add more; scales to large workspaces. */
 function EntityLinks({ workspace, selected, onChange }: {
   workspace: WorkspaceSnapshot
   selected: string[]
   onChange(ids: string[]): void
 }) {
-  const [query, setQuery] = useState('')
-  const matches = useMemo(() => query.trim() ? filterEntities(workspace.entities, query, null).filter((entity) => !selected.includes(entity.id)).slice(0, 8) : [],
-    [workspace.entities, query, selected])
-  const linked = selected.flatMap((id) => workspace.entities.find((entity) => entity.id === id) ?? [])
+  const options = useMemo(() => workspace.entities.map((entity) => ({ id: entity.id, title: entity.title, detail: entity.type })), [workspace.entities])
   return <fieldset className="module-links">
     <legend>Connected knowledge</legend>
-    {linked.length > 0 && <div className="module-link-chips">{linked.map((entity) => <span key={entity.id} className="module-link-chip">{entity.title}
-      <button type="button" aria-label={`Unlink ${entity.title}`} title={`Unlink ${entity.title}`} onClick={() => onChange(selected.filter((id) => id !== entity.id))}>×</button></span>)}</div>}
-    {workspace.entities.length === 0 ? <small className="hint">Create an entity to link it here.</small> : <>
-      <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Link a person, project, or other entity…" aria-label="Find an entity to link"/>
-      {matches.length > 0 && <div className="module-link-matches">{matches.map((entity) => <button type="button" key={entity.id}
-        onClick={() => { onChange([...selected, entity.id]); setQuery('') }}>{entity.title} <small>{entity.type}</small></button>)}</div>}
-    </>}
+    <ResourcePicker label="Link an entity" placeholder="Link a person, project, or other entity…" options={options} selected={selected} onChange={onChange}
+      empty="Create an entity to link it here."/>
   </fieldset>
 }
 

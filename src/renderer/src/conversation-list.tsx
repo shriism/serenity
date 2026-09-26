@@ -1,3 +1,4 @@
+import { ResourcePicker } from './resource-picker'
 import { MessageCircle, Plus, Settings2 } from 'lucide-react'
 import type { Autonomy, Conversation, ReadScope, WorkflowPermissions, WorkspaceSnapshot } from '../../shared/types'
 
@@ -45,11 +46,13 @@ export function ConversationList(props: Props) {
           </select>
           {props.readScope.mode === 'selected' && <div className="read-scope-items">
             <strong>Entities</strong>
-            {props.workspace.entities.map((entity) => <label key={entity.id}><input type="checkbox" checked={props.readScope.entityIds.includes(entity.id)}
-              onChange={(event) => props.onReadScopeChange({ ...props.readScope, entityIds: event.target.checked ? [...props.readScope.entityIds, entity.id] : props.readScope.entityIds.filter((id) => id !== entity.id) })}/>{entity.title}</label>)}
+            <ResourcePicker label="Allow an entity" placeholder="Find an entity to allow…" selected={props.readScope.entityIds}
+              options={props.workspace.entities.map((entity) => ({ id: entity.id, title: entity.title, detail: entity.type }))}
+              onChange={(entityIds) => props.onReadScopeChange({ ...props.readScope, entityIds })} empty="No entities yet."/>
             <strong>Documents</strong>
-            {props.workspace.documents.map((document) => <label key={document.name}><input type="checkbox" checked={props.readScope.documentNames.includes(document.name)}
-              onChange={(event) => props.onReadScopeChange({ ...props.readScope, documentNames: event.target.checked ? [...props.readScope.documentNames, document.name] : props.readScope.documentNames.filter((name) => name !== document.name) })}/>{document.name}</label>)}
+            <ResourcePicker label="Allow a document" placeholder="Find a document to allow…" selected={props.readScope.documentNames}
+              options={props.workspace.documents.map((document) => ({ id: document.name, title: document.name }))}
+              onChange={(documentNames) => props.onReadScopeChange({ ...props.readScope, documentNames })} empty="No documents yet."/>
             <label><input type="checkbox" checked={props.readScope.includeOtherConversations} onChange={(event) => props.onReadScopeChange({ ...props.readScope, includeOtherConversations: event.target.checked })}/>Other conversations</label>
             <label><input type="checkbox" checked={props.readScope.includeCalendarAndTasks} onChange={(event) => props.onReadScopeChange({ ...props.readScope, includeCalendarAndTasks: event.target.checked })}/>Calendar and tasks</label>
           </div>}

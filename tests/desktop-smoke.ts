@@ -207,6 +207,20 @@ try {
   ] }))
   const cited = await evaluate(pageUrl, `(async () => { const wait = async (test) => { for (let i = 0; i < 40; i++) { const value = test(); if (value) return value; await new Promise((resolve) => setTimeout(resolve, 100)) } return null }; const entry = await wait(() => [...document.querySelectorAll('.conversation-history-list button')].find((item) => item.textContent?.includes('Cited answer'))); entry?.click(); const markers = await wait(() => document.querySelectorAll('.citation-marker').length === 2 && document.querySelectorAll('.citation-marker')); const unverified = document.querySelectorAll('.citations li.unverified').length; [...document.querySelectorAll('.citations .citation-title')].find((item) => item.textContent === 'Alex')?.click(); const opened = await wait(() => document.querySelector('.workspace-tab.active')?.textContent?.includes('Alex') && document.querySelector('.breadcrumbs')?.textContent); return { markers: markers ? markers.length : 0, unverified, opened } })()`)
   assert.deepEqual(cited, { markers: 2, unverified: 1, opened: 'Alex' }, 'Answers should show their sources, flag unverified citations, and open cited records')
+  const scopePicker = await evaluate(pageUrl, `(async () => {
+    const select = document.querySelector('select[aria-label="AI read scope"]')
+    if (!select) return 'no scope control'
+    const choose = (value) => { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, value); select.dispatchEvent(new Event('change', { bubbles: true })) }
+    choose('selected')
+    let option = null
+    for (let i = 0; i < 30 && !option; i++) { option = [...document.querySelectorAll('.read-scope-items .module-link-matches button')].find((item) => item.textContent?.startsWith('Alex')); await new Promise((resolve) => setTimeout(resolve, 50)) }
+    option?.click()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const chip = document.querySelector('.read-scope-items .module-link-chip')?.textContent ?? null
+    choose('workspace')
+    return chip
+  })()`)
+  assert.match(String(scopePicker), /^Alex/, 'The read-scope picker should add an allowed entity as a removable chip')
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) {
     await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === 'Timeline')?.click(); await new Promise((resolve) => setTimeout(resolve, 200)) })()`)
     await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-timeline.png'), await captureScreenshot(pageUrl))

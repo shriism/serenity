@@ -1,6 +1,33 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import type { Autonomy, Conversation, Provider } from '../../shared/types'
-import { ArrowUp, ChevronDown, FileText, Link2, MoreHorizontal } from 'lucide-react'
+import type { Autonomy, Conversation, Message, Provider } from '../../shared/types'
+import { AlertTriangle, ArrowUp, ChevronDown, FileText, Link2, MoreHorizontal } from 'lucide-react'
+import { answerSegments, citationUri, type Citation } from '../../shared/citations'
+
+/** Stored conversations are ordinary files; show only citations with the expected shape. */
+function citationsOf(message: Message): Citation[] {
+  return Array.isArray(message.citations) ? message.citations.filter((item): item is Citation =>
+    Boolean(item) && typeof item.ref === 'string' && typeof item.title === 'string' && typeof item.sent === 'boolean') : []
+}
+
+function AnswerText({ message, onOpenResource }: { message: Message; onOpenResource(uri: string, side: boolean): void }) {
+  const citations = citationsOf(message)
+  if (!citations.length) return <p>{message.text}</p>
+  const open = (citation: Citation, side: boolean): void => { const uri = citationUri(citation.ref); if (uri) onOpenResource(uri, side) }
+  return <>
+    <p>{answerSegments(message.text, citations.length).map((segment, index) => 'text' in segment ? segment.text :
+      <button key={index} className={`citation-marker ${citations[segment.citation - 1].sent ? '' : 'unverified'}`} title={citations[segment.citation - 1].title}
+        aria-label={`Source ${segment.citation}: ${citations[segment.citation - 1].title}`} onClick={(event) => open(citations[segment.citation - 1], event.metaKey || event.ctrlKey)}>{segment.citation}</button>)}</p>
+    <ol className="citations" aria-label="Sources">{citations.map((citation, index) => <li key={citation.ref} className={citation.sent ? '' : 'unverified'}>
+      <span className="citation-number">{index + 1}</span>
+      <div>
+        {citationUri(citation.ref) ? <button className="citation-title" onClick={(event) => open(citation, event.metaKey || event.ctrlKey)}>{citation.title}</button> : <strong className="citation-title">{citation.title}</strong>}
+        {citation.quote && <q className={citation.quoteFound ? '' : 'unmatched'}>{citation.quote}</q>}
+        {!citation.sent ? <small><AlertTriangle size={11}/> Not among the records shared for this answer — unverified</small> :
+          citation.quote && !citation.quoteFound ? <small><AlertTriangle size={11}/> Quote not found in this record</small> : null}
+      </div>
+    </li>)}</ol>
+  </>
+}
 
 interface Props {
   conversation?: Conversation
@@ -18,6 +45,8 @@ interface Props {
   onDelete(): void
   activeFile?: { name: string; path: string; kind: 'entity' | 'document' | 'page'; allowed: boolean }
   openFileCount: number
+  /** Opens a cited record; `side` opens it in the other editor group. */
+  onOpenResource(uri: string, side: boolean): void
 }
 
 export function ConversationPanel(props: Props) {
@@ -45,7 +74,7 @@ export function ConversationPanel(props: Props) {
         <p>{props.activeFile?.allowed ? 'This file can inform your next question.' : 'Ask about what’s here. Suggested changes come to you for review.'}</p>
       </div>}
       {props.conversation?.messages.map((item) => <article key={item.id} className={`message ${item.role}`}>
-        <small>{item.role === 'assistant' ? item.provider : 'You'}</small><p>{item.text}</p>
+        <small>{item.role === 'assistant' ? item.provider : 'You'}</small>{item.role === 'assistant' ? <AnswerText message={item} onOpenResource={props.onOpenResource}/> : <p>{item.text}</p>}
         {item.sharedContext?.map((context, index) => <details className="context-inspector" key={index}>
           <summary>Context sent to {item.provider} · pass {index + 1} · {context.records.length} of {context.availableCount} permitted records</summary>
           <p>{context.readScopeMode === 'selected'

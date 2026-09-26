@@ -1,5 +1,6 @@
 import type { ModuleId } from './modules'
 import type { SessionLayout } from './layout'
+import type { Citation } from './citations'
 
 export interface Entity {
   id: string
@@ -166,6 +167,8 @@ export interface Message {
   provider?: string
   recordedAt: string
   sharedContext?: SharedContext[]
+  /** Records the answer relies on, checked against the context actually sent. */
+  citations?: Citation[]
 }
 
 export interface SharedContext {

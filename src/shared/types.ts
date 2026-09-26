@@ -66,6 +66,8 @@ export interface WorkspaceSnapshot {
 export interface WorkbenchConfig {
   homePage: string
   navigation: { group: string; commands: string[] }[]
+  /** Command ID to chord (e.g. `Mod+Shift+K`), or null to remove a default binding. */
+  keybindings?: Record<string, string | null>
 }
 
 export interface WorkbenchSession {

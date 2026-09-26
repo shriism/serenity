@@ -8,6 +8,7 @@ import { parseResourceUri, workspaceResources } from '../shared/resources'
 import { modules, type ModuleId } from '../shared/modules'
 import { defaultHome } from '../shared/default-home'
 import { defaultWorkbench } from '../shared/default-workbench'
+import { normalizeKeybinding } from '../shared/keybindings'
 import { validateReadScope, validateWorkflowPermissions } from '../shared/workflow'
 import { canExtractText, extractDocument } from './documents'
 
@@ -251,6 +252,11 @@ export class Workspace {
           group.commands.some((command: unknown) => typeof command !== 'string' || !/^[a-z0-9.-]+$/.test(command))) ||
         !pages.some((page) => page.id === raw.homePage)) throw new Error('Invalid workbench configuration or missing Home page')
       workbench = { homePage: raw.homePage, navigation: raw.navigation as WorkbenchConfig['navigation'] }
+      if (raw.keybindings !== undefined) {
+        if (record(raw.keybindings) && Object.entries(raw.keybindings).every(([id, value]) => /^[a-z0-9.-]+$/.test(id) &&
+          (value === null || (typeof value === 'string' && normalizeKeybinding(value))))) workbench.keybindings = raw.keybindings as Record<string, string | null>
+        else errors.push('.serenity/workbench.yaml: Invalid keybindings; map each command ID to a chord such as Mod+Shift+K, or to null')
+      }
     } catch (error) { errors.push(`.serenity/workbench.yaml: ${String(error)}`) }
     const enabled: Record<ModuleId, boolean> = { calendar: true, tasks: true, semanticIndex: false, documentAnalysis: false }
     let semanticProvider: Provider = 'copilot'

@@ -17,6 +17,7 @@ interface Props {
   onAISearch(): void
   onSavedSearch(): void
   onCommand(id: string): void
+  shortcutFor(id: string): string | undefined
 }
 
 const icons = { entity: Link2, claim: Link2, document: FileText, task: ListTodo, event: CalendarDays, page: FileText }
@@ -29,7 +30,7 @@ export function CommandPalette(props: Props) {
   useEffect(() => setActive(0), [props.results, props.query])
   if (!props.open) return null
 
-  const commandMatches = props.commands.filter((command) => command.id !== 'workspace.search' &&
+  const commandMatches = props.commands.filter((command) =>
     command.title.toLowerCase().includes(props.query.trim().toLowerCase())).slice(0, props.query.trim() ? 6 : 8)
   const entries = [
     ...commandMatches.map((command) => ({ type: 'command' as const, command })),
@@ -61,7 +62,7 @@ export function CommandPalette(props: Props) {
         {entries.length > 0 ? <div className="palette-results">{entries.map((entry, index) => {
           const Icon = entry.type === 'command' ? entry.command.icon : icons[entry.result.kind]
           const title = entry.type === 'command' ? entry.command.title : entry.result.title
-          const detail = entry.type === 'command' ? 'Command' : entry.result.detail
+          const detail = entry.type === 'command' ? ['Command', props.shortcutFor(entry.command.id)].filter(Boolean).join(' · ') : entry.result.detail
           return <button key={entry.type === 'command' ? entry.command.id : `${entry.result.kind}-${entry.result.id}-${index}`}
             className={index === active ? 'active' : ''} onMouseEnter={() => setActive(index)} onClick={() => choose(index)}>
             <span className="palette-result-icon"><Icon size={17}/></span><span><strong>{title}</strong><small>{detail}</small></span><ArrowRight size={15}/>

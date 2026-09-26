@@ -12,7 +12,8 @@ import { ThemeControl, useTheme } from './theme'
 import type { View } from './views'
 import { WorkspaceTabs } from './workspace-tabs'
 import { restoreTabs, routeResource, tabKey, tabPath, tabTitle, tabUri, tabView, type TabRef } from './resource-routing'
-import { workspaceCommands } from './commands'
+import { knownCommandIds, workspaceCommands, type CommandContribution, type CommandHost } from './commands'
+import { eventKeybinding, formatKeybinding, resolveKeymap, type KeymapResult } from '../../shared/keybindings'
 import { parseResourceUri, resourceUri } from '../../shared/resources'
 import './style.css'
 import './studio.css'
@@ -58,6 +59,7 @@ function App() {
   const [focusVersion, setFocusVersion] = useState(0)
   const [theme, setTheme] = useTheme()
   const searchSequence = useRef(0)
+  const commandContext = useRef<{ host: CommandHost; commands: CommandContribution[]; keymap: KeymapResult; escape(): void } | null>(null)
   const activeTabRef = tabs.find((tab) => tabKey(tab) === activeTab)
   const activePageId = view === 'home' && activeTabRef?.kind === 'page' ? activeTabRef.id : null
   const viewAvailable = (target: View): boolean => Boolean(workspace && builtinViews.available(target, { workspace }))
@@ -146,26 +148,23 @@ function App() {
     })
   }, [workspace])
   useEffect(() => {
+    const mac = navigator.platform.includes('Mac')
     const onShortcut = (event: globalThis.KeyboardEvent): void => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault()
-        if (paletteOpen) closePalette()
-        else setPaletteOpen(true)
-      } else if ((event.metaKey || event.ctrlKey) && !event.repeat && !(event.target instanceof HTMLElement && event.target.closest('input, textarea, select, [contenteditable="true"]')) && event.key.toLowerCase() === 'b') {
-        event.preventDefault()
-        setLeftOpen((open) => !open)
-      } else if ((event.metaKey || event.ctrlKey) && !event.repeat && !(event.target instanceof HTMLElement && event.target.closest('input, textarea, select, [contenteditable="true"]')) && event.key.toLowerCase() === 'j') {
-        event.preventDefault()
-        setRightOpen((open) => !open)
-        setAIExpanded(false)
-      } else if (event.key === 'Escape') {
-        if (paletteOpen) closePalette()
-        else if (leftOpen) setLeftOpen(false)
-      }
+      const current = commandContext.current
+      if (!current) return
+      if (event.key === 'Escape') { current.escape(); return }
+      const binding = eventKeybinding(event, mac)
+      const id = binding ? current.keymap.bindings.get(binding) : undefined
+      const command = id ? current.commands.find((item) => item.id === id) : undefined
+      if (!command || event.repeat) return
+      const typing = event.target instanceof HTMLElement && event.target.closest('input, textarea, select, [contenteditable="true"]')
+      if (typing && !command.whileTyping) return
+      event.preventDefault()
+      command.run(current.host)
     }
     window.addEventListener('keydown', onShortcut)
     return () => window.removeEventListener('keydown', onShortcut)
-  }, [closePalette, paletteOpen, leftOpen])
+  }, [])
 
   async function chooseWorkspace() {
     try {
@@ -394,19 +393,7 @@ function App() {
   }
 
   function runCommand(id: string): void {
-    const command = workspace && workspaceCommands(workspace).find((item) => item.id === id)
-    if (!command) return
-    if (id.startsWith('page.open.')) {
-      if (openResource(resourceUri({ kind: 'page', id: id.slice('page.open.'.length) })) && leftOpen) setLeftOpen(false)
-      return
-    }
-    if (command.view) { navigate(command.view); return }
-    if (id === 'entity.create') newEntity()
-    else if (id === 'page.create') void createPage()
-    else if (id === 'documents.import') { if (navigate('documents')) void importDocuments() }
-    else if (id === 'assistant.new') startConversation()
-    else if (id === 'workspace.search') setPaletteOpen(true)
-    else if (id === 'workspace.refresh') void refresh()
+    commands.find((item) => item.id === id)?.run(commandHost)
   }
 
   async function createPage(): Promise<void> {
@@ -565,6 +552,26 @@ function App() {
     catch (cause) { setError(String(cause)) }
   }
 
+  const commands = workspace ? workspaceCommands(workspace) : []
+  const keymap = resolveKeymap(commands, workspace?.workbench.keybindings, workspace ? knownCommandIds(workspace) : undefined)
+  const mac = navigator.platform.includes('Mac')
+  const shortcut = (id: string): string | undefined => { const binding = keymap.byCommand.get(id); return binding && formatKeybinding(binding, mac) }
+  const ariaShortcut = (id: string): string | undefined => keymap.byCommand.get(id)?.replace('Mod', mac ? 'Meta' : 'Control').replace('Ctrl', 'Control')
+  const withShortcut = (label: string, id: string): string => { const keys = shortcut(id); return keys ? `${label} (${keys})` : label }
+  const commandHost: CommandHost = {
+    navigate,
+    openResource: (uri) => { const opened = openResource(uri); if (opened && leftOpen) setLeftOpen(false); return opened },
+    newEntity,
+    createPage: () => { void createPage() },
+    importDocuments: () => { if (navigate('documents')) void importDocuments() },
+    newConversation: () => startConversation(),
+    toggleSearch: () => { if (paletteOpen) closePalette(); else setPaletteOpen(true) },
+    toggleNavigation: () => setLeftOpen((open) => !open),
+    toggleAssistant: () => { setRightOpen((open) => !open); setAIExpanded(false) },
+    refresh: () => { void refresh() }
+  }
+  commandContext.current = { host: commandHost, commands, keymap, escape: () => { if (paletteOpen) closePalette(); else if (leftOpen) setLeftOpen(false) } }
+
   const conversation = workspace?.conversations.find((item) => item.id === conversationId)
   const pending = workspace?.proposals.filter((proposal) => proposal.status === 'pending') ?? []
   const activity = [...(workspace?.claims.map((item) => ({ id: item.id, at: item.recordedAt, title: `Claim: ${item.key}`, detail: `${workspace.entities.find((entity) => entity.id === item.subject)?.title ?? 'Unknown entity'} · ${item.value} · ${item.source}` })) ?? []),
@@ -592,7 +599,7 @@ function App() {
     <aside className="sidebar" aria-label="Workspace sidebar">
       <div className="sidebar-inner">
       <div className="brand"><img className="brand-icon" src={serenityIcon} alt=""/><div><strong>Serenity</strong></div></div>
-      <button className="left-rail-toggle" onClick={() => setLeftOpen(!leftOpen)} aria-label={leftOpen ? 'Collapse navigation' : 'Expand navigation'} aria-keyshortcuts={navigator.platform.includes('Mac') ? 'Meta+B' : 'Control+B'} title={`${leftOpen ? 'Collapse' : 'Expand'} navigation (${navigator.platform.includes('Mac') ? '⌘B' : 'Ctrl+B'})`}>{leftOpen ? <PanelLeftClose size={17}/> : <PanelLeftOpen size={19}/>}</button>
+      <button className="left-rail-toggle" onClick={() => setLeftOpen(!leftOpen)} aria-label={leftOpen ? 'Collapse navigation' : 'Expand navigation'} aria-keyshortcuts={ariaShortcut('navigation.toggle')} title={withShortcut(`${leftOpen ? 'Collapse' : 'Expand'} navigation`, 'navigation.toggle')}>{leftOpen ? <PanelLeftClose size={17}/> : <PanelLeftOpen size={19}/>}</button>
       <div className="workspace-control">
         <button className="workspace-button" onClick={() => void chooseWorkspace()} title={workspace?.path ?? 'Choose a workspace'}>
           <span className="workspace-avatar">{workspace ? workspace.path.split(/[\\/]/).filter(Boolean).at(-1)?.slice(0, 1).toUpperCase() : '+'}</span>
@@ -602,7 +609,7 @@ function App() {
         {workspace && <small className="workspace-path" title={workspace.path}>{workspace.path}</small>}
       </div>
       {workspace && <div className="sidebar-scroller">
-        <AppNavigation view={view} activePageId={activePageId} pendingCount={pending.length} commands={workspaceCommands(workspace)} navigation={workspace.workbench.navigation} onCommand={runCommand}/>
+        <AppNavigation view={view} activePageId={activePageId} pendingCount={pending.length} commands={commands} navigation={workspace.workbench.navigation} onCommand={runCommand}/>
       </div>}
       <div className="sidebar-footer" inert={!leftOpen}>
         {workspace && <button className="footer-folder" onClick={() => void window.serenity.openWorkspaceFolder().catch((cause) => setError(String(cause)))}><FolderOpen size={16}/> Open workspace folder</button>}
@@ -615,18 +622,19 @@ function App() {
       <header className="topbar">
         <div className="breadcrumbs"><strong>{workspace ? view === 'home' ? currentPage?.title ?? 'Home' : title[view] : 'Welcome'}</strong></div>
         {workspace && <div className="topbar-actions">
-          <button className="topbar-search" onClick={() => runCommand('workspace.search')} title={`Search workspace (${navigator.platform.includes('Mac') ? '⌘K' : 'Ctrl+K'})`} aria-label="Search workspace"><Search size={18}/></button>
-          {!rightOpen && <button className="topbar-icon show-ai" onClick={() => setRightOpen(true)} title={`Show AI assistant (${navigator.platform.includes('Mac') ? '⌘J' : 'Ctrl+J'})`} aria-label="Show AI sidebar" aria-keyshortcuts={navigator.platform.includes('Mac') ? 'Meta+J' : 'Control+J'}><PanelRightOpen size={18}/></button>}
+          <button className="topbar-search" onClick={() => runCommand('workspace.search')} title={withShortcut('Search workspace', 'workspace.search')} aria-label="Search workspace"><Search size={18}/></button>
+          {!rightOpen && <button className="topbar-icon show-ai" onClick={() => setRightOpen(true)} title={withShortcut('Show AI assistant', 'assistant.toggle')} aria-label="Show AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')}><PanelRightOpen size={18}/></button>}
           <details className="topbar-more"><summary aria-label="Workspace actions" title="Workspace actions"><MoreHorizontal size={19}/></summary><div className="topbar-menu"><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); runCommand('entity.create') }}><Plus size={15}/> New entity</button><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); runCommand('page.create') }}><FileText size={15}/> New page</button><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); runCommand('workspace.refresh') }}><RotateCw size={15}/> Refresh files</button></div></details>
         </div>}
       </header>
       {workspace && <WorkspaceTabs tabs={tabs.map((tab) => ({ key: tabKey(tab), kind: tab.kind, title: tabTitle(workspace, tab) }))} active={activeTab} onSelect={activateTab} onClose={closeTab}/>}
       {error && <div className="notice error" role="alert">{error}</div>}
       {workspace?.errors.map((item) => <div key={item} className="notice warning" role="alert">Could not read {item}</div>)}
+      {keymap.problems.map((item) => <div key={item} className="notice warning" role="alert">.serenity/workbench.yaml: {item}</div>)}
       {view === 'review' && workspace?.proposals.some((item) => item.status === 'pending' && item.reviewReason) && <div className="notice warning" role="status">Some proposals involve similar entities. Verify the identity before accepting them.</div>}
       <div className="workspace-body" key={`${view}:${activeTab ?? ''}`}>
       {!workspace ? <section className="welcome-screen"><div className="welcome-visual"><img src={serenityIcon} alt=""/><span className="visual-orbit orbit-one"/><span className="visual-orbit orbit-two"/><span className="visual-dot dot-one"/><span className="visual-dot dot-two"/><span className="visual-dot dot-three"/></div><div className="welcome-copy"><span className="eyebrow">A SPACE FOR EVERYTHING THAT MATTERS</span><h1>Your world,<br/><em>more connected.</em></h1><p>A private workspace for your knowledge, relationships, plans, and the ideas in between. Choose a folder on your device to begin.</p><button className="primary welcome-action" onClick={() => void chooseWorkspace()}><FolderOpen size={18}/> Choose a workspace <ArrowRight size={17}/></button><small>Your files stay in a folder you control.</small></div></section>
-          : builtinViews.render(view, { workspace, page: currentPage ?? undefined, commands: workspaceCommands(workspace),
+          : builtinViews.render(view, { workspace, page: currentPage ?? undefined, commands,
             activeDocument: currentTab?.kind === 'document' ? currentTab.id : undefined, focusedEventId, focusedTaskId, focusVersion, activity,
             onUpdate: setWorkspace, onError: setError, onDirtyChange: setPageDirty, onOpenResource: (uri) => { openResource(uri) }, onCommand: runCommand,
             onResolve: (id, accept) => { void resolveProposal(id, accept) }, onAttach: (id, entityId) => { void attachProposal(id, entityId) },
@@ -645,7 +653,7 @@ function App() {
     {workspace && (rightOpen ? <aside className="assistant-sidebar" aria-label="AI assistant">
       <div className="assistant-toolbar"><div><Sparkles size={18}/><span>Assistant</span><small>WITH YOUR WORKSPACE</small></div><div className="assistant-toolbar-actions">
         <button onClick={() => setAIExpanded(!aiExpanded)} aria-label={aiExpanded ? 'Return AI to sidebar' : 'Expand AI over workspace'} title={aiExpanded ? 'Return AI to sidebar' : 'Expand AI over workspace'}>{aiExpanded ? <Minimize2 size={17}/> : <Maximize2 size={17}/>}</button>
-        <button onClick={() => { setRightOpen(false); setAIExpanded(false) }} aria-label="Collapse AI sidebar" aria-keyshortcuts={navigator.platform.includes('Mac') ? 'Meta+J' : 'Control+J'} title={`Collapse AI sidebar (${navigator.platform.includes('Mac') ? '⌘J' : 'Ctrl+J'})`}><PanelRightClose size={17}/></button>
+        <button onClick={() => { setRightOpen(false); setAIExpanded(false) }} aria-label="Collapse AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')} title={withShortcut('Collapse AI sidebar', 'assistant.toggle')}><PanelRightClose size={17}/></button>
       </div></div>
       <ConversationList workspace={workspace} conversationId={conversationId} autonomy={autonomy} permissions={permissions} readScope={readScope} busy={busy}
         onNew={() => runCommand('assistant.new')} onSelect={selectConversation} onPermissionsChange={setPermissions} onReadScopeChange={setReadScope} onSaveSettings={() => void saveWorkflowSettings()} />
@@ -653,7 +661,7 @@ function App() {
       <ConversationPanel conversation={conversation} provider={provider} onProviderChange={setProvider} autonomy={autonomy} onAutonomyChange={setAutonomy} retained={retained} onRetentionChange={setRetained} message={message} onMessageChange={setMessage} busy={busy} onSend={(event) => void sendMessage(event)} onCancel={() => void cancelMessage()} onDelete={() => void deleteConversation()} activeFile={activeFile} openFileCount={tabs.length} />
     </aside> : <aside className="assistant-rail" aria-label="AI assistant collapsed"><button onClick={() => setRightOpen(true)} title="Expand AI sidebar" aria-label="Expand AI sidebar"><PanelRightOpen size={20}/></button><span>AI</span></aside>)}
     </div>
-    <CommandPalette open={paletteOpen && Boolean(workspace)} query={query} results={results} searching={searching} provider={provider} savedIndexEnabled={Boolean(workspace?.modules.semanticIndex)} commands={workspace ? workspaceCommands(workspace) : []} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult} onAISearch={() => void searchSemantically()} onSavedSearch={() => void searchSavedConcepts()} onCommand={runCommand} />
+    <CommandPalette open={paletteOpen && Boolean(workspace)} query={query} results={results} searching={searching} provider={provider} savedIndexEnabled={Boolean(workspace?.modules.semanticIndex)} commands={commands.filter((command) => !command.hideInPalette)} shortcutFor={shortcut} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult} onAISearch={() => void searchSemantically()} onSavedSearch={() => void searchSavedConcepts()} onCommand={runCommand} />
   </div>
 }
 

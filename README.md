@@ -17,7 +17,16 @@ The selected directory is the knowledge source of truth. Provider credentials ar
 
 Use **Open workspace folder** in the sidebar to inspect or back up your files. Unsaved entity and page edits prompt before you switch workspaces or close the window.
 
-The desktop UI is one workbench with a compact navigation dock and a contextual AI assistant. The dock reveals its labels without shifting the open work area; the assistant can collapse or expand over the center. Home is `pages/Home.md`: edit it in Serenity or another text editor. Its Markdown can contain prose, stable `serenity:` links, and bounded `serenity-query` fenced YAML blocks. For example, `from: upcoming` with `limit: 6` shows tasks and events backed by files in this workspace; other sources include `entities`, `claims`, `documents`, `tasks`, `events`, `proposals`, and `pages`. The built-in template is yours to replace. Create additional pages from **New page** in the workspace actions menu or command palette. `.serenity/workbench.yaml` chooses the Home page and the navigation groups and command order; editing it updates the UI. Entity and supported document files open in tabs; the assistant sees which file or page is active and prioritizes permitted open content for relevant questions. Its conversation inspector shows which records were actually sent. Search and workspace actions are in the compact top bar. Use **⌘K**, **⌘B**, and **⌘J** on macOS (or **Ctrl+K**, **Ctrl+B**, and **Ctrl+J** on Windows/Linux) to search, toggle the dock, and toggle the assistant. The app starts in Dark appearance, with Light and System options in the navigation dock.
+The desktop UI is one workbench with a compact navigation dock and a contextual AI assistant. The dock reveals its labels without shifting the open work area; the assistant can collapse or expand over the center. Home is `pages/Home.md`: edit it in Serenity or another text editor. Its Markdown can contain prose, stable `serenity:` links, and bounded `serenity-query` fenced YAML blocks. For example, `from: upcoming` with `limit: 6` shows tasks and events backed by files in this workspace; other sources include `entities`, `claims`, `documents`, `tasks`, `events`, `proposals`, and `pages`. The built-in template is yours to replace. Create additional pages from **New page** in the workspace actions menu or command palette. `.serenity/workbench.yaml` chooses the Home page and the navigation groups and command order; editing it updates the UI. Entities, supported documents, and pages other than Home open in tabs; the assistant sees which file or page is active and prioritizes permitted open content for relevant questions. Its conversation inspector shows which records were actually sent. Search and workspace actions are in the compact top bar. Use **⌘K**, **⌘B**, and **⌘J** on macOS (or **Ctrl+K**, **Ctrl+B**, and **Ctrl+J** on Windows/Linux) to search, toggle the dock, and toggle the assistant. To change shortcuts for a workspace, add a `keybindings` map to `.serenity/workbench.yaml` from command ID to chord (`Mod` is ⌘ on macOS and Ctrl elsewhere), or to `null` to remove a default:
+
+```yaml
+keybindings:
+  entity.create: Mod+Shift+E
+  page.open.research: Mod+Alt+R
+  assistant.toggle: null
+```
+
+Chords need Mod, Ctrl, or Alt unless they are function keys. Unknown commands and conflicting chords appear as workspace warnings instead of being silently ignored. The app starts in Dark appearance, with Light and System options in the navigation dock.
 
 To check the project:
 

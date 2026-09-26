@@ -35,6 +35,8 @@ export interface BuiltinViewContext {
   onPresentationChange(id: string): void
   taskPresentation: 'list' | 'board'
   onTaskPresentationChange(presentation: 'list' | 'board'): void
+  calendarPresentation: 'month' | 'agenda'
+  onCalendarPresentationChange(presentation: 'month' | 'agenda'): void
   onUpdate(snapshot: WorkspaceSnapshot): void
   onError(message: string): void
   onDirtyChange(dirty: boolean): void
@@ -82,8 +84,9 @@ builtinViews.register({ id: 'home', render: (context) => {
     {presentation === 'links' ? <PageConnections page={page} workspace={context.workspace} onOpen={context.onOpenResource}/> : editor}
   </div>
 } })
-builtinViews.register({ id: 'calendar', module: 'calendar', render: ({ workspace, onUpdate, onError, focusedEventId, focusVersion }) =>
-  <CalendarModule workspace={workspace} onUpdate={onUpdate} onError={onError} focusEventId={focusedEventId} focusVersion={focusVersion}/> })
+builtinViews.register({ id: 'calendar', module: 'calendar', render: ({ workspace, onUpdate, onError, focusedEventId, focusVersion, calendarPresentation, onCalendarPresentationChange, onOpenResource }) =>
+  <CalendarModule workspace={workspace} onUpdate={onUpdate} onError={onError} focusEventId={focusedEventId} focusVersion={focusVersion}
+    calendarPresentation={calendarPresentation} onCalendarPresentationChange={onCalendarPresentationChange} onOpenResource={onOpenResource}/> })
 builtinViews.register({ id: 'tasks', module: 'tasks', render: ({ workspace, onUpdate, onError, focusedTaskId, focusVersion, taskPresentation, onTaskPresentationChange }) =>
   <TasksModule workspace={workspace} onUpdate={onUpdate} onError={onError} focusTaskId={focusedTaskId} focusVersion={focusVersion}
     taskPresentation={taskPresentation} onTaskPresentationChange={onTaskPresentationChange}/> })

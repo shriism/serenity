@@ -536,6 +536,8 @@ function App() {
       onPresentationChange: (id) => { if (tab) changePresentation(group.id, tab, id) },
       taskPresentation: group.viewPresentations.tasks === 'board' ? 'board' : 'list',
       onTaskPresentationChange: (presentation) => setWorkbench((current) => updateGroup(current, group.id, (item) => presentView(item, 'tasks', presentation))),
+      calendarPresentation: group.viewPresentations.calendar === 'agenda' ? 'agenda' : 'month',
+      onCalendarPresentationChange: (presentation) => setWorkbench((current) => updateGroup(current, group.id, (item) => presentView(item, 'calendar', presentation))),
       onOpenEntity: (id) => { openEntity(id, group.id) }, onNewEntity: () => newEntity(group.id), onDiscuss: startConversation,
       onEntityCreated: (id) => setWorkbench((current) => updateGroup(current, group.id, (item) => showTab(item, { kind: 'entity', id })))
     }

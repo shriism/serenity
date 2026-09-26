@@ -155,6 +155,16 @@
 .serenity-studio .task-view-toggle { display: inline-flex; gap: 2px; margin: 12px 0 24px; padding: 3px; border-radius: 9px; background: var(--surface-hover); }
 .serenity-studio .task-view-toggle button { border: 0; border-radius: 7px; padding: 6px 13px; background: transparent; color: var(--muted); font-size: 11px; }
 .serenity-studio .task-view-toggle button.active { background: var(--studio-base, var(--surface)); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / 18%); }
+.serenity-studio .calendar-agenda { margin-top: 18px; }
+.serenity-studio .calendar-agenda ol { margin: 0; padding: 0; list-style: none; }
+.serenity-studio .calendar-agenda li h3 { margin: 23px 0 7px; color: var(--subtle); font-size: 11px; font-weight: 650; }
+.serenity-studio .calendar-agenda li:first-child h3 { margin-top: 0; }
+.serenity-studio .calendar-agenda li button { display: flex; justify-content: space-between; gap: 14px; width: 100%; padding: 11px 0; border: 0; border-top: 1px solid var(--studio-line); background: transparent; color: var(--text); text-align: left; }
+.serenity-studio .calendar-agenda li button:hover strong { color: var(--accent); }
+.serenity-studio .calendar-agenda li button strong, .serenity-studio .calendar-agenda li button small { display: block; }
+.serenity-studio .calendar-agenda li button strong { font-size: 12px; }
+.serenity-studio .calendar-agenda li button small { margin-top: 3px; color: var(--subtle); font-size: 10px; }
+.serenity-studio .calendar-agenda .agenda-detail { max-width: 42%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .serenity-studio .module-page .tasks-layout.board-layout { width: 100%; min-width: 0; max-width: none; grid-template-columns: minmax(0, 1fr); }
 .serenity-studio .module-page .tasks-layout.board-layout > div:first-child { min-width: 0; }
 .serenity-studio .task-board { display: grid; width: 100%; max-width: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px 12px; padding: 2px 2px 14px; }

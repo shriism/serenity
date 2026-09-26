@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ResourcePicker } from './resource-picker'
 import type { CalendarEvent, TaskItem, WorkspaceSnapshot } from '../../shared/types'
 import { taskBoard, type TaskBucket } from '../../shared/task-board'
+import { calendarAgenda } from '../../shared/calendar-agenda'
+import { resourceUri } from '../../shared/resources'
 
 type Props = {
   workspace: WorkspaceSnapshot
@@ -12,6 +14,9 @@ type Props = {
   focusVersion?: number
   taskPresentation?: 'list' | 'board'
   onTaskPresentationChange?(presentation: 'list' | 'board'): void
+  calendarPresentation?: 'month' | 'agenda'
+  onCalendarPresentationChange?(presentation: 'month' | 'agenda'): void
+  onOpenResource?(uri: string, side: boolean): void
 }
 
 function today(): string {
@@ -32,7 +37,8 @@ function EntityLinks({ workspace, selected, onChange }: {
   </fieldset>
 }
 
-export function CalendarModule({ workspace, onUpdate, onError, focusEventId, focusVersion }: Props) {
+export function CalendarModule({ workspace, onUpdate, onError, focusEventId, focusVersion,
+  calendarPresentation = 'month', onCalendarPresentationChange, onOpenResource }: Props) {
   const [month, setMonth] = useState(today().slice(0, 7))
   const [selectedDay, setSelectedDay] = useState(today())
   const [draft, setDraft] = useState<CalendarEvent>({ id: '', title: '', start: today(), notes: '', relatedEntityIds: [] })
@@ -54,6 +60,7 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
   const cells = Math.ceil((firstDay + dayCount) / 7) * 7
   const days = Array.from({ length: cells }, (_, index) =>
     index < firstDay || index >= firstDay + dayCount ? null : `${month}-${String(index - firstDay + 1).padStart(2, '0')}`)
+  const agenda = calendarAgenda(workspace, month)
 
   function changeMonth(offset: number): void {
     const next = new Date(year, number - 1 + offset, 1)
@@ -99,6 +106,10 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
   return <section className="page module-page">
     <span className="eyebrow">SERENITY CALENDAR</span><h1>Calendar</h1>
     <p>Events live in this workspace and can connect to anything in your knowledge.</p>
+    <div className="task-view-toggle" role="group" aria-label="Calendar view">
+      <button type="button" aria-pressed={calendarPresentation === 'month'} className={calendarPresentation === 'month' ? 'active' : ''} onClick={() => onCalendarPresentationChange?.('month')}>Month</button>
+      <button type="button" aria-pressed={calendarPresentation === 'agenda'} className={calendarPresentation === 'agenda' ? 'active' : ''} onClick={() => onCalendarPresentationChange?.('agenda')}>Agenda</button>
+    </div>
     <div className="calendar-layout">
       <div>
         <div className="calendar-toolbar">
@@ -106,7 +117,20 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
           <h2>{new Date(year, number - 1).toLocaleString(undefined, { month: 'long', year: 'numeric' })}</h2>
           <button aria-label="Next month" onClick={() => changeMonth(1)}>→</button>
         </div>
-        <div className="calendar-grid">
+        {calendarPresentation === 'agenda' ? <div className="calendar-agenda">
+          {agenda.length === 0 && <p className="hint">No events or open tasks due this month.</p>}
+          <ol>{agenda.map((item, index) => <li key={`${item.kind}:${item.id}`}>
+            {(index === 0 || agenda[index - 1].day !== item.day) && <h3>{new Date(`${item.day}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</h3>}
+            <button type="button" onClick={(event) => {
+              if (item.kind === 'task') onOpenResource?.(resourceUri({ kind: 'task', id: item.id }), event.metaKey || event.ctrlKey)
+              else {
+                const selected = workspace.events.find((entry) => entry.id === item.id)
+                if (selected) { setSelectedDay(item.day); setDraft(selected); setTime(selected.start.slice(11, 16)); setEndTime(selected.end?.slice(11, 16) ?? '') }
+              }
+            }}><span><strong>{item.title}</strong><small>{item.kind === 'task' ? 'Task due' : item.time || 'All day'}</small></span>
+              {item.detail && <small className="agenda-detail">{item.detail}</small>}</button>
+          </li>)}</ol>
+        </div> : <div className="calendar-grid">
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <span className="weekday" key={day}>{day}</span>)}
           {days.map((day, index) => day ? <button key={day} className={day === selectedDay ? 'selected' : ''}
             onClick={() => { setSelectedDay(day); if (!draft.id) clearDraft(day) }}>
@@ -114,7 +138,7 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
             {workspace.events.filter((item) => item.start.slice(0, 10) === day).map((item) => <small key={item.id}>{item.title}</small>)}
             {workspace.modules.tasks && workspace.tasks.filter((item) => item.due === day && !item.completed).map((item) => <small key={item.id}>☐ {item.title}</small>)}
           </button> : <span key={`empty-${index}`}/>)}
-        </div>
+        </div>}
       </div>
       <aside className="module-aside">
         <h2>{new Date(`${selectedDay}T12:00`).toLocaleDateString(undefined, { dateStyle: 'full' })}</h2>

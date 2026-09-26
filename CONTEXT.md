@@ -137,6 +137,7 @@ This is an **implemented desktop foundation**, not a finished general workbench.
 - Done: imported Markdown documents expose an outline of explicit headings, with bounded text rendering when jumping to a distant section.
 - Done: closing a tab or pane moves keyboard focus to a surviving tab or pane, with a visible pane focus ring.
 - Done: non-Home pages can switch between their authored Page and a Links view showing resolved outgoing resources, unresolved names, and incoming wikilink mentions.
+- Done: Calendar can switch between Month and an Agenda of that month's events and open due tasks; the choice is saved per pane.
 - Remaining: broader presentations for other resource kinds and further keyboard focus polish. PDF and DOCX extraction does not preserve reliable heading structure, so Serenity does not invent an outline for them.
 
 ### 2. Make customization coherent, then consider installed extensions
@@ -148,7 +149,7 @@ This is an **implemented desktop foundation**, not a finished general workbench.
 ### 3. Deepen the actual personal-knowledge experience
 
 - Done in the September 2026 pass: entity timelines and connections, citations checked against sent context, duplicate-identity review with evidence, review beside the source document, document provenance, wikilinks and backlinks, search ranking, and large-workspace performance (about 140 ms snapshots and 11 ms duplicate detection for 2,000 entities and 8,000 claims).
-- Remaining: temporal views beyond a single entity, deeper page and task presentations, richer retrieval ergonomics, and entity-resolution decisions recorded when the person judges two entities distinct (see decisions below).
+- Remaining: deeper temporal views and page/task presentations, richer retrieval ergonomics, and explicit entity-resolution decisions when a person judges two entities distinct (approved by the owner; see below).
 - Continue iteration on accessibility, focus/keyboard behavior, responsive window sizes, empty/error states, and the quiet native-workbench UI based on actual use.
 
 ### 4. Product hardening and later platforms
@@ -157,7 +158,7 @@ This is an **implemented desktop foundation**, not a finished general workbench.
 - Exercise migrations, recovery, performance, packaging and real-provider behavior against larger and older workspaces. Keep the data format readable, recoverable and reversible when settings or indexes are damaged.
 - Decide if and when to support external integrations/actions, cloud/device sync, local models, mobile access, or simultaneous workspaces. These are **future goals**, not existing features. External calendar sync is not the same as Serenity's internal Calendar.
 
-Decisions waiting for the owner (September 2026): whether to add a workspace record type for "these two entities are not the same" (so dismissed duplicate suggestions stay dismissed; today only an undone merge counts); whether drag-and-drop import may pass file paths from the renderer to the main process (a boundary the architecture currently avoids); and whether to run a live Copilot/Codex smoke turn to confirm providers return citations in practice.
+The owner chose to finish and harden the desktop workbench as the first release milestone, and approved an explicit, reversible workspace record for "these two entities are not the same." Decisions still waiting: whether drag-and-drop import may pass file paths from the renderer to the main process (a boundary the architecture currently avoids), and whether to run a live Copilot/Codex smoke turn to confirm providers return citations in practice.
 
 There is no final approved specification yet for general panes, installable plugins, external actions, or a mobile/sync architecture. Before choosing an irreversible knowledge representation, ontology, memory rule, autonomy boundary, or extension trust model, explain the problem, options, tradeoffs and recommendation to the human and let them decide. Prefer incremental improvements with tests for storage, scope and restoration invariants rather than declaring the whole architecture complete at once.
 

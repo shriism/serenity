@@ -279,6 +279,17 @@ try {
   assert.equal(focusedTask, 'Call Alex', 'Home should open the selected task')
   const calendarView = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Calendar')); if (button) { button.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.module-page h1')?.textContent ?? null } await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
   assert.equal(calendarView, 'Calendar')
+  const agendaView = await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.task-view-toggle button')].find((item) => item.textContent === 'Agenda')?.click(); for (let i = 0; i < 30 && !document.querySelector('.calendar-agenda'); i++) await new Promise((resolve) => setTimeout(resolve, 50)); let entry = [...document.querySelectorAll('.calendar-agenda button')].find((item) => item.textContent?.includes('Meet Alex')); if (!entry) { document.querySelector('.calendar-toolbar button:last-child')?.click(); await new Promise((resolve) => setTimeout(resolve, 50)); entry = [...document.querySelectorAll('.calendar-agenda button')].find((item) => item.textContent?.includes('Meet Alex')) } entry?.click(); for (let i = 0; i < 30 && document.querySelector('.module-aside .module-form input')?.value !== 'Meet Alex'; i++) await new Promise((resolve) => setTimeout(resolve, 50)); return { entry: Boolean(entry), selected: document.querySelector('.module-aside .module-form input')?.value, pressed: [...document.querySelectorAll('.task-view-toggle button')].find((item) => item.textContent === 'Agenda')?.getAttribute('aria-pressed') } })()`)
+  assert.deepEqual(agendaView, { entry: true, selected: 'Meet Alex', pressed: 'true' }, 'Agenda should list this month’s events and open them for editing')
+  let savedAgenda = false
+  for (let i = 0; i < 30 && !savedAgenda; i++) {
+    const session = YAML.parse(await readFile(join(workspace, '.serenity', 'session.yaml'), 'utf8')) as { layout?: { groups: { viewPresentations?: { calendar?: string } }[] } }
+    savedAgenda = Boolean(session.layout?.groups.some((group) => group.viewPresentations?.calendar === 'agenda'))
+    if (!savedAgenda) await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  assert.equal(savedAgenda, true, 'The Calendar agenda choice should persist per pane')
+  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-calendar-agenda.png'), await captureScreenshot(pageUrl))
+  await evaluate(pageUrl, `[...document.querySelectorAll('.task-view-toggle button')].find((item) => item.textContent === 'Month')?.click()`)
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-calendar.png'), await captureScreenshot(pageUrl))
   const tasksView = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Tasks')); button?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.module-page h1')?.textContent ?? null })()`)
   assert.equal(tasksView, 'Tasks')

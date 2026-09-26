@@ -28,6 +28,8 @@ keybindings:
 
 Tasks can be viewed as a list or a due-date board with Overdue, Next 7 days, Later, No date, and Completed columns. Both views use the same workspace task files; the board groups tasks for viewing and does not add a stored task status. Each pane remembers its list or board choice in the workspace session.
 
+Calendar can show a month grid or a dated Agenda of that month's events and open due tasks. Each pane remembers its Calendar view.
+
 An imported Markdown document with headings has an Outline above its extracted text. Selecting a heading jumps to that section; distant jumps show a bounded text chunk with a way back to the start. PDF and DOCX previews show extracted text without an inferred outline.
 
 Pages other than Home have a **Page / Links** switch. Links shows the page's resolved workspace links, names that need disambiguation or have no match, and pages or entity notes that mention it with a wikilink. The selected view is remembered per tab.

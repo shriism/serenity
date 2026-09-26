@@ -1,21 +1,26 @@
-import { FileText, Link2, X } from 'lucide-react'
+import { FileText, Link2, NotebookText, X } from 'lucide-react'
+import type { TabKind } from './resource-routing'
 
-export type WorkspaceTab = { kind: 'entity' | 'document'; id: string; title: string }
-export const tabRef = (tab: WorkspaceTab): string => `${tab.kind}:${tab.id}`
+export interface WorkspaceTabItem { key: string; kind: TabKind; title: string }
+
+const icons = { entity: Link2, document: FileText, page: NotebookText }
 
 export function WorkspaceTabs({ tabs, active, onSelect, onClose }: {
-  tabs: WorkspaceTab[]
+  tabs: WorkspaceTabItem[]
   active: string | null
-  onSelect(tab: WorkspaceTab): void
-  onClose(tab: WorkspaceTab): void
+  onSelect(key: string): void
+  onClose(key: string): void
 }) {
   if (!tabs.length) return null
   return <nav className="workspace-tabs" aria-label="Open files">
-    {tabs.map((tab) => <div className={`workspace-tab ${active === tabRef(tab) ? 'active' : ''}`} key={tabRef(tab)}>
-      <button className="workspace-tab-label" title={tab.title} onClick={() => onSelect(tab)}>
-        {tab.kind === 'entity' ? <Link2 size={14}/> : <FileText size={14}/>}<span>{tab.title}</span>
-      </button>
-      <button className="workspace-tab-close" onClick={() => onClose(tab)} aria-label={`Close ${tab.title}`} title={`Close ${tab.title}`}><X size={13}/></button>
-    </div>)}
+    {tabs.map((tab) => {
+      const Icon = icons[tab.kind]
+      return <div className={`workspace-tab ${active === tab.key ? 'active' : ''}`} key={tab.key}>
+        <button className="workspace-tab-label" title={tab.title} onClick={() => onSelect(tab.key)} aria-current={active === tab.key ? 'page' : undefined}>
+          <Icon size={14}/><span>{tab.title}</span>
+        </button>
+        <button className="workspace-tab-close" onClick={() => onClose(tab.key)} aria-label={`Close ${tab.title}`} title={`Close ${tab.title}`}><X size={13}/></button>
+      </div>
+    })}
   </nav>
 }

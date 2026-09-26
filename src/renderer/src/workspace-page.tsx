@@ -36,6 +36,7 @@ export function WorkspacePageView({ page, workspace, commands, onUpdate, onError
   const [busy, setBusy] = useState(false)
   useEffect(() => { if (!dirty) { setDraft(page.text); setBaseRevision(page.revision) } }, [page.text, page.revision, page.id, dirty])
   useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange])
+  useEffect(() => () => onDirtyChange(false), [onDirtyChange])
 
   async function save(): Promise<void> {
     if (busy || !dirty) return

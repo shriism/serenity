@@ -10,7 +10,8 @@ import { builtinViews } from './builtin-views'
 import { CommandPalette } from './command-palette'
 import { ThemeControl, useTheme } from './theme'
 import type { View } from './views'
-import { WorkspaceTabs, tabRef, type WorkspaceTab } from './workspace-tabs'
+import { WorkspaceTabs } from './workspace-tabs'
+import { restoreTabs, routeResource, tabKey, tabPath, tabTitle, tabUri, tabView, type TabRef } from './resource-routing'
 import { workspaceCommands } from './commands'
 import { parseResourceUri, resourceUri } from '../../shared/resources'
 import './style.css'
@@ -34,11 +35,10 @@ function App() {
   const [claimTarget, setClaimTarget] = useState('')
   const [mergeTarget, setMergeTarget] = useState('')
   const [view, setView] = useState<View>('home')
-  const [activePageId, setActivePageId] = useState<string | null>(null)
   const [leftOpen, setLeftOpen] = useState(() => storedPanel('serenity.left-open', false))
   const [rightOpen, setRightOpen] = useState(() => storedPanel('serenity.right-open', true))
   const [aiExpanded, setAIExpanded] = useState(false)
-  const [tabs, setTabs] = useState<WorkspaceTab[]>([])
+  const [tabs, setTabs] = useState<TabRef[]>([])
   const [activeTab, setActiveTab] = useState<string | null>(null)
   const [sessionReadyPath, setSessionReadyPath] = useState<string | null>(null)
   const [conversationId, setConversationId] = useState<string | null>(null)
@@ -58,6 +58,9 @@ function App() {
   const [focusVersion, setFocusVersion] = useState(0)
   const [theme, setTheme] = useTheme()
   const searchSequence = useRef(0)
+  const activeTabRef = tabs.find((tab) => tabKey(tab) === activeTab)
+  const activePageId = view === 'home' && activeTabRef?.kind === 'page' ? activeTabRef.id : null
+  const viewAvailable = (target: View): boolean => Boolean(workspace && builtinViews.available(target, { workspace }))
   useEffect(() => { try { localStorage.setItem('serenity.left-open', String(leftOpen)) } catch { /* Still works for this session. */ } }, [leftOpen])
   useEffect(() => { try { localStorage.setItem('serenity.right-open', String(rightOpen)) } catch { /* Still works for this session. */ } }, [rightOpen])
   useEffect(() => {
@@ -109,41 +112,39 @@ function App() {
       if (!session) { restoreConversation(workspace.conversations.at(-1)); setSessionReadyPath(workspace.path); return }
       const lastConversation = workspace.conversations.find((item) => session.assistantUri === resourceUri({ kind: 'conversation', id: item.id })) ?? workspace.conversations.at(-1)
       restoreConversation(lastConversation)
-      const open: WorkspaceTab[] = session.openUris.flatMap<WorkspaceTab>((uri) => {
-        const ref = parseResourceUri(uri)
-        if (ref?.kind === 'entity') {
-          const entity = workspace.entities.find((item) => item.id === ref.id)
-          return entity ? [{ kind: 'entity', id: ref.id, title: entity.title }] : []
-        }
-        if (ref?.kind === 'document') {
-          const document = workspace.documents.find((item) => item.name === ref.id)
-          return document ? [{ kind: 'document', id: ref.id, title: document.name }] : []
-        }
-        return []
-      })
-      const active = session.activeUri ? parseResourceUri(session.activeUri) : null
-      const target = session.view as View
-      setTabs(open)
-      if (active?.kind === 'entity' && target === 'knowledge') {
-        const entity = workspace.entities.find((item) => item.id === active.id)
-        if (entity) { setSelected(entity.id); setDraft(entity); setBodyMode('preview'); setActiveTab(`entity:${entity.id}`) }
-      } else if (active?.kind === 'document' && target === 'documents') setActiveTab(`document:${active.id}`)
-      else if (active?.kind === 'page' && target === 'home') setActivePageId(active.id === workspace.workbench.homePage ? null : active.id)
-      setView(builtinViews.available(target, { workspace }) ? target : 'home')
+      const available = (id: View): boolean => builtinViews.available(id, { workspace })
+      const open = restoreTabs(workspace, session.openUris, available)
+      const active = session.activeUri ? routeResource(workspace, session.activeUri, available) : null
+      const target = available(session.view as View) ? session.view as View : 'home'
+      if (active?.action === 'tab' && active.view === target) {
+        const tab = active.tab
+        setTabs(open.some((item) => tabKey(item) === tabKey(tab)) ? open : [...open, tab])
+        setActiveTab(tabKey(tab))
+        const entity = tab.kind === 'entity' ? workspace.entities.find((item) => item.id === tab.id) : undefined
+        if (entity) { setSelected(entity.id); setDraft(entity); setBodyMode('preview') }
+      } else setTabs(open)
+      setView(target)
       setSessionReadyPath(workspace.path)
     }).catch((error) => { if (current) setError(`Workspace session: ${String(error)}`) })
     return () => { current = false }
   }, [workspace?.path])
   useEffect(() => {
     if (!workspace || sessionReadyPath !== workspace.path) return
-    const selectedTab = tabs.find((tab) => tabRef(tab) === activeTab)
-    const session: WorkbenchSession = { view, openUris: tabs.map((tab) => resourceUri(tab)),
+    const session: WorkbenchSession = { view, openUris: tabs.slice(-30).map(tabUri),
       assistantUri: conversationId ? resourceUri({ kind: 'conversation', id: conversationId }) : undefined,
-      activeUri: view === 'home' ? resourceUri({ kind: 'page', id: activePageId ?? workspace.workbench.homePage }) :
-        selectedTab ? resourceUri(selectedTab) : undefined }
+      activeUri: activeTabRef && tabView[activeTabRef.kind] === view ? tabUri(activeTabRef) :
+        view === 'home' ? resourceUri({ kind: 'page', id: workspace.workbench.homePage }) : undefined }
     const timer = window.setTimeout(() => { void window.serenity.saveSession(session).catch((error) => setError(`Workspace session: ${String(error)}`)) }, 180)
     return () => window.clearTimeout(timer)
-  }, [workspace?.path, workspace?.workbench.homePage, sessionReadyPath, view, tabs, activeTab, activePageId, conversationId])
+  }, [workspace?.path, workspace?.workbench.homePage, sessionReadyPath, view, tabs, activeTab, activeTabRef, conversationId])
+  useEffect(() => {
+    if (!workspace) return
+    const available = (id: View): boolean => builtinViews.available(id, { workspace })
+    setTabs((existing) => {
+      const kept = restoreTabs(workspace, existing.map(tabUri), available)
+      return kept.length === existing.length ? existing : kept
+    })
+  }, [workspace])
   useEffect(() => {
     const onShortcut = (event: globalThis.KeyboardEvent): void => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
@@ -179,7 +180,6 @@ function App() {
       setBodyMode('edit')
       setError('')
       setView('home')
-      setActivePageId(null)
       setTabs([])
       setActiveTab(null)
       setAIExpanded(false)
@@ -194,29 +194,46 @@ function App() {
     }
   }
 
-  function selectEntity(entity: Entity): boolean {
-    if (view === 'home' && pageDirty && !window.confirm('Discard your unsaved Home page changes?')) return false
-    if (dirty && !window.confirm('Discard your unsaved changes?')) return false
+  function confirmLeavePage(): boolean {
+    if (!pageDirty) return true
+    if (!window.confirm('Discard your unsaved page changes?')) return false
     setPageDirty(false)
+    return true
+  }
+
+  function confirmDiscardDraft(): boolean {
+    if (!dirty) return true
+    if (!window.confirm('Discard your unsaved changes?')) return false
+    setDirty(false)
+    return true
+  }
+
+  function openTab(tab: TabRef): void {
+    setTabs((existing) => existing.some((item) => tabKey(item) === tabKey(tab)) ? existing : [...existing, tab])
+    setActiveTab(tabKey(tab))
+  }
+
+  function selectEntity(entity: Entity): boolean {
+    if (!confirmLeavePage()) return false
+    if (entity.id === selected && draft) {
+      setView('knowledge')
+      openTab({ kind: 'entity', id: entity.id })
+      return true
+    }
+    if (!confirmDiscardDraft()) return false
     setSelected(entity.id)
     setDraft({ ...entity })
-    setDirty(false)
     setBodyMode('preview')
     setError('')
     setView('knowledge')
-    const tab: WorkspaceTab = { kind: 'entity', id: entity.id, title: entity.title }
-    setTabs((existing) => existing.some((item) => tabRef(item) === tabRef(tab)) ? existing.map((item) => tabRef(item) === tabRef(tab) ? tab : item) : [...existing, tab])
-    setActiveTab(tabRef(tab))
+    openTab({ kind: 'entity', id: entity.id })
     return true
   }
 
   function newEntity() {
-    if (view === 'home' && pageDirty && !window.confirm('Discard your unsaved Home page changes?')) return
-    if (dirty && !window.confirm('Discard your unsaved changes?')) return
-    setPageDirty(false)
+    if (!confirmLeavePage() || !confirmDiscardDraft()) return
     setSelected(null)
     setDraft({ id: '', title: '', type: '', body: '' })
-    setDirty(false)
     setBodyMode('edit')
     setError('')
     setView('knowledge')
@@ -257,9 +274,7 @@ function App() {
       setSelected(saved?.id ?? null)
       setDraft(saved ?? null)
       if (saved) {
-        const tab: WorkspaceTab = { kind: 'entity', id: saved.id, title: saved.title }
-        setTabs((existing) => existing.some((item) => tabRef(item) === tabRef(tab)) ? existing.map((item) => tabRef(item) === tabRef(tab) ? tab : item) : [...existing, tab])
-        setActiveTab(tabRef(tab))
+        openTab({ kind: 'entity', id: saved.id })
       }
       setDirty(false)
       setError('')
@@ -313,114 +328,96 @@ function App() {
   }
 
   function openSearchResult(result: SearchResult) {
-    const id = result.kind === 'claim' ? workspace?.claims.find((claim) => claim.id === result.id)?.subject ?? result.id : result.id
-    if (openResource(resourceUri({ kind: result.kind === 'claim' ? 'entity' : result.kind, id }))) closePalette()
+    // The search index records claim hits under their subject entity's ID.
+    const kind = result.kind === 'claim' && !workspace?.claims.some((item) => item.id === result.id) ? 'entity' : result.kind
+    if (openResource(resourceUri({ kind, id: result.id }))) closePalette()
   }
 
   function openResource(uri: string): boolean {
-    const ref = parseResourceUri(uri)
-    if (!ref || !workspace) return false
-    if (ref.kind === 'entity') {
-      const entity = workspace.entities.find((item) => item.id === ref.id)
-      return entity ? selectEntity(entity) : false
+    const target = workspace ? routeResource(workspace, uri, viewAvailable) : null
+    if (!workspace || !target) return false
+    switch (target.action) {
+      case 'tab': return openTabRef(target.tab)
+      case 'home': return navigate('home')
+      case 'focus': return focusRecord(target.kind, target.id)
+      case 'external': void openDocument(target.name); return true
+      case 'view': return navigate(target.view)
+      case 'conversation': {
+        const conversation = workspace.conversations.find((item) => item.id === target.id)
+        if (conversation) selectConversation(conversation)
+        return Boolean(conversation)
+      }
     }
-    if (ref.kind === 'document' && workspace.documents.some((item) => item.name === ref.id)) { openDocumentTab(ref.id); return true }
-    if (ref.kind === 'task' && workspace.modules.tasks && workspace.tasks.some((item) => item.id === ref.id)) { openTask(ref.id); return true }
-    if (ref.kind === 'event' && workspace.modules.calendar && workspace.events.some((item) => item.id === ref.id)) { openEvent(ref.id); return true }
-    if (ref.kind === 'claim') {
-      const subject = workspace.claims.find((item) => item.id === ref.id)?.subject
-      return subject ? openResource(resourceUri({ kind: 'entity', id: subject })) : false
-    }
-    if (ref.kind === 'conversation') {
-      const conversation = workspace.conversations.find((item) => item.id === ref.id)
-      if (conversation) { selectConversation(conversation); return true }
-    }
-    if (ref.kind === 'proposal' && workspace.proposals.some((item) => item.id === ref.id)) { navigate('review'); return true }
-    if (ref.kind === 'page' && workspace.pages.some((page) => page.id === ref.id)) {
-      runCommand(`page.open.${ref.id}`)
-      return true
-    }
-    return false
   }
 
-  function openEvent(id: string) {
-    if (view === 'home' && pageDirty && !window.confirm('Discard your unsaved Home page changes?')) return
-    setPageDirty(false)
-    setFocusedEventId(id)
+  function openTabRef(tab: TabRef): boolean {
+    if (tab.kind === 'document') return openDocumentTab(tab.id)
+    if (tab.kind === 'page') return openPageTab(tab.id)
+    const entity = workspace?.entities.find((item) => item.id === tab.id)
+    return entity ? selectEntity(entity) : false
+  }
+
+  function openPageTab(id: string): boolean {
+    if (activePageId !== id && !confirmLeavePage()) return false
+    openTab({ kind: 'page', id })
+    setView('home')
+    return true
+  }
+
+  function focusRecord(kind: 'task' | 'event', id: string): boolean {
+    if (!confirmLeavePage()) return false
+    if (kind === 'task') setFocusedTaskId(id)
+    else setFocusedEventId(id)
     setFocusVersion((version) => version + 1)
-    setView('calendar')
+    setActiveTab(null)
+    setView(kind === 'task' ? 'tasks' : 'calendar')
+    return true
   }
 
-  function openTask(id: string) {
-    if (view === 'home' && pageDirty && !window.confirm('Discard your unsaved Home page changes?')) return
-    setPageDirty(false)
-    setFocusedTaskId(id)
-    setFocusVersion((version) => version + 1)
-    setView('tasks')
-  }
-
-  function navigate(destination: View) {
-    if (view === 'home' && pageDirty && (destination !== 'home' || activePageId !== null)) {
-      if (!window.confirm('Discard your unsaved Home page changes?')) return
-      setPageDirty(false)
-    }
-    if (destination === 'home') setActivePageId(null)
+  function navigate(destination: View): boolean {
+    if (!viewAvailable(destination)) return false
+    if (view === 'home' && (destination !== 'home' || activePageId !== null) && !confirmLeavePage()) return false
     if (destination === 'knowledge') {
       if (view === 'knowledge' && selected) {
-        if (dirty && !window.confirm('Discard your unsaved changes?')) return
+        if (!confirmDiscardDraft()) return false
         setSelected(null)
         setDraft(null)
-        setDirty(false)
         setActiveTab(null)
-      } else setActiveTab(selected ? `entity:${selected}` : null)
+      } else setActiveTab(selected ? tabKey({ kind: 'entity', id: selected }) : null)
     } else setActiveTab(null)
     if (destination === 'calendar') setFocusedEventId(null)
     if (destination === 'tasks') setFocusedTaskId(null)
     setView(destination)
     if (leftOpen) setLeftOpen(false)
     if (destination === 'activity') void refresh()
+    return true
   }
 
   function runCommand(id: string): void {
     const command = workspace && workspaceCommands(workspace).find((item) => item.id === id)
     if (!command) return
     if (id.startsWith('page.open.')) {
-      const pageId = id.slice('page.open.'.length)
-      if (!workspace?.pages.some((page) => page.id === pageId)) return
-      if (view === 'home' && pageDirty && !window.confirm('Discard your unsaved page changes?')) return
-      setPageDirty(false)
-      setActivePageId(pageId)
-      setActiveTab(null)
-      setView('home')
-      if (leftOpen) setLeftOpen(false)
+      if (openResource(resourceUri({ kind: 'page', id: id.slice('page.open.'.length) })) && leftOpen) setLeftOpen(false)
       return
     }
     if (command.view) { navigate(command.view); return }
     if (id === 'entity.create') newEntity()
     else if (id === 'page.create') void createPage()
-    else if (id === 'documents.import') {
-      if (view === 'home' && pageDirty && !window.confirm('Discard your unsaved Home page changes?')) return
-      setPageDirty(false)
-      setView('documents'); void importDocuments()
-    }
+    else if (id === 'documents.import') { if (navigate('documents')) void importDocuments() }
     else if (id === 'assistant.new') startConversation()
     else if (id === 'workspace.search') setPaletteOpen(true)
     else if (id === 'workspace.refresh') void refresh()
   }
 
   async function createPage(): Promise<void> {
-    if (view === 'home' && pageDirty && !window.confirm('Discard your unsaved page changes?')) return
-    if (dirty && !window.confirm('Discard your unsaved changes?')) return
+    if (!confirmLeavePage()) return
     try {
       const before = new Set(workspace?.pages.map((page) => page.id) ?? [])
       const next = await window.serenity.createPage()
       const created = next.pages.find((page) => !before.has(page.id))
       if (!created) throw new Error('New page was not found in this workspace')
       setWorkspace(next)
-      setPageDirty(false)
-      setDirty(false)
-      setActiveTab(null)
-      setActivePageId(created.id)
+      openTab({ kind: 'page', id: created.id })
       setView('home')
       setError('')
     } catch (error) { setError(String(error)) }
@@ -466,40 +463,30 @@ function App() {
     catch (cause) { setError(String(cause)) }
   }
 
-  function openDocumentTab(name: string) {
+  function openDocumentTab(name: string): boolean {
     const item = workspace?.documents.find((document) => document.name === name)
-    if (!item) return
-    if (!item.extractable) { void openDocument(name); return }
-    if (view === 'home' && pageDirty && !window.confirm('Discard your unsaved Home page changes?')) return
-    if (dirty && !window.confirm('Discard your unsaved changes?')) return
-    setPageDirty(false)
-    const tab: WorkspaceTab = { kind: 'document', id: name, title: name }
-    setTabs((existing) => existing.some((entry) => tabRef(entry) === tabRef(tab)) ? existing : [...existing, tab])
-    setActiveTab(tabRef(tab))
+    if (!item) return false
+    if (!item.extractable) { void openDocument(name); return true }
+    if (!confirmLeavePage()) return false
+    openTab({ kind: 'document', id: name })
     setView('documents')
-    setDirty(false)
+    return true
   }
 
-  function activateTab(tab: WorkspaceTab) {
-    if (tab.kind === 'entity') {
-      const entity = workspace?.entities.find((item) => item.id === tab.id)
-      if (entity) selectEntity(entity)
-      return
-    }
-    openDocumentTab(tab.id)
+  function activateTab(key: string) {
+    const tab = tabs.find((item) => tabKey(item) === key)
+    if (tab) openTabRef(tab)
   }
 
-  function closeTab(tab: WorkspaceTab) {
-    const remaining = tabs.filter((item) => tabRef(item) !== tabRef(tab))
-    if (activeTab === tabRef(tab) && dirty && !window.confirm('Discard your unsaved changes?')) return
-    setTabs(remaining)
-    if (activeTab === tabRef(tab)) {
-      setActiveTab(null)
-      setSelected(null)
-      setDraft(null)
-      setDirty(false)
-      setView(tab.kind === 'document' ? 'documents' : 'knowledge')
-    }
+  function closeTab(key: string) {
+    const tab = tabs.find((item) => tabKey(item) === key)
+    if (!tab) return
+    const editing = tab.kind === 'entity' && tab.id === selected
+    if (editing && !confirmDiscardDraft()) return
+    if (activeTab === key && tab.kind === 'page' && !confirmLeavePage()) return
+    setTabs(tabs.filter((item) => tabKey(item) !== key))
+    if (editing) { setSelected(null); setDraft(null) }
+    if (activeTab === key) { setActiveTab(null); setView(tabView[tab.kind]) }
   }
 
   async function sendMessage(event: FormEvent) {
@@ -509,7 +496,7 @@ function App() {
     setBusy(true)
     try {
       const next = await window.serenity.sendMessage({ conversationId: conversationId ?? undefined, text: message, provider, autonomy, retained, permissions, readScope,
-        activeRef: view === 'home' ? `page:${activePageId ?? workspace?.workbench.homePage ?? 'home'}` : activeTab ?? undefined, openRefs: tabs.map(tabRef) })
+        activeRef: view === 'home' ? `page:${activePageId ?? workspace?.workbench.homePage ?? 'home'}` : activeTab ?? undefined, openRefs: tabs.map(tabKey) })
       if (!conversationId) {
         const created = next.conversations.find((item) => !workspace?.conversations.some((old) => old.id === item.id))
         setConversationId(created?.id ?? null)
@@ -592,11 +579,11 @@ function App() {
     ...(workspace?.conversations.flatMap((item) => item.messages.map((message) => ({ id: message.id, at: message.recordedAt, title: message.role === 'user' ? 'You' : `${message.provider} replied`, detail: message.text.slice(0, 180) }))) ?? [])]
     .sort((a, b) => b.at.localeCompare(a.at))
   const title: Record<View, string> = { home: 'Home', knowledge: 'Knowledge', review: 'Review', documents: 'Documents', calendar: 'Calendar', tasks: 'Tasks', activity: 'Activity', settings: 'Settings' }
-  const currentTab = tabs.find((item) => tabRef(item) === activeTab)
+  const currentTab = activeTabRef
   const currentPage = view === 'home' ? workspace?.pages.find((item) => item.id === (activePageId ?? workspace.workbench.homePage)) : null
-  const activeFile = currentTab && workspace ? {
-    name: currentTab.title,
-    path: `${currentTab.kind === 'entity' ? 'entities' : 'documents'}/${currentTab.id}${currentTab.kind === 'entity' ? '.md' : ''}`,
+  const activeFile = currentTab && currentTab.kind !== 'page' && workspace ? {
+    name: tabTitle(workspace, currentTab),
+    path: tabPath(workspace, currentTab),
     kind: currentTab.kind,
     allowed: readScope.mode === 'workspace' || (currentTab.kind === 'entity' ? readScope.entityIds.includes(currentTab.id) : readScope.documentNames.includes(currentTab.id))
   } : currentPage ? { name: currentPage.title, path: currentPage.path, kind: 'page' as const, allowed: readScope.mode === 'workspace' } : undefined
@@ -633,7 +620,7 @@ function App() {
           <details className="topbar-more"><summary aria-label="Workspace actions" title="Workspace actions"><MoreHorizontal size={19}/></summary><div className="topbar-menu"><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); runCommand('entity.create') }}><Plus size={15}/> New entity</button><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); runCommand('page.create') }}><FileText size={15}/> New page</button><button onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); runCommand('workspace.refresh') }}><RotateCw size={15}/> Refresh files</button></div></details>
         </div>}
       </header>
-      {workspace && <WorkspaceTabs tabs={tabs} active={activeTab} onSelect={activateTab} onClose={closeTab}/>}
+      {workspace && <WorkspaceTabs tabs={tabs.map((tab) => ({ key: tabKey(tab), kind: tab.kind, title: tabTitle(workspace, tab) }))} active={activeTab} onSelect={activateTab} onClose={closeTab}/>}
       {error && <div className="notice error" role="alert">{error}</div>}
       {workspace?.errors.map((item) => <div key={item} className="notice warning" role="alert">Could not read {item}</div>)}
       {view === 'review' && workspace?.proposals.some((item) => item.status === 'pending' && item.reviewReason) && <div className="notice warning" role="status">Some proposals involve similar entities. Verify the identity before accepting them.</div>}

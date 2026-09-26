@@ -172,6 +172,8 @@ export class Workspace {
   private snapshotGeneration = 0
   private rootRealpath: string | null = null
   private fileCache = new Map<string, { version: string; text: string; parsed: Map<string, unknown> }>()
+  /** Files read since the cache was last swept; anything else is gone or unused and can be forgotten. */
+  private readSinceSweep = new Set<string>()
   private extractedText = new Map<string, { version: string; text: string }>()
 
   constructor(readonly path: string) {}
@@ -228,6 +230,7 @@ export class Workspace {
    */
   private async readOwnedText(path: string): Promise<string> {
     const info = await this.ownedStat(path)
+    this.readSinceSweep.add(path)
     const version = `${info.size}:${info.mtimeMs}:${info.ctimeMs}:${info.ino}`
     const cached = this.fileCache.get(path)
     if (cached?.version === version) return cached.text
@@ -485,6 +488,9 @@ export class Workspace {
     for (const event of archivedEvents) event.relatedEntityIds = event.relatedEntityIds.map(resolve)
     for (const task of tasks) task.relatedEntityIds = task.relatedEntityIds.map(resolve)
     for (const task of archivedTasks) task.relatedEntityIds = task.relatedEntityIds.map(resolve)
+    // Every snapshot reads every record, so entries it did not touch belong to deleted or moved files.
+    for (const path of this.fileCache.keys()) if (!this.readSinceSweep.has(path)) this.fileCache.delete(path)
+    this.readSinceSweep = new Set()
     return { path: this.path, generation, pages, workbench, entities, archivedEntities, claims, resolutions, conversations, proposals, documents,
       events, archivedEvents, tasks, archivedTasks, merges, mergeHistory, modules: enabled, semanticProvider,
       backgroundProviderNeedsChoice, semanticIndex, providerActivity, errors }

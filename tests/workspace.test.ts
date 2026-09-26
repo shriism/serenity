@@ -539,3 +539,20 @@ test('cached reads still see external edits and never share records between snap
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
+
+test('the file cache forgets records that were deleted', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-cache-sweep-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const entity = (await workspace.saveEntity({ id: '', title: 'Alex', type: 'person', body: '' })).entities[0]
+    for (let index = 0; index < 40; index++) await workspace.addClaim({ subject: entity.id, key: `fact ${index}`, value: 'x', source: 'Me' })
+    const cache = (workspace as unknown as { fileCache: Map<string, unknown> }).fileCache
+    const before = cache.size
+    for (const name of await readdir(join(directory, 'claims'))) await rm(join(directory, 'claims', name))
+    await workspace.snapshot()
+    await workspace.snapshot()
+    assert.ok(cache.size <= before - 40, `cache kept ${cache.size} of ${before} entries after 40 files were deleted`)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})

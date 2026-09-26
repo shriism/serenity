@@ -6,7 +6,8 @@ export interface Presentation { id: string; title: string }
 /** Ways to view each kind of resource. The first is the default. */
 export const presentations: Partial<Record<TabKind, readonly Presentation[]>> = {
   entity: [{ id: 'profile', title: 'Profile' }, { id: 'timeline', title: 'Timeline' }, { id: 'connections', title: 'Connections' }],
-  document: [{ id: 'text', title: 'Text' }, { id: 'knowledge', title: 'Knowledge from it' }]
+  document: [{ id: 'text', title: 'Text' }, { id: 'knowledge', title: 'Knowledge from it' }],
+  page: [{ id: 'page', title: 'Page' }, { id: 'links', title: 'Links' }]
 }
 
 /** The requested presentation if the kind offers it, otherwise the kind's default. */

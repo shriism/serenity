@@ -11,6 +11,7 @@ import { EntityEditor } from './entity-editor'
 import { EntityTimeline } from './entity-timeline'
 import { EntityConnections } from './entity-connections'
 import { DocumentKnowledgeView } from './document-knowledge'
+import { PageConnections } from './page-connections'
 import { PresentationSwitcher, presentationFor } from './presentations'
 import type { CommandContribution } from './commands'
 import { resourceUri } from '../../shared/resources'
@@ -68,10 +69,19 @@ builtinViews.register({ id: 'knowledge', render: (context) => {
         onOpenEntity={(id, side) => context.onOpenResource(resourceUri({ kind: 'entity', id }), side)} onOpenResource={(uri, side) => context.onOpenResource(uri, side)}/> : entityEditor(context)}
   </div>
 } })
-builtinViews.register({ id: 'home', render: (context) => context.page ? <WorkspacePageView key={context.page.id} page={context.page} workspace={context.workspace}
-  commands={context.commands} onUpdate={context.onUpdate} onError={context.onError} onDirtyChange={context.onDirtyChange}
-  onOpen={context.onOpenResource} onCommand={context.onCommand}/> :
-  <section className="page"><h1>Home page unavailable</h1><p>Check the configured page in this workspace. Serenity will not replace a page it cannot read.</p></section> })
+builtinViews.register({ id: 'home', render: (context) => {
+  if (!context.page) return <section className="page"><h1>Home page unavailable</h1><p>Check the configured page in this workspace. Serenity will not replace a page it cannot read.</p></section>
+  const page = context.page
+  const editor = <WorkspacePageView key={page.id} page={page} workspace={context.workspace}
+    commands={context.commands} onUpdate={context.onUpdate} onError={context.onError} onDirtyChange={context.onDirtyChange}
+    onOpen={context.onOpenResource} onCommand={context.onCommand}/>
+  if (page.id === context.workspace.workbench.homePage) return editor
+  const presentation = presentationFor('page', context.presentation)!
+  return <div className="presented-resource">
+    <PresentationSwitcher kind="page" active={presentation} onChange={context.onPresentationChange}/>
+    {presentation === 'links' ? <PageConnections page={page} workspace={context.workspace} onOpen={context.onOpenResource}/> : editor}
+  </div>
+} })
 builtinViews.register({ id: 'calendar', module: 'calendar', render: ({ workspace, onUpdate, onError, focusedEventId, focusVersion }) =>
   <CalendarModule workspace={workspace} onUpdate={onUpdate} onError={onError} focusEventId={focusedEventId} focusVersion={focusVersion}/> })
 builtinViews.register({ id: 'tasks', module: 'tasks', render: ({ workspace, onUpdate, onError, focusedTaskId, focusVersion, taskPresentation, onTaskPresentationChange }) =>

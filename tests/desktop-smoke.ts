@@ -457,6 +457,19 @@ try {
     return { link: false, missing: null }
   })()`)
   assert.deepEqual(wikilinks, { link: true, missing: 'Someone new' }, 'Wikilinks should link named resources and mark names that match nothing')
+  const pageLinks = await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.page-prose .page-link')].find((item) => item.textContent?.includes('Untitled page'))?.click(); for (let i = 0; i < 30 && ![...document.querySelectorAll('.presentation-switcher button')].some((item) => item.textContent === 'Links'); i++) await new Promise((resolve) => setTimeout(resolve, 50)); [...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === 'Links')?.click(); for (let i = 0; i < 30 && !document.querySelector('.page-connections'); i++) await new Promise((resolve) => setTimeout(resolve, 50)); const incoming = [...document.querySelectorAll('.page-connections .page-links-list button')].some((item) => item.textContent?.includes('Research')); const selected = [...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === 'Links')?.getAttribute('aria-selected'); return { incoming, selected } })()`)
+  assert.deepEqual(pageLinks, { incoming: true, selected: 'true' }, 'A page should have a Links presentation with backlinks')
+  const openedPageUri = `serenity:page/${String(createdPage).slice('pages/'.length, -3)}`
+  let savedPageLinks = false
+  for (let i = 0; i < 30 && !savedPageLinks; i++) {
+    const session = YAML.parse(await readFile(join(workspace, '.serenity', 'session.yaml'), 'utf8')) as { layout?: { groups: { presentations?: Record<string, string> }[] } }
+    savedPageLinks = Boolean(session.layout?.groups.some((group) => group.presentations?.[openedPageUri] === 'links'))
+    if (!savedPageLinks) await new Promise((resolve) => setTimeout(resolve, 100))
+  }
+  assert.equal(savedPageLinks, true, 'The page Links presentation should persist in the workspace session')
+  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-page-links.png'), await captureScreenshot(pageUrl))
+  const returnedPage = await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === 'Page')?.click(); [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Home'))?.click(); for (let i = 0; i < 30 && document.querySelector('.page-prose h1')?.textContent !== 'Research notebook'; i++) await new Promise((resolve) => setTimeout(resolve, 50)); return document.querySelector('.page-prose h1')?.textContent })()`)
+  assert.equal(returnedPage, 'Research notebook')
   const completed = await evaluate(pageUrl, `(async () => {
     document.querySelector('.page-toolbar button')?.click()
     let field = null

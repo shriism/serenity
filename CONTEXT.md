@@ -136,6 +136,7 @@ This is an **implemented desktop foundation**, not a finished general workbench.
 - Done: the Tasks list/board choice is saved per pane in the workspace session; the search palette traps Tab and restores focus when closed.
 - Done: imported Markdown documents expose an outline of explicit headings, with bounded text rendering when jumping to a distant section.
 - Done: closing a tab or pane moves keyboard focus to a surviving tab or pane, with a visible pane focus ring.
+- Done: non-Home pages can switch between their authored Page and a Links view showing resolved outgoing resources, unresolved names, and incoming wikilink mentions.
 - Remaining: broader presentations for other resource kinds and further keyboard focus polish. PDF and DOCX extraction does not preserve reliable heading structure, so Serenity does not invent an outline for them.
 
 ### 2. Make customization coherent, then consider installed extensions
@@ -147,7 +148,7 @@ This is an **implemented desktop foundation**, not a finished general workbench.
 ### 3. Deepen the actual personal-knowledge experience
 
 - Done in the September 2026 pass: entity timelines and connections, citations checked against sent context, duplicate-identity review with evidence, review beside the source document, document provenance, wikilinks and backlinks, search ranking, and large-workspace performance (about 140 ms snapshots and 11 ms duplicate detection for 2,000 entities and 8,000 claims).
-- Remaining: temporal views beyond a single entity, page and task presentations, richer retrieval ergonomics, and entity-resolution decisions recorded when the person judges two entities distinct (see decisions below).
+- Remaining: temporal views beyond a single entity, deeper page and task presentations, richer retrieval ergonomics, and entity-resolution decisions recorded when the person judges two entities distinct (see decisions below).
 - Continue iteration on accessibility, focus/keyboard behavior, responsive window sizes, empty/error states, and the quiet native-workbench UI based on actual use.
 
 ### 4. Product hardening and later platforms

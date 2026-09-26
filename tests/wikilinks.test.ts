@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { linkWikilinks, resolveWikilink } from '../src/shared/wikilinks'
+import { linkWikilinks, pageOutgoingLinks, resolveWikilink } from '../src/shared/wikilinks'
+import type { WorkspaceSnapshot } from '../src/shared/types'
 
 const snapshot = {
   pages: [{ id: 'research', title: 'Research', path: '', body: '', text: '', revision: '' }],
@@ -33,6 +34,17 @@ test('backlinks list the pages and notes whose wikilinks resolve to a resource',
     { uri: 'serenity:entity/e4', title: 'Club', excerpt: 'Founded by [[Alex|our founder]].' }
   ])
   assert.deepEqual(wikilinkMentions(withNotes, 'serenity:entity/e2'), [], 'an ambiguous name is not a mention')
+})
+
+test('a page lists its resolved and unresolved links without treating code as links', () => {
+  const full = { ...snapshot, claims: [], tasks: [], events: [], conversations: [], proposals: [] } as unknown as WorkspaceSnapshot
+  const links = pageOutgoingLinks(full, 'See [[Alex]] and [the syllabus](serenity:document/syllabus.pdf), [[Sam]], [[Nobody]].\n`[[Research]]`\n```md\n[[Research]]\n```')
+  assert.deepEqual(links.map(({ uri, title, detail }) => ({ uri, title, detail })), [
+    { uri: 'serenity:entity/e1', title: 'Alex', detail: 'entity' },
+    { uri: undefined, title: 'Sam', detail: 'Ambiguous: Sam (person) · Sam (dog)' },
+    { uri: undefined, title: 'Nobody', detail: 'Missing link' },
+    { uri: 'serenity:document/syllabus.pdf', title: 'syllabus.pdf', detail: 'document' }
+  ])
 })
 
 test('typing [[ offers unambiguous titles and completing closes the link', async () => {

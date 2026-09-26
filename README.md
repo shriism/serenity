@@ -30,6 +30,8 @@ Tasks can be viewed as a list or a due-date board with Overdue, Next 7 days, Lat
 
 An imported Markdown document with headings has an Outline above its extracted text. Selecting a heading jumps to that section; distant jumps show a bounded text chunk with a way back to the start. PDF and DOCX previews show extracted text without an inferred outline.
 
+Pages other than Home have a **Page / Links** switch. Links shows the page's resolved workspace links, names that need disambiguation or have no match, and pages or entity notes that mention it with a wikilink. The selected view is remembered per tab.
+
 Chords need Mod, Ctrl, or Alt unless they are function keys. Unknown commands and conflicting chords appear as workspace warnings instead of being silently ignored. The app starts in Dark appearance, with Light and System options in the navigation dock.
 
 To check the project:

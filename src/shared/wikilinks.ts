@@ -1,5 +1,5 @@
 import type { WorkspaceSnapshot } from './types'
-import { resourceUri } from './resources'
+import { parseResourceUri, resourceUri, workspaceResources } from './resources'
 
 export type WikiResolution =
   | { kind: 'resolved'; uri: string; title: string }
@@ -74,6 +74,37 @@ export function linkWikilinks(markdown: string, resolve: (target: string) => Wik
 }
 
 export interface Mention { uri: string; title: string; excerpt: string }
+
+export interface PageLink { uri?: string; title: string; detail: string; excerpt: string }
+
+/** Resource and wikilinks written in a page, excluding fenced and inline code. Missing targets remain visible. */
+export function pageOutgoingLinks(snapshot: WorkspaceSnapshot, markdown: string): PageLink[] {
+  const available = new Map(workspaceResources(snapshot).map((item) => [item.uri, item]))
+  const found = new Map<string, PageLink>()
+  mapProse(markdown, (prose) => {
+    const excerpt = prose.trim().slice(0, 200)
+    for (const match of prose.matchAll(new RegExp(wikilink.source, 'g'))) {
+      const target = match[1].trim()
+      const resolved = resolveWikilink(snapshot, target)
+      if (resolved.kind === 'resolved') {
+        const item = available.get(resolved.uri)
+        if (item && !found.has(item.uri)) found.set(item.uri, { uri: item.uri, title: item.title, detail: item.kind, excerpt })
+      } else {
+        const key = `${resolved.kind}:${normalized(target)}`
+        if (!found.has(key)) found.set(key, { title: target, detail: resolved.kind === 'missing' ? 'Missing link' : `Ambiguous: ${resolved.titles.join(' · ')}`, excerpt })
+      }
+    }
+    for (const match of prose.matchAll(/\[[^\]]+\]\((serenity:[^)]+)\)/g)) {
+      const ref = parseResourceUri(match[1])
+      if (!ref) continue
+      const item = available.get(match[1])
+      if (item && !found.has(item.uri)) found.set(item.uri, { uri: item.uri, title: item.title, detail: item.kind, excerpt })
+      else if (!item && !found.has(match[1])) found.set(match[1], { title: match[1], detail: 'Missing resource', excerpt })
+    }
+    return prose
+  })
+  return [...found.values()]
+}
 
 /**
  * Pages and entity narratives whose wikilinks resolve to `uri`: the resource's backlinks. Ambiguous names are not

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ArrowRight, FileText, FolderOpen, Maximize2, Minimize2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, RotateCw, Search, Sparkles } from 'lucide-react'
-import type { Autonomy, Conversation, Entity, Provider, ReadScope, SearchResult, WorkbenchSession, WorkflowPermissions, WorkspaceSnapshot } from '../../shared/types'
+import type { Autonomy, Conversation, Provider, ReadScope, SearchResult, WorkbenchSession, WorkflowPermissions, WorkspaceSnapshot } from '../../shared/types'
 import { ConversationPanel } from './conversation-panel'
 import { ConversationList } from './conversation-list'
 import { defaultReadScope, defaultWorkflowPermissions } from '../../shared/workflow'
@@ -26,15 +26,10 @@ function storedPanel(key: string, fallback: boolean): boolean {
 
 function App() {
   const [workspace, setWorkspace] = useState<WorkspaceSnapshot | null>(null)
-  const [selected, setSelected] = useState<string | null>(null)
-  const [draft, setDraft] = useState<Entity | null>(null)
-  const [dirty, setDirty] = useState(false)
-  const [pageDirty, setPageDirty] = useState(false)
-  const [bodyMode, setBodyMode] = useState<'edit' | 'preview'>('edit')
+  // Whether the open page or entity editor has unsaved edits; the editor itself owns the draft.
+  const [contentDirty, setContentDirty] = useState(false)
+  const [creatingEntity, setCreatingEntity] = useState(false)
   const [error, setError] = useState('')
-  const [claim, setClaim] = useState({ key: '', value: '', source: 'Me' })
-  const [claimTarget, setClaimTarget] = useState('')
-  const [mergeTarget, setMergeTarget] = useState('')
   const [view, setView] = useState<View>('home')
   const [leftOpen, setLeftOpen] = useState(() => storedPanel('serenity.left-open', false))
   const [rightOpen, setRightOpen] = useState(() => storedPanel('serenity.right-open', true))
@@ -86,17 +81,14 @@ function App() {
       const next = await window.serenity.refresh()
       setWorkspace(next)
       setError('')
-      if (!dirty && selected && next) {
-        setDraft(next.entities.find((entity) => entity.id === selected) ?? null)
-      }
     } catch (cause) {
       setError(String(cause))
     }
-  }, [dirty, selected])
+  }, [])
 
   useEffect(() => window.serenity.onWorkspaceChange(() => { void refresh() }), [refresh])
   useEffect(() => { void window.serenity.refresh().then(setWorkspace).catch((cause) => setError(String(cause))) }, [])
-  useEffect(() => window.serenity.setEditorDirty(dirty || pageDirty), [dirty, pageDirty])
+  useEffect(() => window.serenity.setEditorDirty(contentDirty), [contentDirty])
   useEffect(() => window.serenity.onIndexError((message) => setError(`Background AI: ${message}`)), [])
   useEffect(() => {
     if (!workspace) return
@@ -122,8 +114,6 @@ function App() {
         const tab = active.tab
         setTabs(open.some((item) => tabKey(item) === tabKey(tab)) ? open : [...open, tab])
         setActiveTab(tabKey(tab))
-        const entity = tab.kind === 'entity' ? workspace.entities.find((item) => item.id === tab.id) : undefined
-        if (entity) { setSelected(entity.id); setDraft(entity); setBodyMode('preview') }
       } else setTabs(open)
       setView(target)
       setSessionReadyPath(workspace.path)
@@ -172,11 +162,8 @@ function App() {
       if (!next) return
       setWorkspace(next)
       setSessionReadyPath(null)
-      setSelected(null)
-      setDraft(null)
-      setDirty(false)
-      setPageDirty(false)
-      setBodyMode('edit')
+      setContentDirty(false)
+      setCreatingEntity(false)
       setError('')
       setView('home')
       setTabs([])
@@ -193,17 +180,10 @@ function App() {
     }
   }
 
-  function confirmLeavePage(): boolean {
-    if (!pageDirty) return true
-    if (!window.confirm('Discard your unsaved page changes?')) return false
-    setPageDirty(false)
-    return true
-  }
-
-  function confirmDiscardDraft(): boolean {
-    if (!dirty) return true
+  function confirmLeave(): boolean {
+    if (!contentDirty) return true
     if (!window.confirm('Discard your unsaved changes?')) return false
-    setDirty(false)
+    setContentDirty(false)
     return true
   }
 
@@ -212,28 +192,20 @@ function App() {
     setActiveTab(tabKey(tab))
   }
 
-  function selectEntity(entity: Entity): boolean {
-    if (!confirmLeavePage()) return false
-    if (entity.id === selected && draft) {
-      setView('knowledge')
-      openTab({ kind: 'entity', id: entity.id })
-      return true
-    }
-    if (!confirmDiscardDraft()) return false
-    setSelected(entity.id)
-    setDraft({ ...entity })
-    setBodyMode('preview')
+  function openEntity(id: string): boolean {
+    const tab: TabRef = { kind: 'entity', id }
+    if (view === 'knowledge' && activeTab === tabKey(tab)) return true
+    if (!workspace?.entities.some((item) => item.id === id) || !confirmLeave()) return false
+    setCreatingEntity(false)
     setError('')
     setView('knowledge')
-    openTab({ kind: 'entity', id: entity.id })
+    openTab(tab)
     return true
   }
 
   function newEntity() {
-    if (!confirmLeavePage() || !confirmDiscardDraft()) return
-    setSelected(null)
-    setDraft({ id: '', title: '', type: '', body: '' })
-    setBodyMode('edit')
+    if (!confirmLeave()) return
+    setCreatingEntity(true)
     setError('')
     setView('knowledge')
     setActiveTab(null)
@@ -260,59 +232,6 @@ function App() {
     setReadScope(item.readScope ?? { ...defaultReadScope, entityIds: [], documentNames: [] })
     setMessage('')
     setRightOpen(true)
-  }
-
-  async function saveEntity(event: FormEvent) {
-    event.preventDefault()
-    if (!draft) return
-    try {
-      const next = await window.serenity.saveEntity(draft)
-      setWorkspace(next)
-      const saved = draft.id ? next.entities.find((entity) => entity.id === draft.id) :
-        next.entities.find((entity) => !workspace?.entities.some((existing) => existing.id === entity.id))
-      setSelected(saved?.id ?? null)
-      setDraft(saved ?? null)
-      if (saved) {
-        openTab({ kind: 'entity', id: saved.id })
-      }
-      setDirty(false)
-      setError('')
-    } catch (cause) {
-      setError(String(cause))
-    }
-  }
-
-  async function addClaim(event: FormEvent) {
-    event.preventDefault()
-    if (!selected) return
-    try {
-      setWorkspace(await window.serenity.addClaim({ ...claim, value: claimTarget || claim.value, subject: selected }))
-      setClaim({ key: '', value: '', source: 'Me' })
-      setClaimTarget('')
-      setError('')
-    } catch (cause) {
-      setError(String(cause))
-    }
-  }
-
-  async function retractClaim(claimId: string) {
-    const reason = window.prompt('Why is this claim no longer current? The original assertion will remain in history.')
-    if (!reason?.trim()) return
-    try { setWorkspace(await window.serenity.retractClaim(claimId, reason)); setError('') }
-    catch (cause) { setError(String(cause)) }
-  }
-
-  async function markCurrent(claimId: string) {
-    const reason = window.prompt('Why should this be the current answer? Previous claims will remain visible.')
-    if (!reason?.trim()) return
-    try { setWorkspace(await window.serenity.setCurrentClaim(claimId, reason)); setError('') }
-    catch (cause) { setError(String(cause)) }
-  }
-
-  async function clearCurrent(key: string) {
-    if (!selected || !window.confirm('Clear the current designation? Conflicting claims will again need clarification.')) return
-    try { setWorkspace(await window.serenity.clearCurrentClaim(selected, key)); setError('') }
-    catch (cause) { setError(String(cause)) }
   }
 
   async function searchText(value: string) {
@@ -352,19 +271,18 @@ function App() {
   function openTabRef(tab: TabRef): boolean {
     if (tab.kind === 'document') return openDocumentTab(tab.id)
     if (tab.kind === 'page') return openPageTab(tab.id)
-    const entity = workspace?.entities.find((item) => item.id === tab.id)
-    return entity ? selectEntity(entity) : false
+    return openEntity(tab.id)
   }
 
   function openPageTab(id: string): boolean {
-    if (activePageId !== id && !confirmLeavePage()) return false
+    if (activePageId !== id && !confirmLeave()) return false
     openTab({ kind: 'page', id })
     setView('home')
     return true
   }
 
   function focusRecord(kind: 'task' | 'event', id: string): boolean {
-    if (!confirmLeavePage()) return false
+    if (!confirmLeave()) return false
     if (kind === 'task') setFocusedTaskId(id)
     else setFocusedEventId(id)
     setFocusVersion((version) => version + 1)
@@ -375,15 +293,9 @@ function App() {
 
   function navigate(destination: View): boolean {
     if (!viewAvailable(destination)) return false
-    if (view === 'home' && (destination !== 'home' || activePageId !== null) && !confirmLeavePage()) return false
-    if (destination === 'knowledge') {
-      if (view === 'knowledge' && selected) {
-        if (!confirmDiscardDraft()) return false
-        setSelected(null)
-        setDraft(null)
-        setActiveTab(null)
-      } else setActiveTab(selected ? tabKey({ kind: 'entity', id: selected }) : null)
-    } else setActiveTab(null)
+    if ((view !== destination || activeTabRef || creatingEntity) && !confirmLeave()) return false
+    setActiveTab(null)
+    setCreatingEntity(false)
     if (destination === 'calendar') setFocusedEventId(null)
     if (destination === 'tasks') setFocusedTaskId(null)
     setView(destination)
@@ -397,7 +309,7 @@ function App() {
   }
 
   async function createPage(): Promise<void> {
-    if (!confirmLeavePage()) return
+    if (!confirmLeave()) return
     try {
       const before = new Set(workspace?.pages.map((page) => page.id) ?? [])
       const next = await window.serenity.createPage()
@@ -454,7 +366,7 @@ function App() {
     const item = workspace?.documents.find((document) => document.name === name)
     if (!item) return false
     if (!item.extractable) { void openDocument(name); return true }
-    if (!confirmLeavePage()) return false
+    if (!confirmLeave()) return false
     openTab({ kind: 'document', id: name })
     setView('documents')
     return true
@@ -468,11 +380,8 @@ function App() {
   function closeTab(key: string) {
     const tab = tabs.find((item) => tabKey(item) === key)
     if (!tab) return
-    const editing = tab.kind === 'entity' && tab.id === selected
-    if (editing && !confirmDiscardDraft()) return
-    if (activeTab === key && tab.kind === 'page' && !confirmLeavePage()) return
+    if (activeTab === key && !confirmLeave()) return
     setTabs(tabs.filter((item) => tabKey(item) !== key))
-    if (editing) { setSelected(null); setDraft(null) }
     if (activeTab === key) { setActiveTab(null); setView(tabView[tab.kind]) }
   }
 
@@ -529,28 +438,6 @@ function App() {
     } catch (cause) { setError(String(cause)) }
   }
 
-
-  async function mergeSelected() {
-    if (!selected || !mergeTarget || !workspace) return
-    if (dirty) { setError('Save or discard your edits before merging.'); return }
-    const target = workspace.entities.find((entity) => entity.id === mergeTarget)
-    if (!window.confirm(`Archive ${draft?.title} and link its claims to ${target?.title}? The archived file and merge record remain in the workspace.`)) return
-    try {
-      const next = await window.serenity.mergeEntities(selected, mergeTarget)
-      setWorkspace(next)
-      setSelected(mergeTarget)
-      setDraft(next.entities.find((entity) => entity.id === mergeTarget) ?? null)
-      setMergeTarget('')
-      setError('')
-    } catch (cause) { setError(String(cause)) }
-  }
-
-  async function undoMerge(source: string) {
-    const reason = window.prompt('Why are you restoring this archived entity? The merge history will remain visible.')
-    if (!reason?.trim()) return
-    try { setWorkspace(await window.serenity.unmergeEntities(source, reason)); setError('') }
-    catch (cause) { setError(String(cause)) }
-  }
 
   const commands = workspace ? workspaceCommands(workspace) : []
   const keymap = resolveKeymap(commands, workspace?.workbench.keybindings, workspace ? knownCommandIds(workspace) : undefined)
@@ -636,17 +523,13 @@ function App() {
       {!workspace ? <section className="welcome-screen"><div className="welcome-visual"><img src={serenityIcon} alt=""/><span className="visual-orbit orbit-one"/><span className="visual-orbit orbit-two"/><span className="visual-dot dot-one"/><span className="visual-dot dot-two"/><span className="visual-dot dot-three"/></div><div className="welcome-copy"><span className="eyebrow">A SPACE FOR EVERYTHING THAT MATTERS</span><h1>Your world,<br/><em>more connected.</em></h1><p>A private workspace for your knowledge, relationships, plans, and the ideas in between. Choose a folder on your device to begin.</p><button className="primary welcome-action" onClick={() => void chooseWorkspace()}><FolderOpen size={18}/> Choose a workspace <ArrowRight size={17}/></button><small>Your files stay in a folder you control.</small></div></section>
           : builtinViews.render(view, { workspace, page: currentPage ?? undefined, commands,
             activeDocument: currentTab?.kind === 'document' ? currentTab.id : undefined, focusedEventId, focusedTaskId, focusVersion, activity,
-            onUpdate: setWorkspace, onError: setError, onDirtyChange: setPageDirty, onOpenResource: (uri) => { openResource(uri) }, onCommand: runCommand,
+            onUpdate: setWorkspace, onError: setError, onDirtyChange: setContentDirty, onOpenResource: (uri) => { openResource(uri) }, onCommand: runCommand,
             onResolve: (id, accept) => { void resolveProposal(id, accept) }, onAttach: (id, entityId) => { void attachProposal(id, entityId) },
             onOpenSource: (name) => { void openDocument(name) }, onImport: () => { void importDocuments() }, onOpenDocument: openDocumentTab,
             onAnalyze: (name) => { openDocumentTab(name); startConversation(`Analyze the imported document ${name}. Summarize it, identify useful knowledge about existing entities, and suggest claims with precise sources. Ask me to clarify any ambiguous identities.`) },
-            knowledge: { workspace, selected, draft, dirty, bodyMode, claim, claimTarget, mergeTarget,
-              onSelectEntity: selectEntity, onNewEntity: newEntity,
-              onDraftChange: (entity) => { setDraft(entity); setDirty(true) }, onBodyModeChange: setBodyMode,
-              onSave: (event) => { void saveEntity(event) }, onClaimChange: setClaim, onClaimTargetChange: setClaimTarget,
-              onAddClaim: (event) => { void addClaim(event) }, onMarkCurrent: (id) => { void markCurrent(id) }, onRetract: (id) => { void retractClaim(id) },
-              onClearCurrent: (key) => { void clearCurrent(key) }, onDiscuss: startConversation, onOpenSource: (name) => { void openDocument(name) },
-              onMergeTargetChange: setMergeTarget, onMerge: () => { void mergeSelected() }, onUndoMerge: (id) => { void undoMerge(id) } }
+            entityId: currentTab?.kind === 'entity' ? currentTab.id : undefined, creatingEntity,
+            onOpenEntity: (id) => { openEntity(id) }, onNewEntity: newEntity, onDiscuss: startConversation,
+            onEntityCreated: (id) => { setCreatingEntity(false); openTab({ kind: 'entity', id }) }
           }) ?? <section className="page"><h1>View unavailable</h1><p>This module is not available in this workspace.</p></section>}
       </div>
     </main>

@@ -6,7 +6,8 @@ import { DocumentPreview } from './document-preview'
 import { ActivityPanel } from './activity-panel'
 import { SettingsPanel } from './settings-panel'
 import { WorkspacePageView } from './workspace-page'
-import { KnowledgeView, type KnowledgeViewProps } from './knowledge-view'
+import { KnowledgeView } from './knowledge-view'
+import { EntityEditor } from './entity-editor'
 import type { CommandContribution } from './commands'
 import { ViewRegistry } from './view-registry'
 
@@ -19,7 +20,8 @@ export interface BuiltinViewContext {
   focusedTaskId: string | null
   focusVersion: number
   activity: { id: string; at: string; title: string; detail: string }[]
-  knowledge: KnowledgeViewProps
+  entityId?: string
+  creatingEntity: boolean
   onUpdate(snapshot: WorkspaceSnapshot): void
   onError(message: string): void
   onDirtyChange(dirty: boolean): void
@@ -31,10 +33,18 @@ export interface BuiltinViewContext {
   onImport(): void
   onOpenDocument(name: string): void
   onAnalyze(name: string): void
+  onOpenEntity(id: string): void
+  onNewEntity(): void
+  onEntityCreated(id: string): void
+  onDiscuss(question: string): void
 }
 
 export const builtinViews = new ViewRegistry<BuiltinViewContext>()
-builtinViews.register({ id: 'knowledge', render: ({ knowledge }) => <KnowledgeView {...knowledge}/> })
+builtinViews.register({ id: 'knowledge', render: (context) => context.entityId || context.creatingEntity ?
+  <EntityEditor key={context.entityId ?? 'new'} workspace={context.workspace} entityId={context.entityId ?? null} onUpdate={context.onUpdate} onError={context.onError}
+    onDirtyChange={context.onDirtyChange} onOpenEntity={context.onOpenEntity} onNewEntity={context.onNewEntity} onCreated={context.onEntityCreated}
+    onDiscuss={context.onDiscuss} onOpenSource={context.onOpenSource}/> :
+  <KnowledgeView workspace={context.workspace} onOpenEntity={context.onOpenEntity} onNewEntity={context.onNewEntity}/> })
 builtinViews.register({ id: 'home', render: (context) => context.page ? <WorkspacePageView key={context.page.id} page={context.page} workspace={context.workspace}
   commands={context.commands} onUpdate={context.onUpdate} onError={context.onError} onDirtyChange={context.onDirtyChange}
   onOpen={context.onOpenResource} onCommand={context.onCommand}/> :

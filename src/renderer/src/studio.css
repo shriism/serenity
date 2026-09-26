@@ -336,3 +336,5 @@
 .serenity-studio .library-types button { border: 1px solid var(--border); border-radius: 999px; padding: 4px 11px; background: transparent; color: var(--muted); font-size: 11px; }
 .serenity-studio .library-types button small { margin-left: 3px; color: var(--subtle); }
 .serenity-studio .library-types button.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--text); }
+.serenity-studio .library-list-filter { width: 100%; box-sizing: border-box; margin: 0 0 8px; padding: 6px 9px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface); color: var(--text); font-size: 11px; }
+.serenity-studio .library-more { display: block; padding: 8px 10px; color: var(--subtle); font-size: 10px; }

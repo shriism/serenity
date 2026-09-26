@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm'
 import type { Claim, Entity, WorkspaceSnapshot } from '../../shared/types'
 import { identityCandidates } from '../../shared/identity'
 import { ClaimCard } from './claim-card'
+import { filterEntities } from '../../shared/library'
 import { linkWikilinks, resolveWikilink, wikilinkMentions } from '../../shared/wikilinks'
 import { resourceUri } from '../../shared/resources'
 import { markdownUrlTransform, workspaceLink } from './markdown-links'
@@ -36,8 +37,12 @@ const EntityLibrary = memo(function EntityLibrary({ entities, selected, onOpenEn
   onOpenEntity(id: string): void
   onNewEntity(): void
 }) {
+  const [query, setQuery] = useState('')
+  const shown = useMemo(() => filterEntities(entities, query, null), [entities, query])
   return <aside className="knowledge-list-panel"><div className="list-heading"><span className="eyebrow">LIBRARY <span className="count">{entities.length}</span></span><button className="icon-button" onClick={onNewEntity} aria-label="New entity" title="New entity"><Plus size={15}/></button></div>
-    <nav className="entity-list" aria-label="Entities">{entities.map((entity) => <button key={entity.id} className={`entity-link ${selected === entity.id ? 'active' : ''}`} aria-current={selected === entity.id ? 'page' : undefined} onClick={() => onOpenEntity(entity.id)}><span className="entity-icon">{entity.title.slice(0, 1).toUpperCase()}</span><span><strong>{entity.title}</strong><small>{entity.type}</small></span></button>)}</nav>
+    {entities.length > 8 && <input className="library-list-filter" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter" aria-label="Filter the library"/>}
+    <nav className="entity-list" aria-label="Entities">{shown.slice(0, 300).map((entity) => <button key={entity.id} className={`entity-link ${selected === entity.id ? 'active' : ''}`} aria-current={selected === entity.id ? 'page' : undefined} onClick={() => onOpenEntity(entity.id)}><span className="entity-icon">{entity.title.slice(0, 1).toUpperCase()}</span><span><strong>{entity.title}</strong><small>{entity.type}</small></span></button>)}
+      {shown.length > 300 && <small className="library-more">{shown.length - 300} more; filter to find them</small>}</nav>
   </aside>
 })
 

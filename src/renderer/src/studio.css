@@ -364,3 +364,4 @@
 .serenity-studio .activity-day { margin: 26px 0 6px; font-size: 12px; font-weight: 600; letter-spacing: .04em; color: var(--subtle); }
 .serenity-studio .activity-title { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: var(--text); font-weight: 600; text-align: left; }
 .serenity-studio .activity-title:hover { color: var(--accent); }
+.serenity-studio .document-more { margin-top: 18px; white-space: normal; }

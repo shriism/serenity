@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ArrowRight, Columns2, Rows2, FileText, FolderOpen, Maximize2, Minimize2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, RotateCw, Search, Sparkles, X } from 'lucide-react'
-import type { Autonomy, Conversation, Provider, ReadScope, SearchResult, WorkflowPermissions, WorkspacePage, WorkspaceSnapshot } from '../../shared/types'
+import type { SearchResult, WorkspacePage, WorkspaceSnapshot } from '../../shared/types'
 import { ConversationPanel } from './conversation-panel'
 import { ConversationList } from './conversation-list'
-import { defaultReadScope, defaultWorkflowPermissions } from '../../shared/workflow'
+import { useAssistant } from './use-assistant'
 import { AppNavigation } from './navigation'
 import { builtinViews, type BuiltinViewContext } from './builtin-views'
 import { CommandPalette } from './command-palette'
@@ -47,14 +47,6 @@ function App() {
   const [rightOpen, setRightOpen] = useState(() => storedPanel('serenity.right-open', true))
   const [aiExpanded, setAIExpanded] = useState(false)
   const [sessionReadyPath, setSessionReadyPath] = useState<string | null>(null)
-  const [conversationId, setConversationId] = useState<string | null>(null)
-  const [provider, setProvider] = useState<Provider>('copilot')
-  const [autonomy, setAutonomy] = useState<Autonomy>('propose')
-  const [retained, setRetained] = useState(true)
-  const [permissions, setPermissions] = useState<WorkflowPermissions>({ ...defaultWorkflowPermissions })
-  const [readScope, setReadScope] = useState<ReadScope>({ ...defaultReadScope, entityIds: [], documentNames: [] })
-  const [message, setMessage] = useState('')
-  const [busy, setBusy] = useState(false)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[] | null>(null)
   const [searching, setSearching] = useState(false)
@@ -103,6 +95,20 @@ function App() {
     }
   }, [])
 
+  const assistant = useAssistant({ workspace, setWorkspace, refresh, setError,
+    reveal: (returnToSidebar) => { setRightOpen(true); if (returnToSidebar) setAIExpanded(false) },
+    contextRefs: () => {
+      const home = workspace?.workbench.homePage ?? 'home'
+      const shownRef = (group: EditorGroup): string | undefined => {
+        const ref = parseResourceUri(shownUri(group, home) ?? '')
+        return ref ? `${ref.kind}:${ref.id}` : undefined
+      }
+      const groups = orderedGroups(workbench)
+      return { activeRef: shownRef(focused), visibleRefs: stacked ? [] : groups.filter((group) => group.id !== focused.id).flatMap((group) => shownRef(group) ?? []),
+        openRefs: [...new Set(groups.flatMap((group) => group.tabs.map(tabKey)))] }
+    } })
+  const { conversationId, readScope, restoreConversation, startConversation, selectConversation } = assistant
+
   useEffect(() => window.serenity.onWorkspaceChange(() => { void refresh() }), [refresh])
   useEffect(() => { void window.serenity.refresh().then(setWorkspace).catch((cause) => setError(String(cause))) }, [])
   useEffect(() => window.serenity.setEditorDirty(anyDirty), [anyDirty])
@@ -111,13 +117,6 @@ function App() {
     if (!workspace) return
     let current = true
     setSessionReadyPath(null)
-    const restoreConversation = (last: Conversation | undefined): void => {
-      setConversationId(last?.id ?? null)
-      setAutonomy(last?.autonomy ?? 'propose')
-      setPermissions(last?.permissions ?? { ...defaultWorkflowPermissions })
-      setReadScope(last?.readScope ?? { ...defaultReadScope, entityIds: [], documentNames: [] })
-      setRetained(last?.retained ?? true)
-    }
     void window.serenity.loadSession().then((session) => {
       if (!current) return
       if (!session) { restoreConversation(workspace.conversations.at(-1)); setSessionReadyPath(workspace.path); return }
@@ -177,9 +176,7 @@ function App() {
       setDirtyGroups({})
       setError('')
       setAIExpanded(false)
-      setConversationId(null)
-      setPermissions({ ...defaultWorkflowPermissions })
-      setReadScope({ ...defaultReadScope, entityIds: [], documentNames: [] })
+      restoreConversation(undefined)
       closePalette()
       setFocusedEventId(null)
       setFocusedTaskId(null)
@@ -244,29 +241,6 @@ function App() {
     if (!confirmLeave(groupId)) return
     setError('')
     show(groupId, (current) => ({ ...showView(current, 'knowledge'), creatingEntity: true }))
-  }
-
-  function startConversation(prompt = '') {
-    if (message.trim() && !window.confirm('Discard your unsent message?')) return
-    setConversationId(null)
-    setAutonomy('propose')
-    setPermissions({ ...defaultWorkflowPermissions })
-    setReadScope({ ...defaultReadScope, entityIds: [], documentNames: [] })
-    setRetained(true)
-    setMessage(prompt)
-    setRightOpen(true)
-    setAIExpanded(false)
-  }
-
-  function selectConversation(item: Conversation) {
-    if (busy || (message.trim() && item.id !== conversationId && !window.confirm('Discard your unsent message?'))) return
-    setConversationId(item.id)
-    setRetained(item.retained)
-    setAutonomy(item.autonomy ?? 'propose')
-    setPermissions(item.permissions ?? { ...defaultWorkflowPermissions })
-    setReadScope(item.readScope ?? { ...defaultReadScope, entityIds: [], documentNames: [] })
-    setMessage('')
-    setRightOpen(true)
   }
 
   async function searchText(value: string) {
@@ -363,7 +337,7 @@ function App() {
     const request = ++searchSequence.current
     try {
       const [lexical, semantic] = await Promise.all([
-        window.serenity.search(query), window.serenity.semanticSearch(query, provider)
+        window.serenity.search(query), window.serenity.semanticSearch(query, assistant.provider)
       ])
       if (request === searchSequence.current) setResults([...semantic, ...lexical.filter((entry) => !semantic.some((match) =>
         match.kind === entry.kind && match.id === entry.id && match.title === entry.title))])
@@ -472,38 +446,6 @@ function App() {
     })
   }
 
-  async function sendMessage(event: FormEvent) {
-    event.preventDefault()
-    if (!message.trim() || busy || !workspace) return
-    if (autonomy === 'ask' && !window.confirm(`Allow ${provider} to read this workspace for this request? No knowledge changes will be saved without separate approval.`)) return
-    setBusy(true)
-    try {
-      const groups = orderedGroups(workbench)
-      const shownRef = (group: EditorGroup): string | undefined => {
-        const ref = parseResourceUri(shownUri(group, workspace.workbench.homePage) ?? '')
-        return ref ? `${ref.kind}:${ref.id}` : undefined
-      }
-      const next = await window.serenity.sendMessage({ conversationId: conversationId ?? undefined, text: message, provider, autonomy, retained, permissions, readScope,
-        activeRef: shownRef(focused), visibleRefs: stacked ? [] : groups.filter((group) => group.id !== focused.id).flatMap((group) => shownRef(group) ?? []),
-        openRefs: [...new Set(groups.flatMap((group) => group.tabs.map(tabKey)))] })
-      if (!conversationId) {
-        const created = next.conversations.find((item) => !workspace.conversations.some((old) => old.id === item.id))
-        setConversationId(created?.id ?? null)
-      }
-      setWorkspace(next)
-      setMessage('')
-      setError('')
-    } catch (cause) {
-      await refresh()
-      setError(String(cause))
-    } finally { setBusy(false) }
-  }
-
-  async function cancelMessage() {
-    try { await window.serenity.cancelMessage() }
-    catch (cause) { setError(String(cause)) }
-  }
-
   async function resolveProposal(id: string, accept: boolean) {
     try { setWorkspace(await window.serenity.resolveProposal(id, accept)); setError('') }
     catch (cause) { setError(String(cause)) }
@@ -512,23 +454,6 @@ function App() {
   async function attachProposal(id: string, entityId: string) {
     try { setWorkspace(await window.serenity.attachEntityProposal(id, entityId)); setError('') }
     catch (cause) { setError(String(cause)) }
-  }
-
-  async function deleteConversation() {
-    if (!conversationId || !window.confirm('Delete this conversation? Confirmed knowledge remains in your workspace.')) return
-    try {
-      setWorkspace(await window.serenity.deleteConversation(conversationId))
-      setConversationId(null)
-      setError('')
-    } catch (cause) { setError(String(cause)) }
-  }
-
-  async function saveWorkflowSettings() {
-    if (!conversationId) return
-    try {
-      setWorkspace(await window.serenity.updateConversationSettings(conversationId, { autonomy, permissions, retained, readScope }))
-      setError('')
-    } catch (cause) { setError(String(cause)) }
   }
 
   const commands = useMemo(() => workspace ? workspaceCommands(workspace) : [], [workspace])
@@ -556,7 +481,6 @@ function App() {
   }
   commandContext.current = { host: commandHost, commands, keymap, escape: () => { if (paletteOpen) closePalette(); else if (leftOpen) setLeftOpen(false) } }
 
-  const conversation = workspace?.conversations.find((item) => item.id === conversationId)
   const pending = workspace?.proposals.filter((proposal) => proposal.status === 'pending') ?? []
   // The feed spans every record; rebuild it when the workspace changes, not on each keystroke elsewhere in the shell.
   const activity = useMemo(() => [...(workspace?.claims.map((item) => ({ id: item.id, at: item.recordedAt, title: `Claim: ${item.key}`, detail: `${workspace.entities.find((entity) => entity.id === item.subject)?.title ?? 'Unknown entity'} · ${item.value} · ${item.source}` })) ?? []),
@@ -722,13 +646,15 @@ function App() {
         <button onClick={() => setAIExpanded(!aiExpanded)} aria-label={aiExpanded ? 'Return AI to sidebar' : 'Expand AI over workspace'} title={aiExpanded ? 'Return AI to sidebar' : 'Expand AI over workspace'}>{aiExpanded ? <Minimize2 size={17}/> : <Maximize2 size={17}/>}</button>
         <button onClick={() => { setRightOpen(false); setAIExpanded(false) }} aria-label="Collapse AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')} title={withShortcut('Collapse AI sidebar', 'assistant.toggle')}><PanelRightClose size={17}/></button>
       </div></div>
-      <ConversationList workspace={workspace} conversationId={conversationId} autonomy={autonomy} permissions={permissions} readScope={readScope} busy={busy}
-        onNew={() => runCommand('assistant.new')} onSelect={selectConversation} onPermissionsChange={setPermissions} onReadScopeChange={setReadScope} onSaveSettings={() => void saveWorkflowSettings()} />
+      <ConversationList workspace={workspace} conversationId={conversationId} autonomy={assistant.autonomy} permissions={assistant.permissions} readScope={readScope} busy={assistant.busy}
+        onNew={() => runCommand('assistant.new')} onSelect={selectConversation} onPermissionsChange={assistant.setPermissions} onReadScopeChange={assistant.setReadScope} onSaveSettings={() => void assistant.saveWorkflowSettings()} />
       {readScope.mode === 'selected' && <div className="ai-scope-note" role="status">Selected knowledge only · review allowed files in Workflow settings</div>}
-      <ConversationPanel conversation={conversation} provider={provider} onProviderChange={setProvider} autonomy={autonomy} onAutonomyChange={setAutonomy} retained={retained} onRetentionChange={setRetained} message={message} onMessageChange={setMessage} busy={busy} onSend={(event) => void sendMessage(event)} onCancel={() => void cancelMessage()} onDelete={() => void deleteConversation()} activeFile={activeFile} openFileCount={openFileCount} visiblePaneCount={visiblePaneCount} onOpenResource={(uri, side) => { openResource(uri, { side }) }} />
+      <ConversationPanel conversation={assistant.conversation} provider={assistant.provider} onProviderChange={assistant.setProvider} autonomy={assistant.autonomy} onAutonomyChange={assistant.setAutonomy}
+        retained={assistant.retained} onRetentionChange={assistant.setRetained} message={assistant.message} onMessageChange={assistant.setMessage} busy={assistant.busy}
+        onSend={(event) => void assistant.sendMessage(event)} onCancel={() => void assistant.cancelMessage()} onDelete={() => void assistant.deleteConversation()} activeFile={activeFile} openFileCount={openFileCount} visiblePaneCount={visiblePaneCount} onOpenResource={(uri, side) => { openResource(uri, { side }) }} />
     </aside> : <aside className="assistant-rail" aria-label="AI assistant collapsed"><button onClick={() => setRightOpen(true)} title="Expand AI sidebar" aria-label="Expand AI sidebar"><PanelRightOpen size={20}/></button><span>AI</span></aside>)}
     </div>
-    <CommandPalette open={paletteOpen && Boolean(workspace)} query={query} results={results} searching={searching} provider={provider} savedIndexEnabled={Boolean(workspace?.modules.semanticIndex)} commands={commands.filter((command) => !command.hideInPalette)} shortcutFor={shortcut} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult} onAISearch={() => void searchSemantically()} onSavedSearch={() => void searchSavedConcepts()} onCommand={runCommand} />
+    <CommandPalette open={paletteOpen && Boolean(workspace)} query={query} results={results} searching={searching} provider={assistant.provider} savedIndexEnabled={Boolean(workspace?.modules.semanticIndex)} commands={commands.filter((command) => !command.hideInPalette)} shortcutFor={shortcut} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult} onAISearch={() => void searchSemantically()} onSavedSearch={() => void searchSavedConcepts()} onCommand={runCommand} />
   </div>
 }
 

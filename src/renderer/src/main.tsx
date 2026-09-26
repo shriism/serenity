@@ -5,6 +5,7 @@ import type { SearchResult, WorkspacePage, WorkspaceSnapshot } from '../../share
 import { ConversationPanel } from './conversation-panel'
 import { ConversationList } from './conversation-list'
 import { useAssistant } from './use-assistant'
+import { workspaceActivity } from '../../shared/activity'
 import { AppNavigation } from './navigation'
 import { builtinViews, type BuiltinViewContext } from './builtin-views'
 import { CommandPalette } from './command-palette'
@@ -485,17 +486,7 @@ function App() {
 
   const pending = workspace?.proposals.filter((proposal) => proposal.status === 'pending') ?? []
   // The feed spans every record; rebuild it when the workspace changes, not on each keystroke elsewhere in the shell.
-  const activity = useMemo(() => [...(workspace?.claims.map((item) => ({ id: item.id, at: item.recordedAt, title: `Claim: ${item.key}`, detail: `${workspace.entities.find((entity) => entity.id === item.subject)?.title ?? 'Unknown entity'} · ${item.value} · ${item.source}` })) ?? []),
-    ...(workspace?.mergeHistory.flatMap((item) => [
-      { id: `${item.id}:${item.recordedAt}:merge`, at: item.recordedAt, title: `Merged ${item.title}`, detail: `Archived; linked to ${workspace.entities.find((entity) => entity.id === item.target)?.title ?? item.target}` },
-      ...(item.undoneAt ? [{ id: `${item.id}:${item.recordedAt}:undo`, at: item.undoneAt, title: `Restored ${item.title}`, detail: item.undoReason ?? 'Merge reversed' }] : [])
-    ]) ?? []),
-    ...(workspace?.resolutions.map((item) => ({ id: item.id, at: item.recordedAt, title: item.currentClaimId ? `Current ${item.key} selected` : `Current ${item.key} cleared`, detail: item.reason })) ?? []),
-    ...(workspace?.modules.calendar ? workspace.events.map((item) => ({ id: item.id, at: item.start, title: `Event: ${item.title}`, detail: `${item.notes}${item.source ? ` · Source: ${item.source}` : ''}` })) : []),
-    ...(workspace?.modules.tasks ? workspace.tasks.map((item) => ({ id: item.id, at: item.recordedAt ?? item.due ?? '', title: `Task: ${item.title}`, detail: `${item.completed ? 'Completed' : 'Open'}${item.source ? ` · Source: ${item.source}` : ''}` })) : []),
-    ...(workspace?.proposals.map((item) => ({ id: item.id, at: item.recordedAt, title: `Proposal ${item.status}`, detail: `${item.kind === 'claim' ? `${item.key}: ${item.value}` : item.title} · ${item.provider}` })) ?? []),
-    ...(workspace?.conversations.flatMap((item) => item.messages.map((message) => ({ id: message.id, at: message.recordedAt, title: message.role === 'user' ? 'You' : `${message.provider} replied`, detail: message.text.slice(0, 180) }))) ?? [])]
-    .sort((a, b) => b.at.localeCompare(a.at)), [workspace])
+  const activity = useMemo(() => workspace ? workspaceActivity(workspace) : [], [workspace])
   const title: Record<View, string> = { home: 'Home', knowledge: 'Knowledge', review: 'Review', documents: 'Documents', calendar: 'Calendar', tasks: 'Tasks', activity: 'Activity', settings: 'Settings' }
   const multipleGroups = workbench.groups.length > 1
   const canSplit = workbench.groups.length < maxEditorGroups

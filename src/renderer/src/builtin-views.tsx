@@ -14,6 +14,7 @@ import { DocumentKnowledgeView } from './document-knowledge'
 import { PresentationSwitcher, presentationFor } from './presentations'
 import type { CommandContribution } from './commands'
 import { resourceUri } from '../../shared/resources'
+import type { ActivityItem } from '../../shared/activity'
 import { ViewRegistry } from './view-registry'
 
 export interface BuiltinViewContext {
@@ -25,7 +26,7 @@ export interface BuiltinViewContext {
   focusedEventId: string | null
   focusedTaskId: string | null
   focusVersion: number
-  activity: { id: string; at: string; title: string; detail: string }[]
+  activity: ActivityItem[]
   entityId?: string
   creatingEntity: boolean
   /** How the shown resource is presented, if not its default view. */
@@ -83,5 +84,5 @@ builtinViews.register({ id: 'documents', render: ({ workspace, activeDocument, o
       <DocumentPreview name={activeDocument} workspace={workspace} onOpen={onOpenSource} onError={onError} onResolve={onResolve} onAttach={onAttach} onOpenSource={onOpenSource}/>}
   </div> :
     <DocumentsPanel workspace={workspace} onImport={onImport} onOpen={onOpenDocument} onAnalyze={onAnalyze}/> })
-builtinViews.register({ id: 'activity', render: ({ workspace, activity }) => <ActivityPanel workspace={workspace} activity={activity}/> })
+builtinViews.register({ id: 'activity', render: ({ workspace, activity, onOpenResource }) => <ActivityPanel workspace={workspace} activity={activity} onOpenResource={(uri, side) => onOpenResource(uri, side)}/> })
 builtinViews.register({ id: 'settings', render: ({ workspace, shortcuts, onUpdate, onError }) => <SettingsPanel workspace={workspace} shortcuts={shortcuts} onUpdate={onUpdate} onError={onError}/> })

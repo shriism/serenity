@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { ArrowRight, Columns2, FileText, FolderOpen, Maximize2, Minimize2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Plus, RotateCw, Search, Sparkles, X } from 'lucide-react'
 import type { Autonomy, Conversation, Provider, ReadScope, SearchResult, WorkflowPermissions, WorkspacePage, WorkspaceSnapshot } from '../../shared/types'
@@ -498,8 +498,8 @@ function App() {
     } catch (cause) { setError(String(cause)) }
   }
 
-  const commands = workspace ? workspaceCommands(workspace) : []
-  const keymap = resolveKeymap(commands, workspace?.workbench.keybindings, workspace ? knownCommandIds(workspace) : undefined)
+  const commands = useMemo(() => workspace ? workspaceCommands(workspace) : [], [workspace])
+  const keymap = useMemo(() => resolveKeymap(commands, workspace?.workbench.keybindings, workspace ? knownCommandIds(workspace) : undefined), [commands, workspace])
   const mac = navigator.platform.includes('Mac')
   const shortcut = (id: string): string | undefined => { const binding = keymap.byCommand.get(id); return binding && formatKeybinding(binding, mac) }
   const ariaShortcut = (id: string): string | undefined => keymap.byCommand.get(id)?.replace('Mod', mac ? 'Meta' : 'Control').replace('Ctrl', 'Control')
@@ -524,7 +524,8 @@ function App() {
 
   const conversation = workspace?.conversations.find((item) => item.id === conversationId)
   const pending = workspace?.proposals.filter((proposal) => proposal.status === 'pending') ?? []
-  const activity = [...(workspace?.claims.map((item) => ({ id: item.id, at: item.recordedAt, title: `Claim: ${item.key}`, detail: `${workspace.entities.find((entity) => entity.id === item.subject)?.title ?? 'Unknown entity'} · ${item.value} · ${item.source}` })) ?? []),
+  // The feed spans every record; rebuild it when the workspace changes, not on each keystroke elsewhere in the shell.
+  const activity = useMemo(() => [...(workspace?.claims.map((item) => ({ id: item.id, at: item.recordedAt, title: `Claim: ${item.key}`, detail: `${workspace.entities.find((entity) => entity.id === item.subject)?.title ?? 'Unknown entity'} · ${item.value} · ${item.source}` })) ?? []),
     ...(workspace?.mergeHistory.flatMap((item) => [
       { id: `${item.id}:${item.recordedAt}:merge`, at: item.recordedAt, title: `Merged ${item.title}`, detail: `Archived; linked to ${workspace.entities.find((entity) => entity.id === item.target)?.title ?? item.target}` },
       ...(item.undoneAt ? [{ id: `${item.id}:${item.recordedAt}:undo`, at: item.undoneAt, title: `Restored ${item.title}`, detail: item.undoReason ?? 'Merge reversed' }] : [])
@@ -534,7 +535,7 @@ function App() {
     ...(workspace?.modules.tasks ? workspace.tasks.map((item) => ({ id: item.id, at: item.recordedAt ?? item.due ?? '', title: `Task: ${item.title}`, detail: `${item.completed ? 'Completed' : 'Open'}${item.source ? ` · Source: ${item.source}` : ''}` })) : []),
     ...(workspace?.proposals.map((item) => ({ id: item.id, at: item.recordedAt, title: `Proposal ${item.status}`, detail: `${item.kind === 'claim' ? `${item.key}: ${item.value}` : item.title} · ${item.provider}` })) ?? []),
     ...(workspace?.conversations.flatMap((item) => item.messages.map((message) => ({ id: message.id, at: message.recordedAt, title: message.role === 'user' ? 'You' : `${message.provider} replied`, detail: message.text.slice(0, 180) }))) ?? [])]
-    .sort((a, b) => b.at.localeCompare(a.at))
+    .sort((a, b) => b.at.localeCompare(a.at)), [workspace])
   const title: Record<View, string> = { home: 'Home', knowledge: 'Knowledge', review: 'Review', documents: 'Documents', calendar: 'Calendar', tasks: 'Tasks', activity: 'Activity', settings: 'Settings' }
   const multipleGroups = workbench.groups.length > 1
   const canSplit = workbench.groups.length < maxEditorGroups

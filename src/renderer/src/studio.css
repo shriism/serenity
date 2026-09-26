@@ -152,6 +152,27 @@
 .serenity-studio .module-page .module-aside { border-left: 0; border-top: 1px solid var(--studio-line); padding: 32px 0 0; }
 .serenity-studio .module-page .module-form { max-width: 520px; }
 .serenity-studio .module-page .task-row { border-color: var(--studio-line); }
+.serenity-studio .task-view-toggle { display: inline-flex; gap: 2px; margin: 12px 0 24px; padding: 3px; border-radius: 9px; background: var(--surface-hover); }
+.serenity-studio .task-view-toggle button { border: 0; border-radius: 7px; padding: 6px 13px; background: transparent; color: var(--muted); font-size: 11px; }
+.serenity-studio .task-view-toggle button.active { background: var(--studio-base, var(--surface)); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / 18%); }
+.serenity-studio .module-page .tasks-layout.board-layout { width: 100%; min-width: 0; max-width: none; grid-template-columns: minmax(0, 1fr); }
+.serenity-studio .module-page .tasks-layout.board-layout > div:first-child { min-width: 0; }
+.serenity-studio .task-board { display: grid; width: 100%; max-width: 100%; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px 12px; padding: 2px 2px 14px; }
+.serenity-studio .task-board-column { min-width: 0; }
+@container (max-width: 1050px) { .serenity-studio .task-board { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (max-width: 750px) { .serenity-studio .task-board { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (max-width: 480px) { .serenity-studio .task-board { grid-template-columns: minmax(0, 1fr); } }
+.serenity-studio .task-board-column h2 { display: flex; justify-content: space-between; gap: 8px; margin: 0 0 14px; color: var(--muted); font-size: 12px; font-weight: 620; }
+.serenity-studio .task-board-column h2 span { color: var(--subtle); font-variant-numeric: tabular-nums; }
+.serenity-studio .task-board-column .hint { font-size: 11px; }
+.serenity-studio .task-board-card { padding: 12px; margin-bottom: 8px; border: 1px solid var(--studio-line); border-radius: 9px; background: var(--surface); }
+.serenity-studio .task-board-card strong, .serenity-studio .task-board-card small { display: block; overflow-wrap: anywhere; }
+.serenity-studio .task-board-card strong { font-size: 12px; line-height: 1.4; }
+.serenity-studio .task-board-card small { margin-top: 6px; color: var(--subtle); font-size: 10px; }
+.serenity-studio .task-board-card.complete strong { color: var(--subtle); text-decoration: line-through; }
+.serenity-studio .task-board-actions { display: flex; flex-wrap: wrap; gap: 4px; margin: 11px -5px -5px; }
+.serenity-studio .task-board-actions button { border: 0; border-radius: 5px; padding: 5px; background: transparent; color: var(--muted); font-size: 10px; }
+.serenity-studio .task-board-actions button:hover { background: var(--surface-hover); color: var(--text); }
 .serenity-studio .settings-workspace { border: 0; border-radius: 0; background: transparent; padding: 0 0 27px; margin: 26px 0 30px; border-bottom: 1px solid var(--studio-line); }
 .serenity-studio .review-card { border: 0; border-bottom: 1px solid var(--studio-line); border-radius: 0; background: transparent; box-shadow: none; padding: 22px 0; }
 .serenity-studio .content { display: block; overflow: auto; }

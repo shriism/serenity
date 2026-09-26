@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { ResourcePicker } from './resource-picker'
 import type { CalendarEvent, TaskItem, WorkspaceSnapshot } from '../../shared/types'
+import { taskBoard, type TaskBucket } from '../../shared/task-board'
 
 type Props = {
   workspace: WorkspaceSnapshot
@@ -11,7 +12,10 @@ type Props = {
   focusVersion?: number
 }
 
-function today(): string { return new Date().toLocaleDateString('en-CA') }
+function today(): string {
+  const date = new Date()
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
 
 function EntityLinks({ workspace, selected, onChange }: {
   workspace: WorkspaceSnapshot
@@ -140,11 +144,25 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
 export function TasksModule({ workspace, onUpdate, onError, focusTaskId, focusVersion }: Props) {
   const [draft, setDraft] = useState<TaskItem>({ id: '', title: '', completed: false, notes: '', relatedEntityIds: [] })
   const [busy, setBusy] = useState(false)
+  const [presentation, setPresentation] = useState<'list' | 'board'>('list')
+  const titleInput = useRef<HTMLInputElement>(null)
   useEffect(() => {
     const task = workspace.tasks.find((item) => item.id === focusTaskId)
     if (task) setDraft(task)
   }, [focusTaskId, focusVersion])
   const clearDraft = (): void => setDraft({ id: '', title: '', completed: false, notes: '', relatedEntityIds: [] })
+  const edit = (task: TaskItem): void => {
+    setDraft(task)
+    requestAnimationFrame(() => titleInput.current?.focus())
+  }
+  const board = taskBoard(workspace.tasks, today())
+  const boardColumns: { id: TaskBucket; title: string; empty: string }[] = [
+    { id: 'overdue', title: 'Overdue', empty: 'Nothing overdue.' },
+    { id: 'soon', title: 'Next 7 days', empty: 'Nothing due soon.' },
+    { id: 'later', title: 'Later', empty: 'Nothing due later.' },
+    { id: 'undated', title: 'No date', empty: 'No undated tasks.' },
+    { id: 'completed', title: 'Completed', empty: 'No completed tasks.' }
+  ]
 
   async function save(event: FormEvent): Promise<void> {
     event.preventDefault()
@@ -168,22 +186,44 @@ export function TasksModule({ workspace, onUpdate, onError, focusTaskId, focusVe
   return <section className="page module-page">
     <span className="eyebrow">SERENITY TASKS</span><h1>Tasks</h1>
     <p>Plan what matters and connect it to your people, projects, or any other entities.</p>
-    <div className="tasks-layout">
+    <div className="task-view-toggle" role="group" aria-label="Task view">
+      <button type="button" aria-pressed={presentation === 'list'} className={presentation === 'list' ? 'active' : ''} onClick={() => setPresentation('list')}>List</button>
+      <button type="button" aria-pressed={presentation === 'board'} className={presentation === 'board' ? 'active' : ''} onClick={() => setPresentation('board')}>Board</button>
+    </div>
+    <div className={`tasks-layout ${presentation === 'board' ? 'board-layout' : ''}`}>
       <div>
+        {presentation === 'board' ? <div className="task-board">
+          {boardColumns.map((column) => <section key={column.id} className="task-board-column" aria-label={`${column.title}, ${board[column.id].length} tasks`}>
+            <h2>{column.title} <span>{board[column.id].length}</span></h2>
+            {board[column.id].length === 0 && <p className="hint">{column.empty}</p>}
+            {board[column.id].map((item) => <article key={item.id} className={`task-board-card ${item.completed ? 'complete' : ''}`}>
+              <strong>{item.title}</strong>
+              {item.due && <small>Due {item.due}</small>}
+              {item.relatedEntityIds.length > 0 && <small>{item.relatedEntityIds.map((id) => workspace.entities.find((entity) => entity.id === id)?.title).filter(Boolean).join(', ')}</small>}
+              <div className="task-board-actions">
+                <button type="button" onClick={() => void changeCompletion(item)}>{item.completed ? 'Reopen' : 'Complete'}</button>
+                <button type="button" onClick={() => edit(item)}>Edit</button>
+                <button type="button" onClick={() => void archive(item)}>Archive</button>
+              </div>
+            </article>)}
+          </section>)}
+        </div> : <>
         <h2>To do</h2>
         {workspace.tasks.filter((item) => !item.completed).length === 0 && <p className="hint">No open tasks.</p>}
         {workspace.tasks.filter((item) => !item.completed).sort((a, b) => (a.due ?? '9999').localeCompare(b.due ?? '9999')).map((item) =>
           <div key={item.id} className="task-row">
             <button title="Mark completed" onClick={() => void changeCompletion(item)}>☐</button>
             <div><strong>{item.title}</strong><small>{item.due ? `Due ${item.due} · ` : ''}{item.relatedEntityIds.map((id) => workspace.entities.find((entity) => entity.id === id)?.title).filter(Boolean).join(', ')}</small></div>
-            <button className="text-button" onClick={() => setDraft(item)}>Edit</button>
+            <button className="text-button" onClick={() => edit(item)}>Edit</button>
             <button className="text-button" onClick={() => void archive(item)}>Archive</button>
           </div>)}
         <h2>Completed</h2>
         {workspace.tasks.filter((item) => item.completed).map((item) => <div key={item.id} className="task-row complete">
           <button title="Reopen task" onClick={() => void changeCompletion(item)}>☑</button><strong>{item.title}</strong>
+          <button className="text-button" onClick={() => edit(item)}>Edit</button>
           <button className="text-button" onClick={() => void archive(item)}>Archive</button>
         </div>)}
+        </>}
         {workspace.archivedTasks.length > 0 && <details className="archived-items"><summary>Archived tasks ({workspace.archivedTasks.length})</summary>
           {workspace.archivedTasks.map((item) => <div key={item.id}><span>{item.title}</span><button onClick={() => void window.serenity.restoreTask(item.id).then(onUpdate).catch((cause) => onError(String(cause)))}>Restore</button></div>)}
         </details>}
@@ -191,7 +231,7 @@ export function TasksModule({ workspace, onUpdate, onError, focusTaskId, focusVe
       <aside className="module-aside">
         <form className="module-form" onSubmit={(event) => void save(event)}>
           <h3>{draft.id ? 'Edit task' : 'Add task'}</h3>
-          <label>Title<input required value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })}/></label>
+          <label>Title<input ref={titleInput} required value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })}/></label>
           <label>Due date<input type="date" value={draft.due ?? ''} onChange={(event) => setDraft({ ...draft, due: event.target.value || undefined })}/></label>
           <EntityLinks workspace={workspace} selected={draft.relatedEntityIds} onChange={(relatedEntityIds) => setDraft({ ...draft, relatedEntityIds })}/>
           <label>Notes<textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })}/></label>

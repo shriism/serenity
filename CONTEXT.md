@@ -132,7 +132,8 @@ This is an **implemented desktop foundation**, not a finished general workbench.
 ### 1. Finish internal resource/view composition (largely done)
 
 - Done: resource routing, per-command handlers and workspace keymaps, editor-owned drafts, Obsidian-style panes on the split tree (resizable, drag-and-drop tabs, narrow fallback), per-tab presentations, session restore of all of it, and snapshot ordering so late replies cannot overwrite newer state.
-- Remaining: presentations for other kinds (e.g. a document outline, task board), directional pane focus, and keyboard focus polish.
+- Done: directional pane focus by the neighboring pane's position, and a task board that groups existing tasks by due date without adding a workflow status to stored records.
+- Remaining: presentations for other kinds (e.g. a document outline), persistent presentation selection for module views, and keyboard focus polish.
 
 ### 2. Make customization coherent, then consider installed extensions
 

@@ -34,7 +34,7 @@ const profile = process.env.SERENITY_SMOKE_PROVIDER ? null : await mkdtemp(join(
 const futureDate = (days: number): string => {
   const day = new Date()
   day.setDate(day.getDate() + days)
-  return day.toLocaleDateString('en-CA')
+  return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`
 }
 const taskDue = futureDate(7)
 const eventDate = futureDate(8)
@@ -277,6 +277,8 @@ try {
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-calendar.png'), await captureScreenshot(pageUrl))
   const tasksView = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Tasks')); button?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.module-page h1')?.textContent ?? null })()`)
   assert.equal(tasksView, 'Tasks')
+  const taskBoard = await evaluate(pageUrl, `(async () => { document.querySelector('.task-view-toggle button:last-child')?.click(); await new Promise((resolve) => setTimeout(resolve, 50)); const card = [...document.querySelectorAll('.task-board-card')].find((item) => item.querySelector('strong')?.textContent === 'Call Alex'); const column = card?.closest('.task-board-column')?.querySelector('h2')?.textContent?.trim(); [...(card?.querySelectorAll('button') ?? [])].find((item) => item.textContent === 'Edit')?.click(); await new Promise((resolve) => requestAnimationFrame(resolve)); return { columns: document.querySelectorAll('.task-board-column').length, column, editFocused: document.activeElement === document.querySelector('.module-aside .module-form input'), pressed: document.querySelector('.task-view-toggle button:last-child')?.getAttribute('aria-pressed') } })()`)
+  assert.deepEqual(taskBoard, { columns: 5, column: 'Next 7 days 1', editFocused: true, pressed: 'true' }, 'The task board should group due tasks and move keyboard focus to Edit')
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-tasks.png'), await captureScreenshot(pageUrl))
   const chatView = await evaluate(pageUrl, `Boolean(document.querySelector('.assistant-sidebar .conversation-panel'))`)
   assert.equal(chatView, true)

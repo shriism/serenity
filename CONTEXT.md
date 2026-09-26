@@ -141,7 +141,7 @@ This is an **implemented desktop foundation**, not a finished general workbench.
 
 ### 2. Make customization coherent, then consider installed extensions
 
-- Done: command registry for metadata, module availability, dispatch, keybinding identity, palette/navigation/menu discovery, and duplicate-ID errors; workspace-controlled keymaps. Remaining: migrate assistant and window controls that should become discoverable commands.
+- Done: command registry for metadata, module availability, dispatch, keybinding identity, palette/navigation/menu discovery, and duplicate-ID errors; workspace-controlled keymaps. Workspace switching, opening its folder, and assistant expansion now use discoverable commands. Remaining: review other shell controls for useful command identities.
 - Define versioned contribution contracts for resources, views, commands, navigation, and optional data/module behavior. Decide the boundary for user-installed code (trust, sandbox/process isolation, capabilities, updates) **with the human** before implementing a plugin loader. The present registry only supports internal TypeScript contributions shipped with Serenity.
 - Let workspace pages compose richer, predictable views without opening arbitrary code execution through Markdown/YAML. Preserve portability and clear failure states for missing commands/extensions.
 

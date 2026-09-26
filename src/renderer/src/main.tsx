@@ -476,10 +476,13 @@ function App() {
     newEntity: () => newEntity(),
     createPage: () => { void createPage() },
     importDocuments: () => { if (navigate('documents')) void importDocuments() },
+    chooseWorkspace: () => { void chooseWorkspace() },
+    openWorkspaceFolder: () => { void window.serenity.openWorkspaceFolder().catch((cause) => setError(String(cause))) },
     newConversation: () => startConversation(),
     toggleSearch: () => { if (paletteOpen) closePalette(); else setPaletteOpen(true) },
     toggleNavigation: () => setLeftOpen((open) => !open),
     toggleAssistant: () => { setRightOpen((open) => !open); setAIExpanded(false) },
+    toggleAssistantExpansion: () => { setRightOpen(true); setAIExpanded((expanded) => !expanded) },
     splitEditor: (direction) => splitPane(direction),
     closeEditorGroup: () => closeEditorGroup(),
     focusNextGroup: (step) => focusNextGroup(step),
@@ -608,7 +611,7 @@ function App() {
       <div className="brand"><img className="brand-icon" src={serenityIcon} alt=""/><div><strong>Serenity</strong></div></div>
       <button className="left-rail-toggle" onClick={() => setLeftOpen(!leftOpen)} aria-label={leftOpen ? 'Collapse navigation' : 'Expand navigation'} aria-keyshortcuts={ariaShortcut('navigation.toggle')} title={withShortcut(`${leftOpen ? 'Collapse' : 'Expand'} navigation`, 'navigation.toggle')}>{leftOpen ? <PanelLeftClose size={17}/> : <PanelLeftOpen size={19}/>}</button>
       <div className="workspace-control">
-        <button className="workspace-button" onClick={() => void chooseWorkspace()} title={workspace?.path ?? 'Choose a workspace'}>
+        <button className="workspace-button" onClick={() => workspace ? runCommand('workspace.choose') : void chooseWorkspace()} title={workspace?.path ?? 'Choose a workspace'}>
           <span className="workspace-avatar">{workspace ? workspace.path.split(/[\\/]/).filter(Boolean).at(-1)?.slice(0, 1).toUpperCase() : '+'}</span>
           <span className="workspace-info"><strong>{workspace ? workspace.path.split(/[\\/]/).filter(Boolean).at(-1) : 'Choose a folder'}</strong><small>{workspace ? 'Local workspace' : 'Start here'}</small></span>
           <span className="workspace-chevron">⌄</span>
@@ -619,7 +622,7 @@ function App() {
         <AppNavigation view={view} activePageId={activePageId} pendingCount={pending.length} commands={commands} navigation={workspace.workbench.navigation} onCommand={runCommand}/>
       </div>}
       <div className="sidebar-footer" inert={!leftOpen}>
-        {workspace && <button className="footer-folder" onClick={() => void window.serenity.openWorkspaceFolder().catch((cause) => setError(String(cause)))}><FolderOpen size={16}/> Open workspace folder</button>}
+        {workspace && <button className="footer-folder" onClick={() => runCommand('workspace.open-folder')}><FolderOpen size={16}/> Open workspace folder</button>}
         <ThemeControl preference={theme} onChange={setTheme}/>
       </div>
       </div>
@@ -644,7 +647,7 @@ function App() {
     </main>
     {workspace && (rightOpen ? <aside className="assistant-sidebar" aria-label="AI assistant">
       <div className="assistant-toolbar"><div><Sparkles size={18}/><span>Assistant</span><small>WITH YOUR WORKSPACE</small></div><div className="assistant-toolbar-actions">
-        <button onClick={() => setAIExpanded(!aiExpanded)} aria-label={aiExpanded ? 'Return AI to sidebar' : 'Expand AI over workspace'} title={aiExpanded ? 'Return AI to sidebar' : 'Expand AI over workspace'}>{aiExpanded ? <Minimize2 size={17}/> : <Maximize2 size={17}/>}</button>
+        <button onClick={() => runCommand('assistant.expand')} aria-label={aiExpanded ? 'Return AI to sidebar' : 'Expand AI over workspace'} title={aiExpanded ? 'Return AI to sidebar' : 'Expand AI over workspace'}>{aiExpanded ? <Minimize2 size={17}/> : <Maximize2 size={17}/>}</button>
         <button onClick={() => { setRightOpen(false); setAIExpanded(false) }} aria-label="Collapse AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')} title={withShortcut('Collapse AI sidebar', 'assistant.toggle')}><PanelRightClose size={17}/></button>
       </div></div>
       <ConversationList workspace={workspace} conversationId={conversationId} autonomy={assistant.autonomy} permissions={assistant.permissions} readScope={readScope} busy={assistant.busy}

@@ -21,8 +21,14 @@ test('commands have one identity, availability check, and dispatch path', async 
     assert.ok(registry.list().some((command) => command.id === 'example.action'))
     assert.equal(registry.dispatch('example.action', host), true)
     assert.equal(registry.dispatch('page.open.home', host), true)
+    const shellHost = { ...host, chooseWorkspace: () => calls.push('choose'), openWorkspaceFolder: () => calls.push('folder'),
+      toggleAssistantExpansion: () => calls.push('expand') } as CommandHost
+    for (const id of ['workspace.choose', 'workspace.open-folder', 'assistant.expand']) {
+      assert.ok(registry.get(id), `${id} is discoverable`)
+      assert.equal(registry.dispatch(id, shellHost), true)
+    }
     assert.equal(registry.dispatch('missing', host), false)
-    assert.deepEqual(calls, ['custom', 'serenity:page/home'])
+    assert.deepEqual(calls, ['custom', 'serenity:page/home', 'choose', 'folder', 'expand'])
     assert.throws(() => registry.register(custom), /already registered/)
     assert.throws(() => new CommandRegistry(snapshot, [{ ...custom, id: 'view.home' }]), /already registered/)
     assert.throws(() => registry.register({ ...custom, id: 'bad id' }), /Invalid command/)

@@ -1,4 +1,4 @@
-import { Activity, ArrowDown, ArrowLeft, ArrowLeftRight, ArrowRight, ArrowRightLeft, ArrowUp, CalendarDays, Columns2, Rows2, SquareX, MoveRight, FileText, Files, FolderOpen, House, Inbox, Link2, ListTodo, MessageCircle, PanelLeft, PanelRight, Plus, RotateCw, Search, Settings2 } from 'lucide-react'
+import { Activity, ArrowDown, ArrowLeft, ArrowLeftRight, ArrowRight, ArrowRightLeft, ArrowUp, CalendarDays, Columns2, Rows2, SquareX, MoveRight, FileText, Files, FolderOpen, House, Inbox, Link2, ListTodo, Maximize2, MessageCircle, PanelLeft, PanelRight, Plus, RotateCw, Search, Settings2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { WorkspaceSnapshot } from '../../shared/types'
 import type { ModuleId } from '../../shared/modules'
@@ -12,6 +12,8 @@ export interface CommandHost {
   newEntity(): void
   createPage(): void
   importDocuments(): void
+  chooseWorkspace(): void
+  openWorkspaceFolder(): void
   newConversation(): void
   toggleSearch(): void
   toggleNavigation(): void
@@ -22,6 +24,7 @@ export interface CommandHost {
   focusPane(direction: 'left' | 'right' | 'up' | 'down'): void
   moveTabToOtherGroup(): void
   toggleAssistant(): void
+  toggleAssistantExpansion(): void
   refresh(): void
 }
 
@@ -56,8 +59,11 @@ const builtins: CommandContribution[] = [
   { id: 'entity.create', title: 'New entity', icon: Plus, run: (host) => host.newEntity() },
   { id: 'page.create', title: 'New page', icon: FileText, run: (host) => host.createPage() },
   { id: 'documents.import', title: 'Import documents', icon: FolderOpen, run: (host) => host.importDocuments() },
+  { id: 'workspace.choose', title: 'Choose workspace', icon: FolderOpen, run: (host) => host.chooseWorkspace() },
+  { id: 'workspace.open-folder', title: 'Open workspace folder', icon: FolderOpen, run: (host) => host.openWorkspaceFolder() },
   { id: 'assistant.new', title: 'New conversation', icon: MessageCircle, run: (host) => host.newConversation() },
   { id: 'assistant.toggle', title: 'Toggle assistant', icon: PanelRight, keybinding: 'Mod+J', run: (host) => host.toggleAssistant() },
+  { id: 'assistant.expand', title: 'Expand or restore assistant', icon: Maximize2, run: (host) => host.toggleAssistantExpansion() },
   { id: 'navigation.toggle', title: 'Toggle navigation', icon: PanelLeft, keybinding: 'Mod+B', run: (host) => host.toggleNavigation() },
   { id: 'layout.split', title: 'Split right', icon: Columns2, keybinding: 'Mod+\\', run: (host) => host.splitEditor('row') },
   { id: 'layout.split-down', title: 'Split down', icon: Rows2, keybinding: 'Mod+Shift+\\', run: (host) => host.splitEditor('column') },

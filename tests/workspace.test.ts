@@ -365,6 +365,31 @@ test('calendar events and tasks can be archived and restored without losing thei
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
+test('archiving and editing a task cannot create both active and archived copies', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-task-archive-race-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const task = (await workspace.saveTask({ id: '', title: 'Prepare', completed: false, notes: 'Original', relatedEntityIds: [] })).tasks[0]
+    const [saved, archived] = await Promise.allSettled([
+      workspace.saveTask({ ...task, notes: 'Editor update' }),
+      workspace.archiveTask(task.id, task.revision!)
+    ])
+    assert.deepEqual([saved.status, archived.status].sort(), ['fulfilled', 'rejected'])
+    const snapshot = await workspace.snapshot()
+    if (archived.status === 'fulfilled') {
+      assert.equal(snapshot.tasks.some((item) => item.id === task.id), false)
+      assert.equal(snapshot.archivedTasks.find((item) => item.id === task.id)?.notes, 'Original')
+      await assert.rejects(workspace.saveTask({ id: task.id, title: task.title, completed: false, notes: 'Unexpected', relatedEntityIds: [] }),
+        /Create a new item without an ID/)
+    } else {
+      assert.equal(snapshot.tasks.find((item) => item.id === task.id)?.notes, 'Editor update')
+      assert.equal(snapshot.archivedTasks.some((item) => item.id === task.id), false)
+    }
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
 test('merge archives duplicate and resolves knowledge and module links without erasing claim files', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
   try {

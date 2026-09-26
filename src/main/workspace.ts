@@ -1086,7 +1086,7 @@ export class Workspace {
     return this.snapshot()
   }
 
-  private async saveModuleRecord(directory: string, value: CalendarEvent | TaskItem): Promise<WorkspaceSnapshot> {
+  private async saveModuleRecord(directory: string, value: CalendarEvent | TaskItem, creating: boolean): Promise<WorkspaceSnapshot> {
     const recordId = value.id ? id(value.id) : randomUUID()
     const path = join(directory, `${recordId}.yaml`)
     return this.withFileMutation(path, async () => {
@@ -1096,6 +1096,7 @@ export class Workspace {
       })
       if (previous && checksum(previous) !== value.revision) throw new Error('This item changed on disk. Refresh before saving.')
       if (!previous && value.revision) throw new Error('This item was removed on disk. Refresh before saving.')
+      if (!previous && !creating) throw new Error('Create a new item without an ID. Refresh before saving this item.')
       const { metadata, revision: _revision, ...recordData } = value
       const text = previous ? updateYaml(previous, { ...recordData, id: recordId }) :
         YAML.stringify({ ...metadata, ...recordData, id: recordId })
@@ -1109,26 +1110,28 @@ export class Workspace {
     if (!(await this.snapshot()).modules.calendar) throw new Error('Calendar module is disabled')
     const event = parseEvent({ ...value, id: value.id || randomUUID(), recordedAt: value.recordedAt ?? new Date().toISOString() })
     if (event.end && event.end < event.start) throw new Error('End date must follow start date')
-    return this.saveModuleRecord(this.directories[5], { ...event, revision: value.revision })
+    return this.saveModuleRecord(this.directories[5], { ...event, revision: value.revision }, !value.id)
   }
 
   async saveTask(value: TaskItem): Promise<WorkspaceSnapshot> {
     if (!(await this.snapshot()).modules.tasks) throw new Error('Tasks module is disabled')
     const task = parseTask({ ...value, id: value.id || randomUUID(), recordedAt: value.recordedAt ?? new Date().toISOString() })
-    return this.saveModuleRecord(this.directories[6], { ...task, revision: value.revision })
+    return this.saveModuleRecord(this.directories[6], { ...task, revision: value.revision }, !value.id)
   }
 
   private async archiveModuleRecord(directory: string, category: 'calendar' | 'tasks', recordId: string, revision: string): Promise<WorkspaceSnapshot> {
     const file = `${id(recordId)}.yaml`
     const source = join(directory, file)
     const destination = join(this.path, 'archive', category, file)
-    const current = await this.readOwnedText(source)
-    if (checksum(current) !== revision) throw new Error('This item changed on disk. Refresh before archiving it.')
-    try { await lstat(destination); throw new Error('This item is already archived.') }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-    await rename(source, destination)
-    this.markDirty()
-    return this.snapshot()
+    return this.withFileMutation(source, async () => {
+      const current = await this.readOwnedText(source)
+      if (checksum(current) !== revision) throw new Error('This item changed on disk. Refresh before archiving it.')
+      try { await lstat(destination); throw new Error('This item is already archived.') }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+      await rename(source, destination)
+      this.markDirty()
+      return this.snapshot()
+    })
   }
 
   private async restoreModuleRecord(directory: string, category: 'calendar' | 'tasks', recordId: string): Promise<WorkspaceSnapshot> {
@@ -1136,11 +1139,13 @@ export class Workspace {
     const file = `${id(recordId)}.yaml`
     const source = join(this.path, 'archive', category, file)
     const destination = join(directory, file)
-    try { await lstat(destination); throw new Error('An active item already uses this ID.') }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-    await rename(source, destination)
-    this.markDirty()
-    return this.snapshot()
+    return this.withFileMutation(destination, async () => {
+      try { await lstat(destination); throw new Error('An active item already uses this ID.') }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+      await rename(source, destination)
+      this.markDirty()
+      return this.snapshot()
+    })
   }
 
   async archiveEvent(id: string, revision: string): Promise<WorkspaceSnapshot> {

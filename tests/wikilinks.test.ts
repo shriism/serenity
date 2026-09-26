@@ -34,3 +34,14 @@ test('backlinks list the pages and notes whose wikilinks resolve to a resource',
   ])
   assert.deepEqual(wikilinkMentions(withNotes, 'serenity:entity/e2'), [], 'an ambiguous name is not a mention')
 })
+
+test('typing [[ offers unambiguous titles and completing closes the link', async () => {
+  const { completeWikilink, wikilinkQueryAt, wikilinkSuggestions } = await import('../src/shared/wikilinks')
+  assert.deepEqual(wikilinkQueryAt('Met [[al', 8), { start: 6, query: 'al' })
+  assert.equal(wikilinkQueryAt('Met [[Alex]] now', 16), null)
+  assert.equal(wikilinkQueryAt('[[a\nb', 5), null, 'only the current line counts')
+  assert.equal(wikilinkQueryAt('[[Alex|fr', 9), null, 'the label part is free text')
+  assert.deepEqual(completeWikilink('Met [[al and', 8, 6, 'Alex'), { text: 'Met [[Alex]] and', caret: 12 })
+  assert.deepEqual(completeWikilink('Met [[al]]', 8, 6, 'Alex'), { text: 'Met [[Alex]]', caret: 12 })
+  assert.deepEqual(wikilinkSuggestions(snapshot, 's').map((item) => item.title), ['syllabus.pdf', 'Research'], 'prefix matches first; the ambiguous Sam is not offered')
+})

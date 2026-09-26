@@ -318,3 +318,11 @@
 .serenity-studio .wikilink-unresolved { border-bottom: 1px dashed var(--warning-text); color: var(--text); cursor: help; }
 .serenity-studio .wikilink-unresolved.missing { border-bottom-color: var(--subtle); color: var(--muted); }
 .serenity-studio .mention-excerpt { margin: 4px 0 0; color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+/* [[ autocomplete in Markdown fields. */
+.wikilink-field { position: relative; display: grid; }
+.wikilink-field textarea { width: 100%; box-sizing: border-box; }
+.wikilink-suggestions { position: absolute; left: 0; bottom: -4px; transform: translateY(100%); z-index: 20; min-width: 240px; max-width: 100%; margin: 0; padding: 4px; list-style: none; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); box-shadow: 0 12px 30px rgb(0 0 0 / 25%); }
+.wikilink-suggestions li { display: flex; justify-content: space-between; gap: 12px; padding: 6px 9px; border-radius: 6px; cursor: pointer; font-size: 12px; }
+.wikilink-suggestions li small { color: var(--subtle); }
+.wikilink-suggestions li.active, .wikilink-suggestions li:hover { background: var(--surface-hover); }

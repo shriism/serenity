@@ -425,6 +425,26 @@ try {
     return { link: false, missing: null }
   })()`)
   assert.deepEqual(wikilinks, { link: true, missing: 'Someone new' }, 'Wikilinks should link named resources and mark names that match nothing')
+  const completed = await evaluate(pageUrl, `(async () => {
+    document.querySelector('.page-toolbar button')?.click()
+    let field = null
+    for (let i = 0; i < 40 && !field; i++) { field = document.querySelector('#page-source'); await new Promise((resolve) => setTimeout(resolve, 50)) }
+    if (!field) return 'no editor'
+    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+    const text = field.value + '\\nAsk [[Unt'
+    setter.call(field, text); field.setSelectionRange(text.length, text.length); field.dispatchEvent(new Event('input', { bubbles: true }))
+    let option = null
+    for (let i = 0; i < 40 && !option; i++) { option = document.querySelector('.wikilink-suggestions [role="option"]'); await new Promise((resolve) => setTimeout(resolve, 50)) }
+    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const value = field.value.split('\\n').at(-1)
+    const confirmDiscard = window.confirm
+    window.confirm = () => true
+    ;[...document.querySelectorAll('.page-toolbar button')].find((item) => item.textContent?.includes('Cancel'))?.click()
+    window.confirm = confirmDiscard
+    return value
+  })()`)
+  assert.equal(completed, 'Ask [[Untitled page]]', 'Typing [[ should suggest titles and Enter should complete the link')
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) {
     const narrow = await evaluate(pageUrl, `(async () => { window.resizeTo(900, 760); for (let i = 0; i < 30 && innerWidth <= 1020 && !document.querySelector('.serenity-studio')?.classList.contains('left-collapsed'); i++) await new Promise((resolve) => setTimeout(resolve, 100)); return { width: innerWidth, main: document.querySelector('#workspace-main')?.getBoundingClientRect().width, right: Boolean(document.querySelector('.assistant-sidebar')), rail: document.querySelector('.serenity-studio')?.classList.contains('left-collapsed') } })()`) as { width: number; main: number; right: boolean; rail: boolean }
     if (narrow.width <= 1020) {
@@ -435,6 +455,9 @@ try {
   console.log('Electron workspace, entity, claim, PDF/DOCX search, reversible merges/tasks/calendar, and preload IPC passed.')
 } finally {
   child.kill()
+  // A window left with unsaved edits asks before closing; do not let that keep Electron running after the test.
+  for (let i = 0; i < 30 && child.exitCode === null && child.signalCode === null; i++) await delay(100)
+  if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
   await rm(workspace, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
   if (profile) await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
 }

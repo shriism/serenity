@@ -7,6 +7,7 @@ import type { WorkspacePage, WorkspaceSnapshot } from '../../shared/types'
 import { evaluateWorkspaceQuery } from '../../shared/query'
 import { linkWikilinks, resolveWikilink } from '../../shared/wikilinks'
 import { markdownUrlTransform, workspaceLink } from './markdown-links'
+import { WikilinkTextarea } from './wikilink-textarea'
 import type { CommandContribution } from './commands'
 
 function LiveQuery({ source, workspace, onOpen }: { source: string; workspace: WorkspaceSnapshot; onOpen(uri: string, side?: boolean): void }) {
@@ -66,8 +67,8 @@ export function WorkspacePageView({ page, workspace, commands, onUpdate, onError
       {editing ? <><button onClick={cancel} disabled={busy}><X size={15}/> Cancel</button><button className="page-save" onClick={() => void save()} disabled={busy || !dirty}><Save size={15}/> Save page</button></>
         : <button onClick={() => { setBaseRevision(page.revision); setEditing(true) }}><Pencil size={15}/> Edit page</button>}
     </div></header>
-    {editing ? <div className="page-source"><label htmlFor="page-source">Markdown with YAML frontmatter</label><textarea id="page-source" value={draft} disabled={busy}
-      onChange={(event) => { setDraft(event.target.value); setDirty(event.target.value !== page.text) }} spellCheck={false}/><small>Changes to this file stay in {page.path}. Query blocks read this workspace only.</small></div>
+    {editing ? <div className="page-source"><label htmlFor="page-source">Markdown with YAML frontmatter</label><WikilinkTextarea id="page-source" value={draft} disabled={busy} workspace={workspace}
+      onValueChange={(text) => { setDraft(text); setDirty(text !== page.text) }} spellCheck={false}/><small>Changes to this file stay in {page.path}. Query blocks read this workspace only.</small></div>
       : <article className="page-prose"><ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={markdownUrlTransform} components={{
         a: ({ children, href }) => {
           const link = workspaceLink(href, children, onOpen)

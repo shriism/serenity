@@ -79,3 +79,30 @@ export function wikilinkMentions(snapshot: Pick<WorkspaceSnapshot, 'pages' | 'en
     return line ? [{ uri: source.uri, title: source.title, excerpt: line.trim().slice(0, 200) }] : []
   })
 }
+
+/** An unfinished `[[query` ending at the caret on the current line, if the person is typing a wikilink. */
+export function wikilinkQueryAt(text: string, caret: number): { start: number; query: string } | null {
+  const line = text.slice(text.lastIndexOf('\n', caret - 1) + 1, caret)
+  const open = line.lastIndexOf('[[')
+  if (open < 0 || line.slice(open).includes(']]') || /[[\]|#]/.test(line.slice(open + 2))) return null
+  return { start: caret - line.length + open + 2, query: line.slice(open + 2) }
+}
+
+/** Replaces the query typed after `[[` with a title and closes the link, returning the new text and caret. */
+export function completeWikilink(text: string, caret: number, start: number, title: string): { text: string; caret: number } {
+  const closed = text.slice(caret).startsWith(']]')
+  const inserted = `${title}${closed ? '' : ']]'}`
+  return { text: text.slice(0, start) + inserted + text.slice(caret), caret: start + inserted.length + (closed ? 2 : 0) }
+}
+
+/** Titles a wikilink could name without being ambiguous, best matches first. */
+export function wikilinkSuggestions(snapshot: Pick<WorkspaceSnapshot, 'pages' | 'entities' | 'documents'>, query: string, limit = 8): { title: string; kind: string }[] {
+  const wanted = normalized(query)
+  const all = [...snapshot.pages.map((page) => ({ title: page.title, kind: 'page' })), ...snapshot.entities.map((entity) => ({ title: entity.title, kind: entity.type || 'entity' })),
+    ...snapshot.documents.map((document) => ({ title: document.name, kind: 'document' }))]
+  const counts = new Map<string, number>()
+  for (const item of all) counts.set(normalized(item.title), (counts.get(normalized(item.title)) ?? 0) + 1)
+  return all.filter((item) => counts.get(normalized(item.title)) === 1 && normalized(item.title).includes(wanted))
+    .sort((a, b) => Number(!normalized(a.title).startsWith(wanted)) - Number(!normalized(b.title).startsWith(wanted)) || a.title.localeCompare(b.title))
+    .slice(0, limit)
+}

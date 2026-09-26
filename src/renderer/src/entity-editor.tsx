@@ -7,6 +7,7 @@ import { identityCandidates } from '../../shared/identity'
 import { ClaimCard } from './claim-card'
 import { linkWikilinks, resolveWikilink } from '../../shared/wikilinks'
 import { markdownUrlTransform, workspaceLink } from './markdown-links'
+import { WikilinkTextarea } from './wikilink-textarea'
 
 export interface EntityEditorProps {
   workspace: WorkspaceSnapshot
@@ -133,7 +134,7 @@ export function EntityEditor(props: EntityEditorProps) {
       {candidates.length > 0 && <div className="candidate-box"><strong>Could this already exist?</strong><p>Review these matches before creating a new entity. Similar names do not prove they are the same.</p>{candidates.map(({ entity }) => <button type="button" key={entity.id} onClick={() => props.onOpenEntity(entity.id)}>{entity.title} · {entity.type} ↗</button>)}</div>}
       <label className="sr-only" htmlFor={`${id}-body`}>Context · Markdown</label>
       <div className="body-tabs"><button type="button" className={bodyMode === 'preview' ? 'active' : ''} onClick={() => setBodyMode('preview')}>Read</button><button type="button" className={bodyMode === 'edit' ? 'active' : ''} onClick={() => setBodyMode('edit')}>Edit</button></div>
-      {bodyMode === 'edit' ? <textarea id={`${id}-body`} placeholder="Tell the story in your own words..." value={draft.body} onChange={(event) => change({ ...draft, body: event.target.value })}/> :
+      {bodyMode === 'edit' ? <WikilinkTextarea id={`${id}-body`} placeholder="Tell the story in your own words... Type [[ to link a page or entity." value={draft.body} workspace={workspace} onValueChange={(body) => change({ ...draft, body })}/> :
         <div className="markdown-preview">{draft.body.trim() ? <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={markdownUrlTransform} components={{
           a: ({ children, href }) => workspaceLink(href, children, props.onOpenResource) ?? <span className="preview-link" title={href}>{children}</span>,
           img: ({ alt }) => <span className="preview-image">[Image: {alt || 'no description'}]</span>

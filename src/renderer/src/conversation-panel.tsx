@@ -45,6 +45,8 @@ interface Props {
   onDelete(): void
   activeFile?: { name: string; path: string; kind: 'entity' | 'document' | 'page'; allowed: boolean }
   openFileCount: number
+  /** Other panes on screen showing a resource; they are offered to the assistant as side-by-side context. */
+  visiblePaneCount: number
   /** Opens a cited record; `side` opens it in the other editor group. */
   onOpenResource(uri: string, side: boolean): void
 }
@@ -65,7 +67,7 @@ export function ConversationPanel(props: Props) {
     </div>}
     {props.activeFile && <div className="ai-context-strip" title={props.activeFile.path}>
       {props.activeFile.kind === 'entity' ? <Link2 size={14}/> : <FileText size={14}/>}
-      <span><strong>{props.activeFile.name}</strong><small>{props.activeFile.allowed ? `Current ${props.activeFile.kind} · available when relevant${props.openFileCount > 1 ? ` · ${props.openFileCount - 1} other open` : ''}` : 'Not in this conversation’s selected read scope'}</small></span>
+      <span><strong>{props.activeFile.name}</strong><small>{props.activeFile.allowed ? `Current ${props.activeFile.kind} · available when relevant${props.visiblePaneCount ? ` · ${props.visiblePaneCount} more ${props.visiblePaneCount === 1 ? 'pane' : 'panes'} in view` : ''}${props.openFileCount > 1 ? ` · ${props.openFileCount - 1} other open` : ''}` : 'Not in this conversation’s selected read scope'}</small></span>
     </div>}
     {!props.activeFile && props.openFileCount > 0 && <div className="ai-context-strip"><FileText size={14}/><span><strong>{props.openFileCount} open {props.openFileCount === 1 ? 'file' : 'files'}</strong><small>Permitted open files can inform relevant answers</small></span></div>}
     <div className="messages">

@@ -598,12 +598,13 @@ export class Workspace {
       const file = ref?.kind === 'entity' && snapshot.entities.some((entity) => entity.id === ref.id) ? join(this.directories[0], `${ref.id}.md`)
         : path ? join(this.pagesDirectory, basename(path)) : null
       if (!file) continue
-      const text = await this.readOwnedText(await this.ownedFile(file))
-      const frontmatter = /^---\r?\n[\s\S]*?\r?\n---\r?\n/.exec(text)?.[0] ?? ''
-      const renamed = renameWikilinks(text.slice(frontmatter.length), oldTitle, newTitle)
-      if (!renamed.count) continue
-      await atomicWrite(file, frontmatter + renamed.text)
-      count += renamed.count
+      count += await this.withFileMutation(file, async () => {
+        const text = await this.readOwnedText(await this.ownedFile(file))
+        const frontmatter = /^---\r?\n[\s\S]*?\r?\n---\r?\n/.exec(text)?.[0] ?? ''
+        const renamed = renameWikilinks(text.slice(frontmatter.length), oldTitle, newTitle)
+        if (renamed.count) await atomicWrite(file, frontmatter + renamed.text)
+        return renamed.count
+      })
     }
     this.markDirty()
     return { snapshot: await this.snapshot(), count }

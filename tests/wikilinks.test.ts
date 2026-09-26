@@ -87,3 +87,24 @@ test('the workspace rewrites links to a renamed title in chosen notes only, neve
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
+
+test('renaming links and saving an editor draft cannot erase each other', async () => {
+  const { mkdtemp, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { Workspace } = await import('../src/main/workspace')
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-rename-race-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const entity = (await workspace.saveEntity({ id: '', title: 'Club', type: 'group', body: 'Founded by [[Alex]].' })).entities[0]
+    const [saved] = await Promise.allSettled([
+      workspace.saveEntity({ ...entity, body: 'Founded by [[Alex]]. More notes.' }),
+      workspace.renameWikilinks('Alex', 'Alex Rivera', [`serenity:entity/${entity.id}`])
+    ])
+    const body = (await workspace.snapshot()).entities.find((item) => item.id === entity.id)?.body
+    assert.match(body ?? '', /\[\[Alex Rivera\]\]/)
+    assert.equal(body?.includes('More notes.'), saved.status === 'fulfilled')
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})

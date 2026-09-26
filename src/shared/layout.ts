@@ -169,3 +169,25 @@ export function dragDivider(sizes: readonly number[], index: number, position: n
   const first = Math.min(Math.max(position - before, floor), pair - floor)
   return sizes.map((size, position) => position === index - 1 ? first : position === index ? pair - first : size)
 }
+
+export type PaneDirection = 'left' | 'right' | 'up' | 'down'
+
+/** The pane adjacent to `from` in a direction: beyond it on that axis and overlapping it across, nearest first. */
+export function neighborGroup(groups: ReadonlyMap<string, LayoutRect>, from: string, direction: PaneDirection): string | null {
+  const origin = groups.get(from)
+  if (!origin) return null
+  const epsilon = 1e-6
+  const horizontal = direction === 'left' || direction === 'right'
+  const overlap = (rect: LayoutRect): number => horizontal
+    ? Math.min(origin.y + origin.height, rect.y + rect.height) - Math.max(origin.y, rect.y)
+    : Math.min(origin.x + origin.width, rect.x + rect.width) - Math.max(origin.x, rect.x)
+  const gap = (rect: LayoutRect): number => direction === 'left' ? origin.x - (rect.x + rect.width) : direction === 'right' ? rect.x - (origin.x + origin.width)
+    : direction === 'up' ? origin.y - (rect.y + rect.height) : rect.y - (origin.y + origin.height)
+  let best: { id: string; gap: number; overlap: number } | null = null
+  for (const [id, rect] of groups) {
+    if (id === from || gap(rect) < -epsilon || overlap(rect) <= epsilon) continue
+    const candidate = { id, gap: gap(rect), overlap: overlap(rect) }
+    if (!best || candidate.gap < best.gap - epsilon || (Math.abs(candidate.gap - best.gap) <= epsilon && candidate.overlap > best.overlap)) best = candidate
+  }
+  return best?.id ?? null
+}

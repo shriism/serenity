@@ -14,7 +14,7 @@ import { WorkspaceTabs } from './workspace-tabs'
 import { routeResource, tabKey, tabPath, tabTitle, type TabRef } from './resource-routing'
 import { presentationFor } from './presentations'
 import { activeTabOf, closeGroup, emptyGroup, enterView, moveTab, presentTab, findGroup, focusedGroup, initialWorkbench, nextGroupId, orderedGroups, pruneWorkbench, removeTab, restoreWorkbench, showTab, showView, shownUri, splitWorkbench, updateGroup, workbenchSession, type EditorGroup, type Workbench } from './workbench-groups'
-import { layoutGeometry, maxEditorGroups, resizeSplit, type SplitDirection } from '../../shared/layout'
+import { layoutGeometry, maxEditorGroups, neighborGroup, resizeSplit, type PaneDirection, type SplitDirection } from '../../shared/layout'
 import { PaneDivider, dropZoneAt, percentRect, tabDragType, type DropZone } from './pane-layout'
 import { knownCommandIds, workspaceCommands, type CommandContribution, type CommandHost } from './commands'
 import { eventKeybinding, formatKeybinding, resolveKeymap, type KeymapResult } from '../../shared/keybindings'
@@ -440,12 +440,14 @@ function App() {
     setDirtyGroups(({ [groupId]: _closed, ...rest }) => rest)
   }
 
-  function focusNextGroup(step = 1): void {
-    const next = nextGroupId(workbench, workbench.focused, step)
-    if (!next) return
-    focusGroup(next)
-    document.querySelector<HTMLElement>(`[data-group="${next}"]`)?.focus()
+  function focusPaneElement(id: string | null): void {
+    if (!id) return
+    focusGroup(id)
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-group="${id}"]`)?.focus())
   }
+
+  const focusNextGroup = (step = 1): void => focusPaneElement(nextGroupId(workbench, workbench.focused, step))
+  const focusPane = (direction: PaneDirection): void => focusPaneElement(neighborGroup(geometry.groups, workbench.focused, direction))
 
   function moveTabToOtherGroup(): void {
     const tab = activeTabOf(focused)
@@ -548,6 +550,7 @@ function App() {
     splitEditor: (direction) => splitPane(direction),
     closeEditorGroup: () => closeEditorGroup(),
     focusNextGroup: (step) => focusNextGroup(step),
+    focusPane,
     moveTabToOtherGroup,
     refresh: () => { void refresh() }
   }

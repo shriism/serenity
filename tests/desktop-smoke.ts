@@ -398,6 +398,8 @@ try {
   assert.equal(paneSession?.groups?.length, 4, 'The four-pane arrangement should be saved with the workspace')
   assert.ok(Math.abs((paneSession?.root?.sizes?.[0] ?? 0) - 0.6) < 0.01, 'Pane sizes should be saved with the arrangement')
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-panes.png'), await captureScreenshot(pageUrl))
+  const focusedAbove = await evaluate(pageUrl, `(async () => { const mod = navigator.platform.includes('Mac') ? 'metaKey' : 'ctrlKey'; window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', code: 'ArrowUp', [mod]: true, altKey: true, bubbles: true })); for (let i = 0; i < 30; i++) { if (document.querySelector('.editor-group.focused')?.getAttribute('data-group') === 'main') return 'main'; await new Promise((resolve) => setTimeout(resolve, 50)) } return document.querySelector('.editor-group.focused')?.getAttribute('data-group') })()`)
+  assert.equal(focusedAbove, 'main', 'Mod+Alt+ArrowUp should focus the pane above')
   const narrowPanes = await evaluate(pageUrl, `(async () => {
     const area = document.querySelector('.editor-groups'); area.style.width = '420px'
     for (let i = 0; i < 40 && !document.querySelector('.pane-switcher'); i++) await new Promise((resolve) => setTimeout(resolve, 50))

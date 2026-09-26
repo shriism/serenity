@@ -1,4 +1,4 @@
-import { Activity, ArrowLeftRight, ArrowRightLeft, CalendarDays, Columns2, Rows2, SquareX, MoveRight, FileText, Files, FolderOpen, House, Inbox, Link2, ListTodo, MessageCircle, PanelLeft, PanelRight, Plus, RotateCw, Search, Settings2 } from 'lucide-react'
+import { Activity, ArrowDown, ArrowLeft, ArrowLeftRight, ArrowRight, ArrowRightLeft, ArrowUp, CalendarDays, Columns2, Rows2, SquareX, MoveRight, FileText, Files, FolderOpen, House, Inbox, Link2, ListTodo, MessageCircle, PanelLeft, PanelRight, Plus, RotateCw, Search, Settings2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { WorkspaceSnapshot } from '../../shared/types'
 import type { ModuleId } from '../../shared/modules'
@@ -19,6 +19,7 @@ export interface CommandHost {
   closeEditorGroup(): void
   /** `step` 1 focuses the next pane in reading order, -1 the previous one. */
   focusNextGroup(step: number): void
+  focusPane(direction: 'left' | 'right' | 'up' | 'down'): void
   moveTabToOtherGroup(): void
   toggleAssistant(): void
   refresh(): void
@@ -61,8 +62,12 @@ const builtins: CommandContribution[] = [
   { id: 'layout.split', title: 'Split right', icon: Columns2, keybinding: 'Mod+\\', run: (host) => host.splitEditor('row') },
   { id: 'layout.split-down', title: 'Split down', icon: Rows2, keybinding: 'Mod+Shift+\\', run: (host) => host.splitEditor('column') },
   { id: 'layout.close-group', title: 'Close pane', icon: SquareX, run: (host) => host.closeEditorGroup() },
-  { id: 'layout.focus-next', title: 'Focus next pane', icon: ArrowRightLeft, keybinding: 'Mod+Alt+ArrowRight', run: (host) => host.focusNextGroup(1) },
-  { id: 'layout.focus-previous', title: 'Focus previous pane', icon: ArrowLeftRight, keybinding: 'Mod+Alt+ArrowLeft', run: (host) => host.focusNextGroup(-1) },
+  { id: 'layout.focus-next', title: 'Focus next pane', icon: ArrowRightLeft, run: (host) => host.focusNextGroup(1) },
+  { id: 'layout.focus-previous', title: 'Focus previous pane', icon: ArrowLeftRight, run: (host) => host.focusNextGroup(-1) },
+  { id: 'layout.focus-left', title: 'Focus pane to the left', icon: ArrowLeft, keybinding: 'Mod+Alt+ArrowLeft', run: (host) => host.focusPane('left') },
+  { id: 'layout.focus-right', title: 'Focus pane to the right', icon: ArrowRight, keybinding: 'Mod+Alt+ArrowRight', run: (host) => host.focusPane('right') },
+  { id: 'layout.focus-up', title: 'Focus pane above', icon: ArrowUp, keybinding: 'Mod+Alt+ArrowUp', run: (host) => host.focusPane('up') },
+  { id: 'layout.focus-down', title: 'Focus pane below', icon: ArrowDown, keybinding: 'Mod+Alt+ArrowDown', run: (host) => host.focusPane('down') },
   { id: 'layout.move-tab', title: 'Move tab to next pane', icon: MoveRight, run: (host) => host.moveTabToOtherGroup() },
   { id: 'workspace.search', title: 'Search workspace', icon: Search, keybinding: 'Mod+K', whileTyping: true, hideInPalette: true, run: (host) => host.toggleSearch() },
   { id: 'workspace.refresh', title: 'Refresh files', icon: RotateCw, run: (host) => host.refresh() }

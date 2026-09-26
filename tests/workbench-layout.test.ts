@@ -155,3 +155,16 @@ test('a dropped tab lands before the tab it was dropped on, in the same pane or 
   assert.deepEqual(findGroup(bench, 'group-2')!.tabs.map((item) => item.id), ['b', 'x'])
   assert.equal(moveTab(bench, 'main', 'page:a', 'main', 'page:a'), bench)
 })
+
+test('directional focus finds the adjacent pane from the layout geometry', async () => {
+  const { neighborGroup } = await import('../src/shared/layout')
+  // a | (b over c), with d beside c
+  const root = { split: 'row' as const, children: [{ group: 'a' }, { split: 'column' as const, children: [{ group: 'b' }, { split: 'row' as const, children: [{ group: 'c' }, { group: 'd' }] }] }] }
+  const { groups } = layoutGeometry(root)
+  assert.equal(neighborGroup(groups, 'a', 'right'), 'b', 'equal gaps prefer the larger overlap, then the first found')
+  assert.equal(neighborGroup(groups, 'b', 'down'), 'c')
+  assert.equal(neighborGroup(groups, 'd', 'up'), 'b')
+  assert.equal(neighborGroup(groups, 'd', 'left'), 'c')
+  assert.equal(neighborGroup(groups, 'c', 'left'), 'a')
+  assert.equal(neighborGroup(groups, 'a', 'left'), null)
+})

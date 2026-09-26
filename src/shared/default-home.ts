@@ -5,7 +5,7 @@ kind: page
 ---
 # Your world, in context
 
-This page is yours. Edit its words, reorder its sections, or write a different one. Live lists below come from files in this workspace.
+This page is yours. Edit its words, reorder its sections, or write a different one. Live lists below come from files in this workspace, and writing a name in double brackets, like [[Home]], links to that page, person, or document.
 
 ## Coming up
 
@@ -21,6 +21,13 @@ from: proposals
 where:
   status: pending
 limit: 5
+\`\`\`
+
+## Your pages
+
+\`\`\`serenity-query
+from: pages
+limit: 20
 \`\`\`
 
 ## Recent knowledge

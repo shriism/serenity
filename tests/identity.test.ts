@@ -121,6 +121,38 @@ test('a distinct decision follows later merges without allowing an indirect merg
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
+test('concurrent identity writes cannot create conflicting decisions or merges', async () => {
+  const { mkdtemp, readdir, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { Workspace } = await import('../src/main/workspace')
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-identity-race-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const first = (await workspace.saveEntity({ id: '', title: 'Alex', type: 'person', body: '' })).entities[0]
+    const second = (await workspace.saveEntity({ id: '', title: 'Alex M.', type: 'person', body: '' })).entities.find((entity) => entity.id !== first.id)!
+
+    const parallelDecisions = await Promise.allSettled([
+      workspace.markDistinctEntities(first.id, second.id),
+      workspace.markDistinctEntities(second.id, first.id)
+    ])
+    assert.deepEqual(parallelDecisions.map((result) => result.status).sort(), ['fulfilled', 'rejected'])
+    assert.equal((await readdir(join(directory, 'identity-decisions'))).filter((name) => name.endsWith('.yaml')).length, 1)
+
+    const decision = (await workspace.snapshot()).identityDecisions[0]
+    await workspace.undoIdentityDecision(decision.id)
+    const parallelWrites = await Promise.allSettled([
+      workspace.markDistinctEntities(first.id, second.id),
+      workspace.mergeEntities(second.id, first.id)
+    ])
+    assert.deepEqual(parallelWrites.map((result) => result.status).sort(), ['fulfilled', 'rejected'])
+    const snapshot = await workspace.snapshot()
+    assert.equal(snapshot.merges.length > 0 && snapshot.identityDecisions.some((item) => !item.undoneAt), false)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
 test('duplicate suggestions stay fast when many entities share a common name word', async () => {
   const { duplicateCandidates } = await import('../src/shared/identity')
   const entities = Array.from({ length: 3000 }, (_, index) => ({ id: `e${index}`, title: `Alex ${['Rivera', 'Kim', 'Patel'][index % 3]} ${index}`, type: 'person', body: '' }))

@@ -171,6 +171,7 @@ export class Workspace {
   private indexDirty = true
 
   private snapshotGeneration = 0
+  private identityMutation: Promise<void> = Promise.resolve()
   private rootRealpath: string | null = null
   private fileCache = new Map<string, { version: string; text: string; parsed: Map<string, unknown> }>()
   /** Files read since the cache was last swept; anything else is gone or unused and can be forgotten. */
@@ -178,6 +179,15 @@ export class Workspace {
   private extractedText = new Map<string, { version: string; text: string }>()
 
   constructor(readonly path: string) {}
+
+  private async withIdentityMutation<T>(work: () => Promise<T>): Promise<T> {
+    const previous = this.identityMutation
+    let release!: () => void
+    this.identityMutation = new Promise<void>((resolve) => { release = resolve })
+    await previous
+    try { return await work() }
+    finally { release() }
+  }
 
   get directories(): string[] {
     return ['entities', 'claims', 'documents', 'conversations', 'proposals', 'calendar', 'tasks', 'resolutions', 'activity', 'identity-decisions'].map((name) => join(this.path, name))
@@ -718,6 +728,10 @@ export class Workspace {
   }
 
   async mergeEntities(sourceId: string, targetId: string): Promise<WorkspaceSnapshot> {
+    return this.withIdentityMutation(() => this.mergeEntitiesNow(sourceId, targetId))
+  }
+
+  private async mergeEntitiesNow(sourceId: string, targetId: string): Promise<WorkspaceSnapshot> {
     const source = id(sourceId)
     const target = id(targetId)
     if (source === target) throw new Error('Choose two different entities')
@@ -745,6 +759,10 @@ export class Workspace {
   }
 
   async unmergeEntities(sourceId: string, reason: string): Promise<WorkspaceSnapshot> {
+    return this.withIdentityMutation(() => this.unmergeEntitiesNow(sourceId, reason))
+  }
+
+  private async unmergeEntitiesNow(sourceId: string, reason: string): Promise<WorkspaceSnapshot> {
     const source = id(sourceId)
     if (!(await this.snapshot()).merges.some((item) => item.id === source)) throw new Error('This entity is not currently merged')
     const archived = join(this.path, 'archive', 'entities', `${source}.md`)
@@ -773,6 +791,10 @@ export class Workspace {
   }
 
   async markDistinctEntities(leftId: string, rightId: string): Promise<WorkspaceSnapshot> {
+    return this.withIdentityMutation(() => this.markDistinctEntitiesNow(leftId, rightId))
+  }
+
+  private async markDistinctEntitiesNow(leftId: string, rightId: string): Promise<WorkspaceSnapshot> {
     const [left, right] = [id(leftId), id(rightId)].sort()
     if (left === right) throw new Error('Choose two different entities')
     const snapshot = await this.snapshot()
@@ -789,6 +811,10 @@ export class Workspace {
   }
 
   async undoIdentityDecision(decisionId: string): Promise<WorkspaceSnapshot> {
+    return this.withIdentityMutation(() => this.undoIdentityDecisionNow(decisionId))
+  }
+
+  private async undoIdentityDecisionNow(decisionId: string): Promise<WorkspaceSnapshot> {
     const path = join(this.directories[9], `${id(decisionId)}.yaml`)
     const original = await this.readOwnedText(path)
     const decision = (await this.snapshot()).identityDecisions.find((item) => item.id === decisionId)

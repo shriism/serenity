@@ -388,9 +388,10 @@ function App() {
     if (tab) openTabRef(tab, groupId)
   }
 
-  function closeTab(key: string, groupId: string) {
-    if (groupState(groupId).activeTab === key && !confirmLeave(groupId)) return
+  function closeTab(key: string, groupId: string): boolean {
+    if (groupState(groupId).activeTab === key && !confirmLeave(groupId)) return false
     setWorkbench((current) => updateGroup(current, groupId, (group) => removeTab(group, key)))
+    return true
   }
 
   function changePresentation(groupId: string, tab: TabRef, presentation: string): void {
@@ -411,8 +412,10 @@ function App() {
 
   function closeEditorGroup(groupId: string = workbench.focused): void {
     if (workbench.groups.length < 2 || !confirmLeave(groupId)) return
+    const remainingFocus = workbench.focused === groupId ? nextGroupId(workbench, groupId) : workbench.focused
     setWorkbench((current) => closeGroup(current, groupId))
     setDirtyGroups(({ [groupId]: _closed, ...rest }) => rest)
+    requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-group="${remainingFocus}"]`)?.focus())
   }
 
   function focusPaneElement(id: string | null): void {

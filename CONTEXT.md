@@ -135,6 +135,7 @@ This is an **implemented desktop foundation**, not a finished general workbench.
 - Done: directional pane focus by the neighboring pane's position, and a task board that groups existing tasks by due date without adding a workflow status to stored records.
 - Done: the Tasks list/board choice is saved per pane in the workspace session; the search palette traps Tab and restores focus when closed.
 - Done: imported Markdown documents expose an outline of explicit headings, with bounded text rendering when jumping to a distant section.
+- Done: closing a tab or pane moves keyboard focus to a surviving tab or pane, with a visible pane focus ring.
 - Remaining: broader presentations for other resource kinds and further keyboard focus polish. PDF and DOCX extraction does not preserve reliable heading structure, so Serenity does not invent an outline for them.
 
 ### 2. Make customization coherent, then consider installed extensions

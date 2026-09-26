@@ -219,6 +219,7 @@
    change without remounting them; views size to their own pane. */
 .serenity-studio .editor-groups { position: relative; flex: 1; min-height: 0; }
 .serenity-studio .editor-group { position: absolute; inset: 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; container-type: inline-size; outline: none; }
+.serenity-studio .editor-group:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .serenity-studio .editor-group[hidden] { display: none; }
 .serenity-studio .editor-groups.split:not(.stacked) .editor-group { box-shadow: inset 0 0 0 .5px var(--border); }
 .serenity-studio .editor-groups.split .editor-group.focused::before { content: ''; position: absolute; inset: 0 0 auto; height: 2px; z-index: 2; background: color-mix(in srgb, var(--accent) 75%, transparent); pointer-events: none; }

@@ -390,8 +390,8 @@ try {
     if (savedLayout?.groups?.length !== 2) await new Promise((resolve) => setTimeout(resolve, 100))
   }
   assert.equal(savedLayout?.groups?.length, 2, 'The two-group layout should be saved in workspace session state')
-  const closedSplit = await evaluate(pageUrl, `(async () => { document.querySelectorAll('.group-actions button[aria-label^="Close pane"]')[1]?.click(); for (let i = 0; i < 30; i++) { if (document.querySelectorAll('.editor-group').length === 1) return document.querySelector('.page-prose h1')?.textContent; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
-  assert.equal(closedSplit, 'Untitled page', 'Closing the second group should leave the first group as it was')
+  const closedSplit = await evaluate(pageUrl, `(async () => { document.querySelectorAll('.group-actions button[aria-label^="Close pane"]')[1]?.click(); for (let i = 0; i < 30; i++) { if (document.querySelectorAll('.editor-group').length === 1) { await new Promise((resolve) => requestAnimationFrame(resolve)); return { title: document.querySelector('.page-prose h1')?.textContent, focus: document.activeElement === document.querySelector('.editor-group') } } await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
+  assert.deepEqual(closedSplit, { title: 'Untitled page', focus: true }, 'Closing a pane should keep the other pane and move keyboard focus into it')
   assert.match(await readFile(join(workspace, String(createdPage)), 'utf8'), /# Untitled page/)
   const lastPage = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const session = await window.serenity.loadSession(); if (session?.activeUri?.startsWith('serenity:page/page-')) return session.activeUri; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
   assert.match(String(lastPage), /^serenity:page\/page-[a-f0-9-]{36}$/, 'The last worked-on page should be remembered inside the workspace')
@@ -498,6 +498,8 @@ try {
     return body
   })()`)
   assert.equal(renamedLinks, 'Ask [[Alex Morgan]] soon.', 'Renaming an entity should offer to update wikilinks that named it')
+  const closedTabFocus = await evaluate(pageUrl, `(async () => { const tab = document.querySelector('.editor-group.focused .workspace-tab:not(.active) .workspace-tab-close'); if (!tab) return null; tab.focus(); tab.click(); for (let i = 0; i < 30 && tab.isConnected; i++) await new Promise((resolve) => setTimeout(resolve, 50)); await new Promise((resolve) => requestAnimationFrame(resolve)); return { removed: !tab.isConnected, focusedTab: document.activeElement?.classList.contains('workspace-tab-label') } })()`)
+  assert.deepEqual(closedTabFocus, { removed: true, focusedTab: true }, 'Closing an inactive tab should focus a surviving tab')
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) {
     const narrow = await evaluate(pageUrl, `(async () => { window.resizeTo(900, 760); for (let i = 0; i < 30 && innerWidth <= 1020 && !document.querySelector('.serenity-studio')?.classList.contains('left-collapsed'); i++) await new Promise((resolve) => setTimeout(resolve, 100)); return { width: innerWidth, main: document.querySelector('#workspace-main')?.getBoundingClientRect().width, right: Boolean(document.querySelector('.assistant-sidebar')), rail: document.querySelector('.serenity-studio')?.classList.contains('left-collapsed') } })()`) as { width: number; main: number; right: boolean; rail: boolean }
     if (narrow.width <= 1020) {

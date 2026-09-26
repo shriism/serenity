@@ -13,7 +13,8 @@ export function WorkspaceTabs({ tabs, active, group, onSelect, onClose, onDropTa
   group: string
   active: string | null
   onSelect(key: string): void
-  onClose(key: string): void
+  /** Returns false when a dirty editor cancels the close. */
+  onClose(key: string): boolean
   /** A tab from any pane was dropped onto one of these tabs, to be placed before it. */
   onDropTab(dragged: { group: string; key: string }, before: string): void
 }) {
@@ -43,7 +44,16 @@ export function WorkspaceTabs({ tabs, active, group, onSelect, onClose, onDropTa
         <button className="workspace-tab-label" title={tab.title} onClick={() => onSelect(tab.key)} aria-current={active === tab.key ? 'page' : undefined}>
           <Icon size={14}/><span>{tab.title}</span>
         </button>
-        <button className="workspace-tab-close" onClick={() => onClose(tab.key)} aria-label={`Close ${tab.title}`} title={`Close ${tab.title}`}><X size={13}/></button>
+        <button className="workspace-tab-close" onClick={(event) => {
+          const pane = event.currentTarget.closest<HTMLElement>('.editor-group')
+          const tabElement = event.currentTarget.closest<HTMLElement>('.workspace-tab')
+          const neighbor = tabElement?.nextElementSibling?.querySelector<HTMLButtonElement>('.workspace-tab-label') ??
+            tabElement?.previousElementSibling?.querySelector<HTMLButtonElement>('.workspace-tab-label')
+          if (onClose(tab.key)) requestAnimationFrame(() => {
+            if (active !== tab.key && neighbor?.isConnected) neighbor.focus()
+            else pane?.focus()
+          })
+        }} aria-label={`Close ${tab.title}`} title={`Close ${tab.title}`}><X size={13}/></button>
       </div>
     })}
   </nav>

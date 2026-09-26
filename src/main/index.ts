@@ -140,9 +140,13 @@ async function openWorkspace(path: string): Promise<WorkspaceSnapshot> {
   return next.snapshot()
 }
 
+// `--background` runs without taking focus or showing a window, e.g. for automated checks while someone keeps working.
+const background = process.argv.includes('--background')
+
 function createWindow(): void {
   closeApproved = false
   window = new BrowserWindow({
+    show: !background,
     width: 1280,
     height: 820,
     minWidth: 900,
@@ -152,7 +156,8 @@ function createWindow(): void {
       preload: fileURLToPath(new URL('../preload/index.cjs', import.meta.url)),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: true
+      sandbox: true,
+      backgroundThrottling: !background
     }
   })
   window.on('closed', () => { window = null; closeApproved = false })
@@ -289,6 +294,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('task:restore', (_event, id: string) => currentWorkspace().restoreTask(id))
   ipcMain.handle('entity:merge', (_event, source: string, target: string) => currentWorkspace().mergeEntities(source, target))
   ipcMain.handle('entity:unmerge', (_event, source: string, reason: string) => currentWorkspace().unmergeEntities(source, reason))
+  if (background && process.platform === 'darwin') app.setActivationPolicy('accessory')
   const selected = process.argv.find((argument) => argument.startsWith('--workspace='))?.slice('--workspace='.length)
   if (selected) {
     try { await openWorkspace(selected) }

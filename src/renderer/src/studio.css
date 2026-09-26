@@ -386,6 +386,12 @@
 .serenity-studio .activity-title { display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; color: var(--text); font-weight: 600; text-align: left; }
 .serenity-studio .activity-title:hover { color: var(--accent); }
 .serenity-studio .document-more { margin-top: 18px; white-space: normal; }
+.serenity-studio .document-outline { max-width: 760px; margin: 0 0 24px; border-bottom: 1px solid var(--studio-line); padding-bottom: 12px; }
+.serenity-studio .document-outline summary { width: fit-content; color: var(--muted); font-size: 11px; cursor: pointer; }
+.serenity-studio .document-outline ol { max-height: 280px; overflow: auto; margin: 11px 0 0; padding: 0; list-style: none; }
+.serenity-studio .document-outline li button { display: block; width: 100%; border: 0; border-radius: 5px; padding-top: 5px; padding-bottom: 5px; background: transparent; color: var(--muted); font-size: 11px; text-align: left; overflow-wrap: anywhere; }
+.serenity-studio .document-outline li button:hover { background: var(--surface-hover); color: var(--text); }
+.serenity-studio .document-text [data-outline-index] { scroll-margin-top: 20px; }
 
 /* Entity links on tasks and events. */
 .serenity-studio .module-link-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }

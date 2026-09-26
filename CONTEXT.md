@@ -134,7 +134,8 @@ This is an **implemented desktop foundation**, not a finished general workbench.
 - Done: resource routing, per-command handlers and workspace keymaps, editor-owned drafts, Obsidian-style panes on the split tree (resizable, drag-and-drop tabs, narrow fallback), per-tab presentations, session restore of all of it, and snapshot ordering so late replies cannot overwrite newer state.
 - Done: directional pane focus by the neighboring pane's position, and a task board that groups existing tasks by due date without adding a workflow status to stored records.
 - Done: the Tasks list/board choice is saved per pane in the workspace session; the search palette traps Tab and restores focus when closed.
-- Remaining: presentations for other kinds (e.g. a document outline) and further keyboard focus polish.
+- Done: imported Markdown documents expose an outline of explicit headings, with bounded text rendering when jumping to a distant section.
+- Remaining: broader presentations for other resource kinds and further keyboard focus polish. PDF and DOCX extraction does not preserve reliable heading structure, so Serenity does not invent an outline for them.
 
 ### 2. Make customization coherent, then consider installed extensions
 

@@ -1,5 +1,6 @@
 import type { WorkspaceSnapshot } from './types'
 import { resourceUri } from './resources'
+import { entityRepresentative } from './identity'
 
 export type ActivityKind = 'claim' | 'merge' | 'resolution' | 'identity' | 'event' | 'task' | 'proposal' | 'message'
 export interface ActivityItem { id: string; at: string; kind: ActivityKind; title: string; detail: string; uri?: string }
@@ -13,6 +14,7 @@ export const activityKinds: { kind: ActivityKind; label: string }[] = [
 /** Everything that happened in the workspace, newest first, each pointing at the record it concerns. */
 export function workspaceActivity(snapshot: WorkspaceSnapshot): ActivityItem[] {
   const titles = new Map(snapshot.entities.map((entity) => [entity.id, entity.title]))
+  const recordedNames = new Map([...snapshot.archivedEntities, ...snapshot.entities].map((entity) => [entity.id, entity.title]))
   const entityUri = (id: string): string | undefined => titles.has(id) ? resourceUri({ kind: 'entity', id }) : undefined
   const items: ActivityItem[] = [
     ...snapshot.claims.map((item) => ({ id: `claim:${item.id}`, at: item.recordedAt, kind: 'claim' as const, title: `${item.key}: ${titles.get(item.value) ?? item.value}`,
@@ -24,11 +26,12 @@ export function workspaceActivity(snapshot: WorkspaceSnapshot): ActivityItem[] {
     ...snapshot.resolutions.map((item) => ({ id: `resolution:${item.id}`, at: item.recordedAt, kind: 'resolution' as const,
       title: `${item.currentClaimId ? 'Chose current' : 'Cleared current'} ${item.key} for ${titles.get(item.subject) ?? 'an entity'}`, detail: item.reason, uri: entityUri(item.subject) })),
     ...snapshot.identityDecisions.flatMap((item) => {
-      const pair = `${titles.get(item.left) ?? item.left} and ${titles.get(item.right) ?? item.right}`
+      const pair = `${recordedNames.get(item.left) ?? item.left} and ${recordedNames.get(item.right) ?? item.right}`
+      const uri = entityUri(entityRepresentative(item.left, snapshot.merges))
       return [{ id: `identity:${item.id}`, at: item.recordedAt, kind: 'identity' as const, title: `Marked ${pair} distinct`,
-        detail: item.reason ?? 'Human identity decision', uri: entityUri(item.left) },
+        detail: item.reason ?? 'Human identity decision', uri },
       ...(item.undoneAt ? [{ id: `identity-undo:${item.id}`, at: item.undoneAt, kind: 'identity' as const,
-        title: `Reopened identity review for ${pair}`, detail: 'Distinct decision undone', uri: entityUri(item.left) }] : [])]
+        title: `Reopened identity review for ${pair}`, detail: 'Distinct decision undone', uri }] : [])]
     }),
     ...(snapshot.modules.calendar ? snapshot.events.map((item) => ({ id: `event:${item.id}`, at: item.start, kind: 'event' as const, title: item.title,
       detail: `${item.notes}${item.source ? ` · Source: ${item.source}` : ''}`, uri: resourceUri({ kind: 'event', id: item.id }) })) : []),

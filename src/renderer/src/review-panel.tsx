@@ -3,7 +3,7 @@ import { Columns2 } from 'lucide-react'
 import type { WorkspaceSnapshot } from '../../shared/types'
 import { proposalsBySource } from '../../shared/proposals'
 import { resourceUri } from '../../shared/resources'
-import { duplicateCandidates } from '../../shared/identity'
+import { distinctRepresentatives, duplicateCandidates } from '../../shared/identity'
 import type { Entity } from '../../shared/types'
 import { ProposalCard, type ProposalActions } from './proposal-card'
 
@@ -20,8 +20,8 @@ export function ReviewPanel({ workspace, onOpenResource, onUpdate, onError, ...a
   const reviewRef = useRef<HTMLElement>(null)
   const entities = useMemo(() => new Map(workspace.entities.map((entity) => [entity.id, entity])), [workspace.entities])
   // Recomputed only when the entities, claims, or merge history change, not on every render.
-  const duplicates = useMemo(() => duplicateCandidates(workspace), [workspace.entities, workspace.claims, workspace.mergeHistory, workspace.identityDecisions])
-  const distinct = workspace.identityDecisions.filter((item) => !item.undoneAt && entities.has(item.left) && entities.has(item.right))
+  const duplicates = useMemo(() => duplicateCandidates(workspace), [workspace.entities, workspace.claims, workspace.mergeHistory, workspace.merges, workspace.identityDecisions])
+  const distinct = workspace.identityDecisions.filter((item) => !item.undoneAt && distinctRepresentatives(item, workspace.merges).every((id) => entities.has(id)))
     .sort((a, b) => b.recordedAt.localeCompare(a.recordedAt))
   const entityUri = (entity: Entity): string => resourceUri({ kind: 'entity', id: entity.id })
   useEffect(() => {
@@ -53,7 +53,7 @@ export function ReviewPanel({ workspace, onOpenResource, onUpdate, onError, ...a
       const next = await window.serenity.undoIdentityDecision(id)
       onUpdate(next)
       if (decision) {
-        const key = [decision.left, decision.right].sort().join('|')
+        const key = distinctRepresentatives(decision, next.merges).sort().join('|')
         const position = duplicateCandidates(next).findIndex(({ a, b }) => [a.id, b.id].sort().join('|') === key)
         if (position >= shownDuplicates) setShownDuplicates(Math.ceil((position + 1) / 12) * 12)
         setFocusTarget({ kind: 'candidate', key, generation: next.generation })
@@ -83,11 +83,12 @@ export function ReviewPanel({ workspace, onOpenResource, onUpdate, onError, ...a
     {distinct.length > 0 && <section className="review-source" aria-label="Distinct identity decisions">
       <header className="review-source-header"><div><h2>Marked as distinct</h2><small>{distinct.length} {distinct.length === 1 ? 'decision' : 'decisions'} · stored in this workspace</small></div></header>
       {distinct.slice(0, shownDecisions).map((decision) => {
-        const left = entities.get(decision.left)!
-        const right = entities.get(decision.right)!
+        const [leftId, rightId] = distinctRepresentatives(decision, workspace.merges)
+        const left = entities.get(leftId)!
+        const right = entities.get(rightId)!
         return <article key={decision.id} data-decision-id={decision.id} className="review-card distinct-card">
           <h3>{left.title} <span aria-hidden="true">·</span> {right.title}</h3>
-          <p>These remain separate identities. Undo to review them again.</p>
+          <p>These remain separate identities{leftId !== decision.left || rightId !== decision.right ? ', including records merged into them' : ''}. Undo to review them again.</p>
           <button className="text-button" onClick={() => void undoDistinct(decision.id)}>Undo decision</button>
         </article>
       })}

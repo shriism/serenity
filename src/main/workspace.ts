@@ -13,6 +13,7 @@ import { normalizeKeybinding } from '../shared/keybindings'
 import { isWorkbenchView, parseLayout } from '../shared/layout'
 import { rankSearchResults } from '../shared/search-rank'
 import { renameWikilinks } from '../shared/wikilinks'
+import { distinctRepresentatives } from '../shared/identity'
 import { validateReadScope, validateWorkflowPermissions } from '../shared/workflow'
 import { canExtractText, extractDocument } from './documents'
 
@@ -723,8 +724,9 @@ export class Workspace {
     const snapshot = await this.snapshot()
     const original = snapshot.entities.find((entity) => entity.id === source)
     if (!original || !snapshot.entities.some((entity) => entity.id === target)) throw new Error('Both entities must be active before merging')
+    const proposedMerges = [...snapshot.merges, { id: source, target }]
     if (snapshot.identityDecisions.some((decision) => !decision.undoneAt &&
-      ((decision.left === source && decision.right === target) || (decision.left === target && decision.right === source)))) {
+      new Set(distinctRepresentatives(decision, proposedMerges)).size === 1)) {
       throw new Error('These entities were marked distinct. Undo that decision before merging them.')
     }
     const from = join(this.directories[0], `${source}.md`)

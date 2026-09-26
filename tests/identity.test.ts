@@ -87,6 +87,40 @@ test('a distinct-identity decision persists, hides the pair, blocks merging, and
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
+test('a distinct decision follows later merges without allowing an indirect merge', async () => {
+  const { mkdtemp, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { Workspace } = await import('../src/main/workspace')
+  const { duplicateCandidates, distinctRepresentatives } = await import('../src/shared/identity')
+  const { contextRecords, scopeContextRecords } = await import('../src/main/context')
+  const { validateReadScope } = await import('../src/shared/workflow')
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-distinct-merge-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const create = async (title: string) => (await workspace.saveEntity({ id: '', title, type: 'person', body: '' })).entities.find((item) => item.title === title && !created.has(item.id))!
+    const created = new Set<string>()
+    const first = await create('Alex'); created.add(first.id)
+    const second = await create('Alex M.'); created.add(second.id)
+    const representative = await create('Alex'); created.add(representative.id)
+    const decision = (await workspace.markDistinctEntities(first.id, second.id)).identityDecisions[0]
+    const merged = await workspace.mergeEntities(first.id, representative.id)
+    assert.deepEqual(distinctRepresentatives(decision, merged.merges).sort(), [representative.id, second.id].sort(), 'the decision resolves through the merge')
+    assert.equal(duplicateCandidates(merged).some(({ a, b }) => [a.id, b.id].includes(second.id) && [a.id, b.id].includes(representative.id)), false)
+    const records = contextRecords(merged, [])
+    const scoped = (ids: string[]) => scopeContextRecords(merged, records, validateReadScope({ mode: 'selected', entityIds: ids,
+      documentNames: [], includeOtherConversations: false, includeCalendarAndTasks: false })).some((item) => item.ref === `identity-decision:${decision.id}`)
+    assert.equal(scoped([representative.id]), false)
+    assert.equal(scoped([representative.id, second.id]), true, 'selected scope uses current identities')
+    await assert.rejects(workspace.mergeEntities(second.id, representative.id), /marked distinct/)
+    const reopened = await workspace.undoIdentityDecision(decision.id)
+    assert.equal(duplicateCandidates(reopened).some(({ a, b }) => [a.id, b.id].includes(second.id) && [a.id, b.id].includes(representative.id)), true)
+    assert.equal((await workspace.mergeEntities(second.id, representative.id)).merges.length, 2)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
 test('duplicate suggestions stay fast when many entities share a common name word', async () => {
   const { duplicateCandidates } = await import('../src/shared/identity')
   const entities = Array.from({ length: 3000 }, (_, index) => ({ id: `e${index}`, title: `Alex ${['Rivera', 'Kim', 'Patel'][index % 3]} ${index}`, type: 'person', body: '' }))

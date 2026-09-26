@@ -30,7 +30,7 @@ Tasks can be viewed as a list or a due-date board with Overdue, Next 7 days, Lat
 
 Calendar can show a month grid or a dated Agenda of that month's events and open due tasks. Each pane remembers its Calendar view.
 
-In Review, **Mark as distinct** records that two suggested duplicates are different identities. This removes that pair from future duplicate suggestions and prevents merging them while the decision is active. **Undo decision** brings the suggestion back. These versioned YAML records live under `identity-decisions/` in the workspace and remain there after undo.
+In Review, **Mark as distinct** records that two suggested duplicates are different identities. This removes that pair from future duplicate suggestions and prevents merging them, including through a later merge into another entity, while the decision is active. **Undo decision** brings the suggestion back. These versioned YAML records live under `identity-decisions/` in the workspace and remain there after undo.
 
 An imported Markdown document with headings has an Outline above its extracted text. Selecting a heading jumps to that section; distant jumps show a bounded text chunk with a way back to the start. PDF and DOCX previews show extracted text without an inferred outline.
 

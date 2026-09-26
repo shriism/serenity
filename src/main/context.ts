@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
 import type { ReadScope, SearchResult, SharedContext, WorkspaceSnapshot } from '../shared/types'
+import { distinctRepresentatives } from '../shared/identity'
 
 export interface ContextRecord {
   ref: string
@@ -25,9 +26,9 @@ export function contextRecords(snapshot: WorkspaceSnapshot, documents: { name: s
     ...snapshot.proposals.filter((item) => item.status === 'pending').map((item) => ({ ref: `proposal:${item.id}`, title: `Unconfirmed ${item.kind}`, text: JSON.stringify(item) })),
     ...snapshot.merges.map((item) => ({ ref: `merge:${item.id}`, title: `Merge ${item.title}`, text: JSON.stringify(item) })),
     ...snapshot.mergeHistory.filter((item) => item.undoneAt).map((item) => ({ ref: `merge-history:${item.id}:${item.recordedAt}`, title: `Reversed merge ${item.title}`, text: JSON.stringify(item) })),
-    ...snapshot.identityDecisions.filter((item) => !item.undoneAt && activeEntities.has(item.left) && activeEntities.has(item.right))
+    ...snapshot.identityDecisions.filter((item) => !item.undoneAt && distinctRepresentatives(item, snapshot.merges).every((id) => activeEntities.has(id)))
       .map((item) => ({ ref: `identity-decision:${item.id}`, title: 'Distinct identities',
-        text: JSON.stringify({ kind: item.kind, left: item.left, right: item.right, recordedAt: item.recordedAt }) })),
+        text: JSON.stringify({ kind: item.kind, originalPair: [item.left, item.right], currentPair: distinctRepresentatives(item, snapshot.merges), recordedAt: item.recordedAt }) })),
     ...snapshot.resolutions.map((item) => ({ ref: `resolution:${item.id}`, title: `Resolution ${item.key}`, text: JSON.stringify(item) })),
     ...(snapshot.modules.tasks ? snapshot.tasks.map((item) => ({ ref: `task:${item.id}`, title: item.title, text: JSON.stringify(item) })) : []),
     ...(snapshot.modules.calendar ? snapshot.events.map((item) => ({ ref: `event:${item.id}`, title: item.title, text: JSON.stringify(item) })) : []),
@@ -57,7 +58,7 @@ export function scopeContextRecords(snapshot: WorkspaceSnapshot, records: Contex
     }
     if (kind === 'identity-decision') {
       const decision = snapshot.identityDecisions.find((item) => item.id === identifier && !item.undoneAt)
-      return Boolean(decision && entities.has(decision.left) && entities.has(decision.right))
+      return Boolean(decision && distinctRepresentatives(decision, snapshot.merges).every((id) => entities.has(id)))
     }
     if (kind === 'document') return documents.has(identifier)
     if (kind === 'conversation') return scope.includeOtherConversations

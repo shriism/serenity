@@ -1,4 +1,17 @@
-import type { Entity, WorkspaceSnapshot } from './types'
+import type { Entity, IdentityDecision, MergeRecord, WorkspaceSnapshot } from './types'
+
+/** Resolve an archived entity through current merge redirects, stopping on malformed cycles. */
+export function entityRepresentative(id: string, merges: readonly Pick<MergeRecord, 'id' | 'target'>[]): string {
+  const redirects = new Map(merges.map((merge) => [merge.id, merge.target]))
+  const seen = new Set<string>()
+  let current = id
+  while (redirects.has(current) && !seen.has(current)) { seen.add(current); current = redirects.get(current)! }
+  return current
+}
+
+export function distinctRepresentatives(decision: Pick<IdentityDecision, 'left' | 'right'>, merges: readonly Pick<MergeRecord, 'id' | 'target'>[]): [string, string] {
+  return [entityRepresentative(decision.left, merges), entityRepresentative(decision.right, merges)]
+}
 
 function tokens(text: string): string[] {
   return text.normalize('NFKD').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim().split(/\s+/).filter(Boolean)
@@ -38,7 +51,7 @@ const maxCandidates = 200
  * Pairs of existing entities that may describe the same identity, with the evidence for each. These are prompts for a
  * human decision, never automatic merges. An undone merge or active distinct-identity decision suppresses its pair.
  */
-export function duplicateCandidates(snapshot: Pick<WorkspaceSnapshot, 'entities' | 'claims' | 'mergeHistory'> & Partial<Pick<WorkspaceSnapshot, 'identityDecisions'>>): DuplicateCandidate[] {
+export function duplicateCandidates(snapshot: Pick<WorkspaceSnapshot, 'entities' | 'claims' | 'mergeHistory'> & Partial<Pick<WorkspaceSnapshot, 'identityDecisions' | 'merges'>>): DuplicateCandidate[] {
   const entities = new Map(snapshot.entities.map((entity) => [entity.id, entity]))
   const facts = new Map<string, Map<string, string>>()
   for (const claim of snapshot.claims) {
@@ -56,8 +69,9 @@ export function duplicateCandidates(snapshot: Pick<WorkspaceSnapshot, 'entities'
   }
   const separated = new Set(snapshot.mergeHistory.filter((merge) => merge.undoneAt).flatMap((merge) => [`${merge.id}|${merge.target}`, `${merge.target}|${merge.id}`]))
   for (const decision of snapshot.identityDecisions ?? []) if (!decision.undoneAt) {
-    separated.add(`${decision.left}|${decision.right}`)
-    separated.add(`${decision.right}|${decision.left}`)
+    const [left, right] = distinctRepresentatives(decision, snapshot.merges ?? [])
+    separated.add(`${left}|${right}`)
+    separated.add(`${right}|${left}`)
   }
   const seen = new Set<string>()
   const candidates: DuplicateCandidate[] = []

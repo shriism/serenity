@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { Workspace } from '../src/main/workspace'
 import { dragDivider, isWorkbenchView, layoutGeometry, maxEditorGroups, parseLayout, removeFromLayout, splitLayout } from '../src/shared/layout'
 import { parseResourceUri, resourceUri } from '../src/shared/resources'
-import { activeTabOf, closeGroup, emptyGroup, enterView, focusedGroup, initialWorkbench, moveTab, presentTab, removeTab, nextGroupId, orderedGroups, pruneWorkbench, restoreWorkbench, showTab, showView, splitWorkbench, updateGroup, workbenchSession } from '../src/renderer/src/workbench-groups'
+import { activeTabOf, closeGroup, emptyGroup, enterView, findGroup, focusedGroup, initialWorkbench, moveTab, presentTab, removeTab, nextGroupId, orderedGroups, pruneWorkbench, restoreWorkbench, showTab, showView, splitWorkbench, updateGroup, workbenchSession } from '../src/renderer/src/workbench-groups'
 
 const parse = (value: unknown) => parseLayout(value, isWorkbenchView, (uri) => parseResourceUri(uri) !== null)
 
@@ -143,4 +143,15 @@ test('tabs move between panes with their presentation, and closing a pane keeps 
   assert.equal(moveTab(moved, 'group-2', 'entity:alex', 'group-2'), moved, 'moving to the same pane changes nothing')
   const three = splitWorkbench(moved, { from: 'main', direction: 'row' })!
   assert.deepEqual(orderedGroups(closeGroup(three, 'group-2')).map((group) => group.id), ['main', 'group-3'])
+})
+
+test('a dropped tab lands before the tab it was dropped on, in the same pane or another', () => {
+  const tab = (id: string) => ({ kind: 'page' as const, id })
+  let bench = updateGroup(initialWorkbench, 'main', (group) => showTab(showTab(showTab(group, tab('a')), tab('b')), tab('c')))
+  bench = moveTab(bench, 'main', 'page:c', 'main', 'page:a')
+  assert.deepEqual(focusedGroup(bench).tabs.map((item) => item.id), ['c', 'a', 'b'])
+  bench = updateGroup(splitWorkbench(bench, { duplicate: false })!, 'group-2', (group) => showTab(group, tab('x')))
+  bench = moveTab(bench, 'main', 'page:b', 'group-2', 'page:x')
+  assert.deepEqual(findGroup(bench, 'group-2')!.tabs.map((item) => item.id), ['b', 'x'])
+  assert.equal(moveTab(bench, 'main', 'page:a', 'main', 'page:a'), bench)
 })

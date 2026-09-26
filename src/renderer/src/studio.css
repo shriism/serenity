@@ -301,3 +301,4 @@
 .serenity-studio .citations small { display: flex; align-items: center; gap: 4px; margin-top: 2px; color: var(--warning-text); }
 .serenity-studio .duplicate-reasons { margin: 8px 0 12px; padding-left: 18px; color: var(--muted); font-size: 12px; line-height: 1.7; }
 .serenity-studio .duplicate-card .review-actions button { display: inline-flex; align-items: center; gap: 6px; }
+.serenity-studio .workspace-tab[data-insert-before] { box-shadow: inset 2px 0 0 var(--accent); }

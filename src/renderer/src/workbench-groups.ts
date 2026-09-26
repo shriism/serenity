@@ -85,14 +85,31 @@ export function nextGroupId(workbench: Workbench, from: string = workbench.focus
   return ids[(ids.indexOf(from) + step + ids.length) % ids.length]
 }
 
-/** Moves a tab to another group, keeping how it was presented, and focuses that group. */
-export function moveTab(workbench: Workbench, from: string, key: string, to: string): Workbench {
+function placeBefore(tabs: TabRef[], key: string, before: string | undefined): TabRef[] {
+  const tab = tabs.find((item) => tabKey(item) === key)
+  if (!tab || !before || before === key || !tabs.some((item) => tabKey(item) === before)) return tabs
+  const others = tabs.filter((item) => tabKey(item) !== key)
+  const index = others.findIndex((item) => tabKey(item) === before)
+  return [...others.slice(0, index), tab, ...others.slice(index)]
+}
+
+/**
+ * Moves a tab to another group, keeping how it was presented, and focuses that group; with `before`, it lands ahead
+ * of that tab. Within one group, `before` reorders the strip.
+ */
+export function moveTab(workbench: Workbench, from: string, key: string, to: string, before?: string): Workbench {
   const source = findGroup(workbench, from)
   const tab = source?.tabs.find((item) => tabKey(item) === key)
-  if (!source || !tab || from === to || !findGroup(workbench, to)) return workbench
+  if (!source || !tab || !findGroup(workbench, to)) return workbench
+  if (from === to) {
+    const tabs = placeBefore(source.tabs, key, before)
+    return tabs === source.tabs ? workbench : updateGroup(workbench, from, (group) => ({ ...group, tabs }))
+  }
   const presentation = source.presentations[key]
-  const moved = updateGroup(updateGroup(workbench, from, (group) => removeTab(group, key)), to,
-    (group) => presentTab(showTab(group, tab), key, presentation ?? group.presentations[key]))
+  const moved = updateGroup(updateGroup(workbench, from, (group) => removeTab(group, key)), to, (group) => {
+    const shown = presentTab(showTab(group, tab), key, presentation ?? group.presentations[key])
+    return { ...shown, tabs: placeBefore(shown.tabs, key, before) }
+  })
   return { ...moved, focused: to }
 }
 

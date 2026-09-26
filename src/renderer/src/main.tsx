@@ -456,12 +456,13 @@ function App() {
   }
 
   /** A tab dropped on a pane: into it at the center, or into a new pane split off toward the nearest edge. */
-  function dropTab(from: string, key: string, to: string, zone: DropZone): void {
+  function dropTab(from: string, key: string, to: string, zone: DropZone, before?: string): void {
     const source = findGroup(workbench, from)
-    if (!source?.tabs.some((tab) => tabKey(tab) === key) || (zone === 'center' && from === to)) return
+    if (!source?.tabs.some((tab) => tabKey(tab) === key)) return
+    if (zone === 'center' && from === to) { if (before) setWorkbench((current) => moveTab(current, from, key, to, before)); return }
     // The moved tab's editor opens again in its new pane, so its unsaved edits need the usual confirmation.
     if (source.activeTab === key && !confirmLeave(from)) return
-    if (zone === 'center') { setWorkbench((current) => moveTab(current, from, key, to)); return }
+    if (zone === 'center') { setWorkbench((current) => moveTab(current, from, key, to, before)); return }
     const direction: SplitDirection = zone === 'left' || zone === 'right' ? 'row' : 'column'
     setWorkbench((current) => {
       const split = splitWorkbench(current, { from: to, direction, before: zone === 'left' || zone === 'top', duplicate: false })
@@ -642,7 +643,8 @@ function App() {
       }}>
       {(group.tabs.length > 0 || multipleGroups) && <div className="group-bar">
         <WorkspaceTabs group={group.id} tabs={group.tabs.map((tab) => ({ key: tabKey(tab), kind: tab.kind, title: tabTitle(snapshot, tab) }))} active={group.activeTab}
-          onSelect={(key) => activateTab(key, group.id)} onClose={(key) => closeTab(key, group.id)}/>
+          onSelect={(key) => activateTab(key, group.id)} onClose={(key) => closeTab(key, group.id)}
+          onDropTab={(dragged, before) => { setDropTarget(null); dropTab(dragged.group, dragged.key, group.id, 'center', before) }}/>
         <div className="group-actions">
           {!group.tabs.length && <span className="group-title">{groupTitle(group)}</span>}
           {canSplit && <button onClick={() => splitPane('row', group.id)} aria-label={`Split pane ${position} right`} title={withShortcut('Split right', 'layout.split')}><Columns2 size={14}/></button>}

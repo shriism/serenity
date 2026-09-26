@@ -574,13 +574,28 @@ export class Workspace {
   }
 
   async loadSession(): Promise<WorkbenchSession | null> {
+    let text: string
     try {
-      const raw: unknown = YAML.parse(await this.readSettingsFile('session.yaml'))
-      return this.validatedSession(raw)
+      text = await this.readSettingsFile('session.yaml')
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null
       throw error
     }
+    let raw: unknown
+    try { raw = YAML.parse(text) }
+    catch { await this.archiveDamagedSession(); return null }
+    try { return await this.validatedSession(raw) }
+    catch (error) {
+      if (!(error instanceof Error) || error.message !== 'Invalid workspace session') throw error
+      await this.archiveDamagedSession()
+      return null
+    }
+  }
+
+  /** Keep invalid presentation state for inspection before a fresh session can replace it. */
+  private async archiveDamagedSession(): Promise<void> {
+    const path = join(this.path, '.serenity', 'session.yaml')
+    await rename(path, `${path}.corrupt-${randomUUID()}`)
   }
 
   async saveSession(session: WorkbenchSession): Promise<void> {

@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Workspace } from '../src/main/workspace'
@@ -91,6 +91,26 @@ test('the last open resource is restored from workspace-local session metadata',
     assert.deepEqual(await reopened.loadSession(), { view: 'knowledge', activeUri: ref, assistantUri, openUris: [ref] })
     await assert.rejects(reopened.saveSession({ view: 'untrusted', openUris: [] }), /Invalid workspace session/)
     reopened.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('a damaged session is preserved and a fresh session can be saved', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-session-recovery-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const settings = join(directory, '.serenity')
+    const path = join(settings, 'session.yaml')
+    for (const damaged of ['view: [unterminated', 'view: unknown\nopenUris: []\n']) {
+      await writeFile(path, damaged)
+      assert.equal(await workspace.loadSession(), null)
+      const archived = (await readdir(settings)).filter((name) => name.startsWith('session.yaml.corrupt-'))
+      assert.equal(archived.length, damaged.startsWith('view: [') ? 1 : 2)
+      assert.ok((await Promise.all(archived.map((name) => readFile(join(settings, name), 'utf8')))).includes(damaged))
+    }
+    await workspace.saveSession({ view: 'home', openUris: [] })
+    assert.deepEqual(await workspace.loadSession(), { view: 'home', openUris: [], activeUri: undefined })
+    workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 

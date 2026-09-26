@@ -445,6 +445,27 @@ try {
     return value
   })()`)
   assert.equal(completed, 'Ask [[Untitled page]]', 'Typing [[ should suggest titles and Enter should complete the link')
+  const renamedLinks = await evaluate(pageUrl, `(async () => {
+    const wait = async (test) => { for (let i = 0; i < 50; i++) { const value = test(); if (value) return value; await new Promise((resolve) => setTimeout(resolve, 100)) } return null }
+    const note = (await window.serenity.saveEntity({ id: '', title: 'Rename note', type: 'note', body: 'Ask [[Alex M.]] soon.' })).entities.find((item) => item.title === 'Rename note')
+    // Written behind the UI's back, so let the shell pick it up now rather than after the file watcher settles.
+    document.querySelector('.topbar-more summary')?.click(); [...document.querySelectorAll('.topbar-menu button')].find((item) => item.textContent?.includes('Refresh files'))?.click()
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    document.querySelector('.topbar-search')?.click()
+    const input = await wait(() => document.querySelector('.palette-input input'))
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Alex M.'); input.dispatchEvent(new Event('input', { bubbles: true }))
+    ;(await wait(() => [...document.querySelectorAll('.palette-results button')].find((item) => item.textContent?.includes('Alex M.') && item.textContent?.includes('person'))))?.click()
+    const title = await wait(() => [...document.querySelectorAll('.editor-group.focused .editor .title-input')].find((item) => item.value === 'Alex M.'))
+    if (!title) return 'entity did not open'
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(title, 'Alex Morgan'); title.dispatchEvent(new Event('input', { bubbles: true }))
+    const confirmRename = window.confirm
+    window.confirm = () => true
+    ;(await wait(() => document.querySelector('.editor-group.focused .editor button[type="submit"]')))?.click()
+    const body = await (async () => { for (let i = 0; i < 50; i++) { const found = (await window.serenity.refresh()).entities.find((item) => item.id === note.id)?.body; if (found?.includes('Morgan')) return found; await new Promise((resolve) => setTimeout(resolve, 100)) } return 'not updated' })()
+    window.confirm = confirmRename
+    return body
+  })()`)
+  assert.equal(renamedLinks, 'Ask [[Alex Morgan]] soon.', 'Renaming an entity should offer to update wikilinks that named it')
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) {
     const narrow = await evaluate(pageUrl, `(async () => { window.resizeTo(900, 760); for (let i = 0; i < 30 && innerWidth <= 1020 && !document.querySelector('.serenity-studio')?.classList.contains('left-collapsed'); i++) await new Promise((resolve) => setTimeout(resolve, 100)); return { width: innerWidth, main: document.querySelector('#workspace-main')?.getBoundingClientRect().width, right: Boolean(document.querySelector('.assistant-sidebar')), rail: document.querySelector('.serenity-studio')?.classList.contains('left-collapsed') } })()`) as { width: number; main: number; right: boolean; rail: boolean }
     if (narrow.width <= 1020) {

@@ -5,7 +5,8 @@ import remarkGfm from 'remark-gfm'
 import type { Claim, Entity, WorkspaceSnapshot } from '../../shared/types'
 import { identityCandidates } from '../../shared/identity'
 import { ClaimCard } from './claim-card'
-import { linkWikilinks, resolveWikilink } from '../../shared/wikilinks'
+import { linkWikilinks, resolveWikilink, wikilinkMentions } from '../../shared/wikilinks'
+import { resourceUri } from '../../shared/resources'
 import { markdownUrlTransform, workspaceLink } from './markdown-links'
 import { WikilinkTextarea } from './wikilink-textarea'
 
@@ -74,9 +75,17 @@ export function EntityEditor(props: EntityEditorProps) {
 
   async function save(event: FormEvent): Promise<void> {
     event.preventDefault()
+    // Links written by title would break on a rename, so find them before the old title stops resolving.
+    const previousTitle = saved?.title.trim()
+    const renamed = Boolean(draft.id && previousTitle && previousTitle !== draft.title.trim())
+    const mentions = renamed ? wikilinkMentions(workspace, resourceUri({ kind: 'entity', id: draft.id })) : []
     const next = await run(() => window.serenity.saveEntity(draft))
     if (!next) return
     setDirty(false)
+    if (mentions.length && window.confirm(`${mentions.length} ${mentions.length === 1 ? 'note links' : 'notes link'} to [[${previousTitle}]]. Update ${mentions.length === 1 ? 'it' : 'them'} to [[${draft.title.trim()}]]?`)) {
+      try { onUpdate((await window.serenity.renameWikilinks(previousTitle!, draft.title.trim(), mentions.map((mention) => mention.uri))).snapshot) }
+      catch (cause) { onError(`Links were not updated: ${String(cause)}`) }
+    }
     if (!draft.id) {
       const created = next.entities.find((entity) => !workspace.entities.some((existing) => existing.id === entity.id))
       if (created) props.onCreated(created.id)

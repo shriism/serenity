@@ -12,6 +12,7 @@ import { defaultWorkbench } from '../shared/default-workbench'
 import { normalizeKeybinding } from '../shared/keybindings'
 import { isWorkbenchView, parseLayout } from '../shared/layout'
 import { rankSearchResults } from '../shared/search-rank'
+import { renameWikilinks } from '../shared/wikilinks'
 import { validateReadScope, validateWorkflowPermissions } from '../shared/workflow'
 import { canExtractText, extractDocument } from './documents'
 
@@ -523,6 +524,38 @@ export class Workspace {
     await atomicWrite(path, input.text)
     this.markDirty()
     return this.snapshot()
+  }
+
+  /**
+   * After a rename, points `[[from]]` wikilinks in the given pages and entity notes at `to`. Only prose is changed:
+   * frontmatter, code, and other links stay as written. Returns how many links changed along with the new snapshot.
+   */
+  async renameWikilinks(from: string, to: string, uris: string[]): Promise<{ snapshot: WorkspaceSnapshot; count: number }> {
+    const title = (value: unknown, label: string): string => {
+      const text = requiredText(value, label).trim()
+      if (/[[\]|#\n]/.test(text) || text.length > 300) throw new Error(`${label} cannot be used in a wikilink`)
+      return text
+    }
+    const oldTitle = title(from, 'Previous title')
+    const newTitle = title(to, 'New title')
+    if (!Array.isArray(uris) || uris.length > 500) throw new Error('Invalid list of notes to update')
+    const snapshot = await this.snapshot()
+    let count = 0
+    for (const uri of new Set(uris)) {
+      const ref = typeof uri === 'string' ? parseResourceUri(uri) : null
+      const path = ref?.kind === 'page' ? snapshot.pages.find((page) => page.id === ref.id)?.path.replace(/^pages\//, '') : undefined
+      const file = ref?.kind === 'entity' && snapshot.entities.some((entity) => entity.id === ref.id) ? join(this.directories[0], `${ref.id}.md`)
+        : path ? join(this.pagesDirectory, basename(path)) : null
+      if (!file) continue
+      const text = await this.readOwnedText(await this.ownedFile(file))
+      const frontmatter = /^---\r?\n[\s\S]*?\r?\n---\r?\n/.exec(text)?.[0] ?? ''
+      const renamed = renameWikilinks(text.slice(frontmatter.length), oldTitle, newTitle)
+      if (!renamed.count) continue
+      await atomicWrite(file, frontmatter + renamed.text)
+      count += renamed.count
+    }
+    this.markDirty()
+    return { snapshot: await this.snapshot(), count }
   }
 
   async createPage(): Promise<WorkspaceSnapshot> {

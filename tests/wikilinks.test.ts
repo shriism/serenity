@@ -45,3 +45,33 @@ test('typing [[ offers unambiguous titles and completing closes the link', async
   assert.deepEqual(completeWikilink('Met [[al]]', 8, 6, 'Alex'), { text: 'Met [[Alex]]', caret: 12 })
   assert.deepEqual(wikilinkSuggestions(snapshot, 's').map((item) => item.title), ['syllabus.pdf', 'Research'], 'prefix matches first; the ambiguous Sam is not offered')
 })
+
+test('renaming rewrites links to the old title, keeping labels and headings, outside code', async () => {
+  const { renameWikilinks } = await import('../src/shared/wikilinks')
+  const text = 'See [[alex]], [[Alex|him]], [[Alex#Work]], [[Alexander]].\n`[[Alex]]`\n```\n[[Alex]]\n```'
+  assert.deepEqual(renameWikilinks(text, 'Alex', 'Alex Rivera'), {
+    text: 'See [[Alex Rivera]], [[Alex Rivera|him]], [[Alex Rivera#Work]], [[Alexander]].\n`[[Alex]]`\n```\n[[Alex]]\n```', count: 3 })
+})
+
+test('the workspace rewrites links to a renamed title in chosen notes only, never frontmatter', async () => {
+  const { mkdtemp, readFile, rm, writeFile } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const { Workspace } = await import('../src/main/workspace')
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-rename-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const note = (await workspace.saveEntity({ id: '', title: 'Club', type: 'group', body: 'Founded by [[Alex]] and [[Alex|him]].' })).entities[0]
+    const other = (await workspace.saveEntity({ id: '', title: 'Other', type: 'note', body: 'Also [[Alex]].' })).entities.find((item) => item.title === 'Other')!
+    await writeFile(join(directory, 'pages', 'Plan.md'), '---\nid: plan\ntitle: "[[Alex]] plan"\nkind: page\n---\nCall [[Alex]].\n')
+    workspace.markDirty()
+    const { snapshot, count } = await workspace.renameWikilinks('Alex', 'Alex Rivera', ['serenity:entity/' + note.id, 'serenity:page/plan', 'serenity:page/missing'])
+    assert.equal(count, 3)
+    assert.equal(snapshot.entities.find((item) => item.id === note.id)?.body, 'Founded by [[Alex Rivera]] and [[Alex Rivera|him]].')
+    assert.equal(snapshot.entities.find((item) => item.id === other.id)?.body, 'Also [[Alex]].', 'notes not chosen stay as written')
+    assert.match(await readFile(join(directory, 'pages', 'Plan.md'), 'utf8'), /title: "\[\[Alex\]\] plan"[\s\S]*Call \[\[Alex Rivera\]\]\./)
+    await assert.rejects(workspace.renameWikilinks('Alex', 'Bad]]name', []), /cannot be used in a wikilink/)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})

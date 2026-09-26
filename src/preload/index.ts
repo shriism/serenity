@@ -8,6 +8,7 @@ const api: SerenityAPI = {
   refresh: () => ipcRenderer.invoke('workspace:refresh'),
   saveEntity: (entity) => ipcRenderer.invoke('entity:save', entity),
   savePage: (page) => ipcRenderer.invoke('page:save', page),
+  renameWikilinks: (from, to, uris) => ipcRenderer.invoke('wikilinks:rename', from, to, uris),
   createPage: () => ipcRenderer.invoke('page:create'),
   loadSession: () => ipcRenderer.invoke('workspace:session:load'),
   saveSession: (session) => ipcRenderer.invoke('workspace:session:save', session),

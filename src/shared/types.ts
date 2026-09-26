@@ -237,6 +237,7 @@ export interface SerenityAPI {
   readDocument(name: string): Promise<string | null>
   savePage(page: Pick<WorkspacePage, 'id' | 'path' | 'text' | 'revision'>): Promise<WorkspaceSnapshot>
   createPage(): Promise<WorkspaceSnapshot>
+  renameWikilinks(from: string, to: string, uris: string[]): Promise<{ snapshot: WorkspaceSnapshot; count: number }>
   loadSession(): Promise<WorkbenchSession | null>
   saveSession(session: WorkbenchSession): Promise<void>
   search(query: string): Promise<SearchResult[]>

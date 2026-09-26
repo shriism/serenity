@@ -219,6 +219,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('entity:save', (_event, entity: Entity) => currentWorkspace().saveEntity(entity))
   ipcMain.handle('page:save', (_event, page: Pick<WorkspacePage, 'id' | 'path' | 'text' | 'revision'>) => currentWorkspace().savePage(page))
   ipcMain.handle('page:create', () => currentWorkspace().createPage())
+  ipcMain.handle('wikilinks:rename', (_event, from: string, to: string, uris: string[]) => currentWorkspace().renameWikilinks(from, to, uris))
   ipcMain.handle('workspace:session:load', () => currentWorkspace().loadSession())
   ipcMain.handle('workspace:session:save', (_event, session: WorkbenchSession) => currentWorkspace().saveSession(session))
   ipcMain.handle('claim:add', (_event, claim: Pick<Claim, 'subject' | 'key' | 'value' | 'source'>) => currentWorkspace().addClaim(claim))

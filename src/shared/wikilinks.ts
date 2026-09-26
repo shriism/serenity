@@ -37,20 +37,40 @@ const wikilink = /(?<!!)\[\[([^[\]|#\n]+)(?:#[^[\]|\n]*)?(?:\|([^[\]\n]+))?\]\]/
  * inline code are left untouched, as are `![[embeds]]`. Unresolved targets get a link in `unresolvedScheme` that
  * records why, so the renderer can show them without guessing.
  */
-export function linkWikilinks(markdown: string, resolve: (target: string) => WikiResolution): string {
+/** Applies `replace` to the prose of Markdown, skipping fenced code blocks and inline code. */
+function mapProse(markdown: string, replace: (prose: string) => string): string {
   let fence: string | null = null
   return markdown.split('\n').map((line) => {
     const marker = /^\s{0,3}(`{3,}|~{3,})/.exec(line)?.[1]
     if (fence) { if (marker && marker[0] === fence[0] && marker.length >= fence.length) fence = null; return line }
     if (marker) { fence = marker; return line }
-    return line.split(/(`+[^`]*`+)/).map((part, index) => index % 2 ? part : part.replace(wikilink, (_whole, target: string, label?: string) => {
+    return line.split(/(`+[^`]*`+)/).map((part, index) => index % 2 ? part : replace(part)).join('')
+  }).join('\n')
+}
+
+/**
+ * Points wikilinks naming `from` at `to` instead, keeping each link's heading and label. Used, with consent, when
+ * something is renamed, so links written by title keep working.
+ */
+export function renameWikilinks(markdown: string, from: string, to: string): { text: string; count: number } {
+  let count = 0
+  const wanted = normalized(from)
+  const text = mapProse(markdown, (prose) => prose.replace(wikilink, (whole, target: string) => {
+    if (normalized(target) !== wanted) return whole
+    count++
+    return whole.replace(`[[${target}`, `[[${to}`)
+  }))
+  return { text, count }
+}
+
+export function linkWikilinks(markdown: string, resolve: (target: string) => WikiResolution): string {
+  return mapProse(markdown, (prose) => prose.replace(wikilink, (_whole, target: string, label?: string) => {
       const shown = escapeLabel((label ?? target).trim())
       const result = resolve(target)
       if (result.kind === 'resolved') return `[${shown}](${result.uri})`
       const detail = result.kind === 'ambiguous' ? `ambiguous/${encodeDetail(result.titles.join(' · '))}` : `missing/${encodeDetail(target.trim())}`
       return `[${shown}](${unresolvedScheme}${detail})`
-    })).join('')
-  }).join('\n')
+  }))
 }
 
 export interface Mention { uri: string; title: string; excerpt: string }

@@ -31,6 +31,8 @@ The center is a composition of panes (editor groups). `src/shared/layout.ts` des
 
 A resource can have several presentations (`src/renderer/src/presentations.tsx`); an entity offers Profile, Timeline, and Connections. The chosen presentation belongs to the tab within its group and is saved with the layout, so one resource can be shown two ways side by side. Timeline and Connections are read-only views computed from the snapshot by `src/shared/entity-history.ts`: they add no stored data, keep retracted and superseded claims visible as history, and count only confirmed claims as relationships.
 
+Pages and entity narratives may use Obsidian-style `[[wikilinks]]`, resolved at render time by exact title (`src/shared/wikilinks.ts`); ambiguous or unknown names are shown as such rather than guessed, and no link targets are stored. Because they name titles, renaming an entity offers to rewrite `[[old]]` links in the notes that resolved to it; the main process rewrites only prose (not frontmatter or code) in the chosen page and entity files, each with an atomic write.
+
 Snapshots re-read the workspace, but each file's text and parse are reused while its size, modification and change times, and inode are unchanged; records are copied out of that cache because snapshot assembly adjusts them (for example, resolving merged entities). Files are still checked to be regular files inside the workspace on every read.
 
 Snapshots carry a `generation` that increases in the order reading began; the renderer ignores a snapshot older than the one it has, so an operation's result is never replaced by a slower refresh that started earlier.

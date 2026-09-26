@@ -107,6 +107,8 @@ test('a distinct decision follows later merges without allowing an indirect merg
     const decision = (await workspace.markDistinctEntities(first.id, second.id)).identityDecisions[0]
     const merged = await workspace.mergeEntities(first.id, representative.id)
     assert.deepEqual(distinctRepresentatives(decision, merged.merges).sort(), [representative.id, second.id].sort(), 'the decision resolves through the merge')
+    await assert.rejects(workspace.markDistinctEntities(representative.id, second.id), /already marked distinct/,
+      'a decision should not be duplicated under its current representative')
     assert.equal(duplicateCandidates(merged).some(({ a, b }) => [a.id, b.id].includes(second.id) && [a.id, b.id].includes(representative.id)), false)
     const records = contextRecords(merged, [])
     const scoped = (ids: string[]) => scopeContextRecords(merged, records, validateReadScope({ mode: 'selected', entityIds: ids,

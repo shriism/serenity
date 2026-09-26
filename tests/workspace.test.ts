@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import YAML from 'yaml'
@@ -9,6 +9,44 @@ import { buildSemanticIndex, rankSemanticIndex, readSemanticIndex } from '../src
 import { analyzeChangedDocument } from '../src/main/document-analysis'
 import { contextRecords, prepareContext } from '../src/main/context'
 import { defaultWorkflowPermissions } from '../src/shared/workflow'
+
+test('a first-release workspace opens without rewriting its authored records', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-legacy-'))
+  const entityId = '123e4567-e89b-42d3-a456-426614174101'
+  const claimId = '123e4567-e89b-42d3-a456-426614174102'
+  const conversationId = '123e4567-e89b-42d3-a456-426614174103'
+  try {
+    for (const name of ['entities', 'claims', 'documents', 'conversations', 'proposals', '.serenity']) {
+      await mkdir(join(directory, name))
+    }
+    const entityPath = join(directory, 'entities', `${entityId}.md`)
+    const claimPath = join(directory, 'claims', `${claimId}.yaml`)
+    const conversationPath = join(directory, 'conversations', `${conversationId}.yaml`)
+    const entityText = `---\nid: ${entityId}\ntitle: Alex\ntype: person\n---\n# Alex\nFirst desktop note.\n`
+    const claimText = YAML.stringify({ id: claimId, subject: entityId, key: 'hobby', value: 'Robotics', source: 'Alex',
+      origin: 'human', status: 'confirmed', recordedAt: '2026-01-01T12:00:00.000Z' })
+    const conversationText = YAML.stringify({ id: conversationId, title: 'Old conversation', messages: [], retained: true, autonomy: 'ask' })
+    await writeFile(entityPath, entityText)
+    await writeFile(claimPath, claimText)
+    await writeFile(conversationPath, conversationText)
+    await writeFile(join(directory, 'documents', 'old-note.txt'), 'Original imported bytes')
+
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const snapshot = await workspace.snapshot()
+    assert.deepEqual(snapshot.errors, [])
+    assert.equal(snapshot.entities.find((item) => item.id === entityId)?.body, '# Alex\nFirst desktop note.\n')
+    assert.equal(snapshot.claims.find((item) => item.id === claimId)?.value, 'Robotics')
+    assert.equal(snapshot.conversations.find((item) => item.id === conversationId)?.title, 'Old conversation')
+    assert.ok(snapshot.documents.some((item) => item.name === 'old-note.txt'))
+    assert.equal((await workspace.search('Robotics'))[0]?.kind, 'claim')
+    assert.ok((await readdir(join(directory, 'identity-decisions'))).length === 0)
+    assert.equal(await readFile(entityPath, 'utf8'), entityText)
+    assert.equal(await readFile(claimPath, 'utf8'), claimText)
+    assert.equal(await readFile(conversationPath, 'utf8'), conversationText)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
 
 test('imports own document bytes and never treats external links as workspace files', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-owned-'))

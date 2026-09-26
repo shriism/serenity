@@ -801,7 +801,8 @@ export class Workspace {
     if (!snapshot.entities.some((entity) => entity.id === left) || !snapshot.entities.some((entity) => entity.id === right)) {
       throw new Error('Both entities must be active before marking them distinct')
     }
-    if (snapshot.identityDecisions.some((decision) => !decision.undoneAt && decision.left === left && decision.right === right)) {
+    if (snapshot.identityDecisions.some((decision) => !decision.undoneAt &&
+      distinctRepresentatives(decision, snapshot.merges).sort().join(':') === [left, right].join(':'))) {
       throw new Error('These entities are already marked distinct')
     }
     const decision: IdentityDecision = { version: 1, id: randomUUID(), kind: 'distinct', left, right, recordedAt: new Date().toISOString() }

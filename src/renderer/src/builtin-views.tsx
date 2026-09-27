@@ -98,10 +98,10 @@ builtinViews.register({ id: 'tasks', module: 'tasks', render: ({ workspace, onUp
 builtinViews.register({ id: 'review', render: ({ workspace, onResolve, onAttach, onOpenSource, onOpenResource, onUpdate, onError }) =>
   <ReviewPanel workspace={workspace} onResolve={onResolve} onAttach={onAttach} onOpenSource={onOpenSource} onOpenResource={(uri, side) => onOpenResource(uri, side)}
     onUpdate={onUpdate} onError={onError}/> })
-builtinViews.register({ id: 'documents', render: ({ workspace, activeDocument, onImport, onOpenDocument, onOpenSource, onError, onAnalyze, onResolve, onAttach, presentation, onPresentationChange, onOpenResource }) =>
+builtinViews.register({ id: 'documents', render: ({ workspace, activeDocument, onImport, onOpenDocument, onOpenSource, onError, onAnalyze, onResolve, onAttach, presentation, onPresentationChange, onOpenResource, onAsk }) =>
   activeDocument ? <div className="presented-resource">
     <PresentationSwitcher kind="document" active={presentationFor('document', presentation)!} onChange={onPresentationChange}/>
-    {presentationFor('document', presentation) === 'knowledge' ? <DocumentKnowledgeView name={activeDocument} workspace={workspace} onOpenResource={(uri, side) => onOpenResource(uri, side)}/> :
+    {presentationFor('document', presentation) === 'knowledge' ? <DocumentKnowledgeView name={activeDocument} workspace={workspace} onOpenResource={(uri, side) => onOpenResource(uri, side)} onAsk={onAsk}/> :
       <DocumentPreview name={activeDocument} workspace={workspace} onOpen={onOpenSource} onError={onError} onResolve={onResolve} onAttach={onAttach} onOpenSource={onOpenSource}/>}
   </div> :
     <DocumentsPanel workspace={workspace} onImport={onImport} onOpen={onOpenDocument} onAnalyze={onAnalyze}/> })

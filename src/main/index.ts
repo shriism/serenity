@@ -161,6 +161,19 @@ function createWindow(): void {
     }
   })
   window.on('closed', () => { window = null; closeApproved = false })
+  // A crashed or killed renderer leaves a blank window. Workspace files are only written through validated
+  // operations, so reloading is safe; only unsaved editor text is lost, and the person is told so.
+  window.webContents.on('render-process-gone', (_event, details) => {
+    if (details.reason === 'clean-exit') return
+    console.error(`Renderer process ended: ${details.reason} (exit code ${details.exitCode})`)
+    const current = window
+    if (!current || current.isDestroyed()) return
+    editorDirty = false
+    if (background) { current.webContents.reload(); return }
+    void dialog.showMessageBox(current, { type: 'warning', buttons: ['Reload'], defaultId: 0, message: 'Serenity’s window stopped unexpectedly',
+      detail: 'Your workspace files are safe. Text you had not saved in an open editor may be lost.' })
+      .then(() => { if (!current.isDestroyed()) current.webContents.reload() })
+  })
   window.on('close', (event) => {
     if (closeApproved || (!editorDirty && !activeRequests) || !window) return
     event.preventDefault()
@@ -190,6 +203,9 @@ function createWindow(): void {
     void window.loadFile(fileURLToPath(new URL('../renderer/index.html', import.meta.url)))
   }
 }
+
+// Background work (indexing, analysis) reports its own failures; anything that slips past is logged, not silently lost.
+process.on('unhandledRejection', (reason) => console.error('Unhandled rejection in the main process:', reason))
 
 app.whenReady().then(async () => {
   ipcMain.on('editor:dirty', (_event, dirty: unknown) => { editorDirty = dirty === true })

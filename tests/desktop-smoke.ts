@@ -540,6 +540,22 @@ try {
       await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-compact.png'), await captureScreenshot(pageUrl))
     }
   }
+  // Crash the renderer on purpose: the window should reload itself with a working bridge and the same workspace.
+  await new Promise<void>((resolve) => {
+    const socket = new WebSocket(pageUrl)
+    socket.addEventListener('open', () => { socket.send(JSON.stringify({ id: 9, method: 'Page.crash' })); setTimeout(() => { socket.close(); resolve() }, 300) })
+    socket.addEventListener('error', () => resolve())
+  })
+  let recovered: unknown = null
+  for (let attempt = 0; attempt < 60 && !recovered; attempt++) {
+    await delay(250)
+    try {
+      const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() as { type: string; webSocketDebuggerUrl: string }[]
+      const page = pages.find((item) => item.type === 'page')
+      if (page) recovered = await evaluate(page.webSocketDebuggerUrl, `window.serenity?.refresh().then((snapshot) => snapshot?.path) ?? null`)
+    } catch { /* Still reloading. */ }
+  }
+  assert.equal(recovered, workspace, 'A crashed window should reload into the same workspace')
   console.log('Electron workspace, entity, claim, PDF/DOCX search, reversible merges/tasks/calendar, and preload IPC passed.')
 } finally {
   child.kill()

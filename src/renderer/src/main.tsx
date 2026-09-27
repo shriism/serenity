@@ -5,6 +5,7 @@ import type { SearchResult, WorkspacePage, WorkspaceSnapshot } from '../../share
 import { ConversationPanel } from './conversation-panel'
 import { ConversationList } from './conversation-list'
 import { useAssistant } from './use-assistant'
+import { ErrorBoundary } from './error-boundary'
 import { workspaceActivity } from '../../shared/activity'
 import { AppNavigation } from './navigation'
 import { builtinViews, type BuiltinViewContext } from './builtin-views'
@@ -587,7 +588,9 @@ function App() {
       </div>}
       {group.view === 'review' && snapshot.proposals.some((item) => item.status === 'pending' && item.reviewReason) && <div className="notice warning" role="status">Some proposals involve similar entities. Verify the identity before accepting them.</div>}
       <div className="workspace-body" key={`${group.view}:${group.activeTab ?? ''}:${group.creatingEntity}`}>
-        {builtinViews.render(group.view, viewContext(group, snapshot)) ?? <section className="page"><h1>View unavailable</h1><p>This module is not available in this workspace.</p></section>}
+        <ErrorBoundary label={groupTitle(group)}>
+          {builtinViews.render(group.view, viewContext(group, snapshot)) ?? <section className="page"><h1>View unavailable</h1><p>This module is not available in this workspace.</p></section>}
+        </ErrorBoundary>
       </div>
       {zone && <div className={`pane-drop-overlay zone-${zone}`} aria-hidden="true"/>}
     </section>
@@ -652,16 +655,18 @@ function App() {
         <button onClick={() => runCommand('assistant.expand')} aria-label={aiExpanded ? 'Return AI to sidebar' : 'Expand AI over workspace'} title={aiExpanded ? 'Return AI to sidebar' : 'Expand AI over workspace'}>{aiExpanded ? <Minimize2 size={17}/> : <Maximize2 size={17}/>}</button>
         <button onClick={() => runCommand('assistant.toggle')} aria-label="Collapse AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')} title={withShortcut('Collapse AI sidebar', 'assistant.toggle')}><PanelRightClose size={17}/></button>
       </div></div>
+      <ErrorBoundary label="The assistant">
       <ConversationList workspace={workspace} conversationId={conversationId} autonomy={assistant.autonomy} permissions={assistant.permissions} readScope={readScope} busy={assistant.busy}
         onNew={() => runCommand('assistant.new')} onSelect={selectConversation} onPermissionsChange={assistant.setPermissions} onReadScopeChange={assistant.setReadScope} onSaveSettings={() => void assistant.saveWorkflowSettings()} />
       {readScope.mode === 'selected' && <div className="ai-scope-note" role="status">Selected knowledge only · review allowed files in Workflow settings</div>}
       <ConversationPanel conversation={assistant.conversation} provider={assistant.provider} onProviderChange={assistant.setProvider} autonomy={assistant.autonomy} onAutonomyChange={assistant.setAutonomy}
         retained={assistant.retained} onRetentionChange={assistant.setRetained} message={assistant.message} onMessageChange={assistant.setMessage} busy={assistant.busy}
         onSend={(event) => void assistant.sendMessage(event)} onCancel={() => void assistant.cancelMessage()} onDelete={() => void assistant.deleteConversation()} activeFile={activeFile} openFileCount={openFileCount} visiblePaneCount={visiblePaneCount} onOpenResource={(uri, side) => { openResource(uri, { side }) }} />
+      </ErrorBoundary>
     </aside> : <aside className="assistant-rail" aria-label="AI assistant collapsed"><button onClick={() => runCommand('assistant.toggle')} title={withShortcut('Expand AI sidebar', 'assistant.toggle')} aria-label="Expand AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')}><PanelRightOpen size={20}/></button><span>AI</span></aside>)}
     </div>
     <CommandPalette open={paletteOpen && Boolean(workspace)} query={query} results={results} searching={searching} provider={assistant.provider} savedIndexEnabled={Boolean(workspace?.modules.semanticIndex)} commands={commands.filter((command) => !command.hideInPalette)} shortcutFor={shortcut} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult} onAISearch={() => void searchSemantically()} onSavedSearch={() => void searchSavedConcepts()} onCommand={runCommand} />
   </div>
 }
 
-createRoot(document.getElementById('root')!).render(<App />)
+createRoot(document.getElementById('root')!).render(<ErrorBoundary label="Serenity" fullScreen><App /></ErrorBoundary>)

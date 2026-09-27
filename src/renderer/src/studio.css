@@ -424,3 +424,8 @@
 .serenity-studio .module-link-matches button:hover { background: var(--surface-hover); }
 .serenity-studio .module-link-matches small { color: var(--subtle); }
 .serenity-studio .module-links input:not([type="checkbox"]) { width: 100%; box-sizing: border-box; }
+
+/* A view that failed to render. */
+.view-error pre { max-width: 720px; overflow: auto; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 11px; white-space: pre-wrap; }
+.view-error-actions { margin-top: 14px; }
+.view-error.full-screen { min-height: 100vh; box-sizing: border-box; padding: 12vh 10vw; background: var(--studio-base, var(--canvas)); color: var(--text); }

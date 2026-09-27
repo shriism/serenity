@@ -2,9 +2,9 @@
 
 Serenity's notable changes, newest first. The workspace format stays readable Markdown and YAML; entries note anything that adds to it.
 
-## Unreleased: first desktop release candidate
+## 1.0.0 (2026-09-27): first desktop release
 
-The desktop workbench for macOS, Windows, and Linux, built on the September 2026 foundation (workspace pages, resources, commands, and view contributions).
+The desktop workbench for macOS, Windows, and Linux, built on the September 2026 foundation (workspace pages, resources, commands, and view contributions). macOS builds are not yet signed or notarized, so macOS asks for permission the first time they open.
 
 ### Workbench
 

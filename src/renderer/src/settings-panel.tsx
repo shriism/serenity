@@ -14,6 +14,8 @@ export function SettingsPanel({ workspace, shortcuts, onUpdate, onError }: Props
   const [credentials, setCredentials] = useState<Record<Provider, boolean> | null>(null)
   const [keyProvider, setKeyProvider] = useState<Provider>('copilot')
   const [key, setKey] = useState('')
+  const [about, setAbout] = useState<Awaited<ReturnType<typeof window.serenity.appInfo>> | null>(null)
+  useEffect(() => { void window.serenity.appInfo().then(setAbout).catch(() => setAbout(null)) }, [])
 
   useEffect(() => { void window.serenity.credentialStatus().then(setCredentials).catch((error) => onError(String(error))) }, [onError])
 
@@ -89,5 +91,10 @@ export function SettingsPanel({ workspace, shortcuts, onUpdate, onError }: Props
           <tr key={item.id}><td>{item.title}</td><td>{item.keys ? <kbd>{item.keys}</kbd> : <span className="hint">None</span>}</td><td><code>{item.id}</code></td></tr>)}</tbody>
       </table>
     </section>
+    {about && <section className="settings-about" aria-labelledby="about-heading">
+      <h2 id="about-heading">About Serenity</h2>
+      <p>Version {about.version} · Electron {about.electron} · Chromium {about.chrome} · {about.platform}</p>
+      <small>Include this line when reporting a problem. Your workspace stays in the folder you chose; nothing here is sent anywhere.</small>
+    </section>}
   </section>
 }

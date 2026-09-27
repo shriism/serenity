@@ -228,6 +228,8 @@ app.whenReady().then(async () => {
     editorDirty = false
     return snapshot
   })
+  ipcMain.handle('app:info', () => ({ version: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome,
+    platform: `${process.platform} ${process.getSystemVersion()} (${process.arch})` }))
   ipcMain.handle('link:open-external', async (_event, url: unknown) => {
     const link = externalLink(url)
     if (!link) throw new Error('Only web and email links can be opened')

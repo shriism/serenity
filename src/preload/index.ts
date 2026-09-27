@@ -5,6 +5,7 @@ const api: SerenityAPI = {
   chooseWorkspace: () => ipcRenderer.invoke('workspace:choose'),
   openWorkspaceFolder: () => ipcRenderer.invoke('workspace:open-folder'),
   openExternal: (url) => ipcRenderer.invoke('link:open-external', url),
+  appInfo: () => ipcRenderer.invoke('app:info'),
   setEditorDirty: (dirty) => ipcRenderer.send('editor:dirty', dirty),
   refresh: () => ipcRenderer.invoke('workspace:refresh'),
   saveEntity: (entity) => ipcRenderer.invoke('entity:save', entity),

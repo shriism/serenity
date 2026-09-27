@@ -240,6 +240,8 @@ export interface SerenityAPI {
   openWorkspaceFolder(): Promise<void>
   /** Opens an http(s) or mailto link in the system's default app; other schemes are refused. */
   openExternal(url: string): Promise<void>
+  /** Versions for bug reports: the app, its Electron and Chromium runtime, and the operating system. */
+  appInfo(): Promise<{ version: string; electron: string; chrome: string; platform: string }>
   setEditorDirty(dirty: boolean): void
   refresh(): Promise<WorkspaceSnapshot | null>
   saveEntity(entity: Entity): Promise<WorkspaceSnapshot>

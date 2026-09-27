@@ -160,6 +160,8 @@ try {
   const displayedPath = await evaluate(pageUrl, `document.querySelector('.settings-workspace strong')?.textContent`)
   const searchShortcut = await evaluate(pageUrl, `[...document.querySelectorAll('.settings-shortcuts tr')].find((row) => row.textContent?.includes('workspace.search'))?.querySelector('kbd')?.textContent ?? null`)
   assert.match(String(searchShortcut), /^(⌘K|Ctrl\+K)$/, 'Settings should list each command with its current shortcut')
+  const aboutLine = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const text = document.querySelector('.settings-about p')?.textContent; if (text) return text; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
+  assert.match(String(aboutLine), /^Version \d+\.\d+\.\d+ · Electron /, 'Settings should show the app version for bug reports')
   assert.equal(displayedPath, workspace)
   const settingsError = await evaluate(pageUrl, `(async () => { await new Promise((resolve) => setTimeout(resolve, 250)); return document.querySelector('.notice.error')?.textContent ?? null })()`)
   assert.equal(settingsError, null, `Settings should load credentials without an error: ${settingsError}`)

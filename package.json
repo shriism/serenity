@@ -19,7 +19,8 @@
     "dist": "npm run icons && npm run build && electron-builder --publish never",
     "dist:mac": "npm run icons && npm run build && electron-builder --mac --publish never",
     "dist:win": "npm run icons && npm run build && electron-builder --win --publish never",
-    "dist:linux": "npm run icons && npm run build && electron-builder --linux --publish never"
+    "dist:linux": "npm run icons && npm run build && electron-builder --linux --publish never",
+    "perf:desktop": "npm run build && tsx tests/desktop-perf.ts"
   },
   "build": {
     "appId": "app.serenity.desktop",

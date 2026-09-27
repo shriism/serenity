@@ -125,6 +125,8 @@ npm run smoke:desktop
 
 The desktop smoke test launches Electron against a temporary workspace and exercises files, IPC, search (including PDF/DOCX), panes, tasks, calendar, recovery from a crashed window, and an axe-core accessibility check in both themes. It needs a graphical desktop, runs Serenity with `--background` (a hidden window that never takes focus) and a temporary browser profile so your own settings are untouched, and shows the window with `SERENITY_SMOKE_VISIBLE=1`. Set `SERENITY_SMOKE_PROVIDER=copilot` or `codex` to also test a live conversation (this uses your normal profile, where credentials are stored), and `SERENITY_SMOKE_EXECUTABLE` to test a packaged executable. If your shell sets `ELECTRON_RUN_AS_NODE=1`, unset it first.
 
+`npm run perf:desktop` times the app on a large synthetic workspace (2,000 entities, 8,000 claims) and fails if launch, navigation, typing, or search exceed their budgets.
+
 To package for the current OS use `npm run dist`; `npm run dist:mac`, `npm run dist:win`, and `npm run dist:linux` target one platform (cross-building may need that platform's tooling). Packaging generates icons from `assets/icon.svg`. CI typechecks, tests, packages, and smoke-tests the packaged app on macOS, Windows, and Linux.
 
 ## Scope

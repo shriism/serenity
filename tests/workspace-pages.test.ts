@@ -199,3 +199,19 @@ test('page queries can select by document source and list recent activity', asyn
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
+
+test('page queries can show a count or a table and report how many matched in total', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-query-display-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    for (const title of ['Alex', 'Sam', 'Priya']) await workspace.saveEntity({ id: '', title, type: 'person', body: '' })
+    const snapshot = await workspace.snapshot()
+    const count = evaluateWorkspaceQuery(snapshot, { from: 'entities', display: 'count', limit: 1 })
+    assert.deepEqual([count.display, count.total, count.items.length], ['count', 3, 1])
+    assert.equal(evaluateWorkspaceQuery(snapshot, { from: 'entities', display: 'table' }).display, 'table')
+    assert.equal(evaluateWorkspaceQuery(snapshot, { from: 'entities' }).display, 'list')
+    assert.throws(() => evaluateWorkspaceQuery(snapshot, { from: 'entities', display: 'chart' }), /display must be list, table, or count/)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})

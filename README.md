@@ -70,7 +70,7 @@ limit: 10
 ```
 ````
 
-Sources are `upcoming`, `entities`, `claims`, `documents`, `tasks`, `events`, `proposals`, `pages`, and `activity` (recent changes, filterable by `kind`). A `source` filter selects records recorded from a document, optionally followed by a location such as `, p. 2`. Queries cannot run code or read outside the workspace.
+Add `display: table` for a two-column table or `display: count` for just the number of matches (for example, pending proposals). Sources are `upcoming`, `entities`, `claims`, `documents`, `tasks`, `events`, `proposals`, `pages`, and `activity` (recent changes, filterable by `kind`). A `source` filter selects records recorded from a document, optionally followed by a location such as `, p. 2`. Queries cannot run code or read outside the workspace.
 
 `.serenity/workbench.yaml` chooses the Home page and the navigation groups and command order; editing it updates the UI.
 

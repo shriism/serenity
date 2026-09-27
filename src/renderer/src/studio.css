@@ -437,3 +437,10 @@
 .serenity-studio .settings-about small { color: var(--subtle); font-size: 11px; }
 .palette-excerpt { display: block; margin-top: 3px; overflow: hidden; color: var(--muted); font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
 .palette-excerpt mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: var(--text); border-radius: 3px; padding: 0 1px; }
+
+/* Live query displays on pages. */
+.workspace-page .page-query-count strong { font-size: 28px; font-weight: 620; font-variant-numeric: tabular-nums; }
+.workspace-page .page-query-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.workspace-page .page-query-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--muted); vertical-align: top; }
+.workspace-page .page-query-table td:first-child { width: 45%; }
+.workspace-page .page-query-more { margin: 6px 0 0; color: var(--subtle); font-size: 11px; }

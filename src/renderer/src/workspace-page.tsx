@@ -13,11 +13,17 @@ import type { CommandContribution } from './commands'
 function LiveQuery({ source, workspace, onOpen }: { source: string; workspace: WorkspaceSnapshot; onOpen(uri: string, side?: boolean): void }) {
   try {
     const result = evaluateWorkspaceQuery(workspace, YAML.parse(source) as unknown)
+    if (result.display === 'count') return <p className="page-query-count"><strong>{result.total}</strong></p>
+    if (!result.items.length) return <p className="page-query-empty">Nothing here yet.</p>
+    const open = (uri: string) => (event: { metaKey: boolean; ctrlKey: boolean }) => onOpen(uri, event.metaKey || event.ctrlKey)
+    const more = result.total > result.items.length ? <p className="page-query-more">Showing {result.items.length} of {result.total}.</p> : null
+    if (result.display === 'table') return <><table className="page-query-table"><tbody>{result.items.map((item) => <tr key={item.uri}>
+      <td><button className="page-link" onClick={open(item.uri)}>{item.title}</button></td><td>{item.detail}</td></tr>)}</tbody></table>{more}</>
     const kind = result.source === 'upcoming' ? 'home-list' : result.source === 'claims' ? 'home-recent-list' :
       result.source === 'proposals' ? 'home-review-list' : 'page-query-list'
-    return result.items.length ? <div className={`page-query-list ${kind}`}>{result.items.map((item) => <button key={item.uri} onClick={(event) => onOpen(item.uri, event.metaKey || event.ctrlKey)} title="Open (⌘/Ctrl-click to open to the side)">
+    return <><div className={`page-query-list ${kind}`}>{result.items.map((item) => <button key={item.uri} onClick={open(item.uri)} title="Open (⌘/Ctrl-click to open to the side)">
       <span><strong>{item.title}</strong><small>{item.detail}</small></span><ArrowUpRight size={15}/>
-    </button>)}</div> : <p className="page-query-empty">Nothing here yet.</p>
+    </button>)}</div>{more}</>
   } catch (error) { return <p className="page-query-error" role="alert">Query: {String(error)}</p> }
 }
 

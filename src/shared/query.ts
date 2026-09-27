@@ -4,7 +4,10 @@ import { citesDocument } from './provenance'
 import { workspaceActivity } from './activity'
 
 export interface QueryItem { uri: string; kind: ResourceKind; title: string; detail: string; sortValue: string }
-export interface QueryResult { source: string; items: QueryItem[] }
+export type QueryDisplay = 'list' | 'table' | 'count'
+/** `total` counts every match; `items` holds at most `limit` of them. */
+export interface QueryResult { source: string; display: QueryDisplay; total: number; items: QueryItem[] }
+const displays: readonly QueryDisplay[] = ['list', 'table', 'count']
 
 const sources = ['upcoming', 'entities', 'claims', 'documents', 'tasks', 'events', 'proposals', 'pages', 'activity'] as const
 type Source = (typeof sources)[number]
@@ -31,6 +34,8 @@ export function evaluateWorkspaceQuery(snapshot: WorkspaceSnapshot, definition: 
   }
   const limit = definition.limit ?? 10
   if (typeof limit !== 'number' || !Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('Query limit must be between 1 and 100')
+  const display = definition.display ?? 'list'
+  if (!displays.includes(display as QueryDisplay)) throw new Error('Query display must be list, table, or count')
   if (definition.sort !== undefined && !sorts[source].includes(String(definition.sort))) throw new Error(`Unsupported ${source} sort`)
   const item = (kind: ResourceKind, id: string, title: string, detail: string, sortValue: string): QueryItem =>
     ({ uri: resourceUri({ kind, id }), kind, title, detail, sortValue })
@@ -54,9 +59,10 @@ export function evaluateWorkspaceQuery(snapshot: WorkspaceSnapshot, definition: 
               })
               : snapshot.pages.filter((page) => matches(page as unknown as Record<string, unknown>)).map((page) => item('page', page.id, page.title, 'Workspace page', page.title))
   const descending = definition.sort === 'recordedAt' || (definition.sort === undefined && (source === 'claims' || source === 'proposals' || source === 'activity'))
-  return { source, items: records.sort((a, b) => {
+  const sorted = records.sort((a, b) => {
     const left = definition.sort === 'title' ? a.title : a.sortValue
     const right = definition.sort === 'title' ? b.title : b.sortValue
     return descending ? right.localeCompare(left) : left.localeCompare(right)
-  }).slice(0, limit) }
+  })
+  return { source, display: display as QueryDisplay, total: sorted.length, items: sorted.slice(0, limit) }
 }

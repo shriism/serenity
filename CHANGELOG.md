@@ -7,6 +7,7 @@ Serenity's notable changes, newest first. The workspace format stays readable Ma
 - Search results show a snippet of where the words matched, with the matches highlighted.
 - Page queries can show a table or a count (`display: table` / `display: count`), and lists say how many more matched.
 - Empty live lists say how things get there, and the new-workspace Home shows the `[[wikilink]]` syntax literally.
+- Analyzing a document asks for reviewable structure: entities (checked against existing ones), sourced facts and relationships, a task per dated deliverable, and an event per scheduled session, without inventing unstated details. Suggestions citing a location (`syllabus.pdf, p. 2`) are grouped and linked with their document.
 - Appearance (dark, light, match system) and **Switch view of this tab** are commands, so they can be found in search and given shortcuts.
 - An entity's Timeline can be narrowed to facts, corrections, decisions, merges, AI suggestions, mentions, or plans.
 - **Search in a pane** (⌘⇧F / Ctrl+Shift+F, or **Keep results in a pane** from search) keeps results open with highlighted excerpts; results open in the neighboring pane.

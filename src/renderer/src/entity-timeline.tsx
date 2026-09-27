@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { ArrowUpRight, CalendarDays, GitMerge, Inbox, Link2, ListTodo, Pin, Undo2, X } from 'lucide-react'
 import type { WorkspaceSnapshot } from '../../shared/types'
 import { entityHistory, type HistoryKind } from '../../shared/entity-history'
+import { sourceDocument } from '../../shared/provenance'
 
 const icons: Record<HistoryKind, typeof Link2> = {
   claim: Link2, retraction: X, resolution: Pin, merge: GitMerge, unmerge: Undo2, proposal: Inbox, mention: ArrowUpRight, event: CalendarDays, task: ListTodo
@@ -43,8 +44,8 @@ export function EntityTimeline({ workspace, entityId, onOpenResource, onOpenSour
           : <strong className="timeline-title">{entry.title}</strong>}
         {entry.detail && <p>{entry.detail}</p>}
         {(entry.source || entry.origin) && <small>
-          {entry.source && (workspace.documents.some((document) => document.name === entry.source) ?
-            <button className="text-button" onClick={() => onOpenSource(entry.source!)}>From {entry.source} ↗</button> : <>From {entry.source}</>)}
+          {entry.source && (sourceDocument(entry.source, workspace.documents) ?
+            <button className="text-button" onClick={() => onOpenSource(sourceDocument(entry.source, workspace.documents)!)}>From {entry.source} ↗</button> : <>From {entry.source}</>)}
           {entry.source && entry.origin && ' · '}{entry.origin && origins[entry.origin]}
         </small>}
       </div>

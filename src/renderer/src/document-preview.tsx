@@ -3,12 +3,13 @@ import { ExternalLink, FileText } from 'lucide-react'
 import type { WorkspaceSnapshot } from '../../shared/types'
 import { documentOutline } from '../../shared/document-outline'
 import { ProposalCard, type ProposalActions } from './proposal-card'
+import { citesDocument } from '../../shared/provenance'
 
 // Rendering a whole book's text at once would freeze the pane; more can be revealed on request.
 const previewStep = 150000
 
 export function DocumentPreview({ name, workspace, onOpen, onError, ...actions }: ProposalActions & { name: string; workspace: WorkspaceSnapshot; onOpen(name: string): void; onError(message: string): void }) {
-  const suggestions = workspace.proposals.filter((item) => item.source === name)
+  const suggestions = workspace.proposals.filter((item) => citesDocument(item.source, name))
     .sort((a, b) => Number(b.status === 'pending') - Number(a.status === 'pending') || b.recordedAt.localeCompare(a.recordedAt))
   const pending = suggestions.filter((item) => item.status === 'pending').length
   const [content, setContent] = useState<string | null>(null)

@@ -4,6 +4,7 @@ import { basename, join } from 'node:path'
 import YAML from 'yaml'
 import { Workspace } from './workspace'
 import type { Autonomy, Provider, WorkspaceSnapshot } from '../shared/types'
+import { documentAnalysisPrompt } from '../shared/analysis-prompt'
 
 type Send = (workspace: Workspace, input: { text: string; provider: Provider; autonomy: Autonomy; retained: boolean; operation: 'document-analysis' }, signal?: AbortSignal) => Promise<WorkspaceSnapshot>
 
@@ -25,7 +26,7 @@ export async function analyzeChangedDocument(workspace: Workspace, filename: str
   if (processed[filename] === hash) return
   if (signal?.aborted) throw new Error('AI request cancelled')
   await send(workspace, {
-    text: `Analyze the newly added or changed document named "${filename}". Extract useful entities, facts, tasks, and events as proposals, with the document name as their source. Ask for clarification if identities are ambiguous.`,
+    text: documentAnalysisPrompt(filename, 'changed'),
     provider: snapshot.semanticProvider, autonomy: 'propose', retained: true, operation: 'document-analysis'
   }, signal)
   if (signal?.aborted) throw new Error('AI request cancelled')

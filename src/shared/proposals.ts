@@ -1,4 +1,5 @@
 import type { Proposal } from './types'
+import { sourceDocument } from './provenance'
 
 export interface ProposalSource { source: string; proposals: Proposal[]; pending: number }
 
@@ -6,9 +7,13 @@ export interface ProposalSource { source: string; proposals: Proposal[]; pending
  * Proposals grouped by where their evidence came from, so a document's suggestions can be checked against it together.
  * Sources with pending proposals come first, then by most recent activity; within a source, pending comes first.
  */
-export function proposalsBySource(proposals: readonly Proposal[]): ProposalSource[] {
+export function proposalsBySource(proposals: readonly Proposal[], documents: readonly { name: string }[] = []): ProposalSource[] {
   const groups = new Map<string, Proposal[]>()
-  for (const proposal of proposals) groups.set(proposal.source, [...(groups.get(proposal.source) ?? []), proposal])
+  // Suggestions citing a location in a document ("syllabus.pdf, p. 2") belong with that document.
+  for (const proposal of proposals) {
+    const source = sourceDocument(proposal.source, documents) ?? proposal.source
+    groups.set(source, [...(groups.get(source) ?? []), proposal])
+  }
   const latest = (items: Proposal[]): string => items.reduce((max, item) => item.recordedAt > max ? item.recordedAt : max, '')
   return [...groups].map(([source, items]) => ({
     source,

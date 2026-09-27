@@ -8,6 +8,7 @@ import { useAssistant } from './use-assistant'
 import { ErrorBoundary } from './error-boundary'
 import { workspaceActivity } from '../../shared/activity'
 import { scopeFromResults } from '../../shared/result-scope'
+import { documentAnalysisPrompt } from '../../shared/analysis-prompt'
 import { AppNavigation } from './navigation'
 import { builtinViews, type BuiltinViewContext } from './builtin-views'
 import { CommandPalette } from './command-palette'
@@ -542,7 +543,7 @@ function App() {
       onOpenResource: (uri, side) => { openResource(uri, { group: group.id, side }) }, onCommand: runCommand,
       onResolve: (id, accept) => { void resolveProposal(id, accept) }, onAttach: (id, entityId) => { void attachProposal(id, entityId) },
       onOpenSource: (name) => { void openDocument(name) }, onImport: () => { void importDocuments() }, onOpenDocument: (name) => { openDocumentTab(name, group.id) },
-      onAnalyze: (name) => { openDocumentTab(name, group.id); startConversation(`Analyze the imported document ${name}. Summarize it, identify useful knowledge about existing entities, and suggest claims with precise sources. Ask me to clarify any ambiguous identities.`) },
+      onAnalyze: (name) => { openDocumentTab(name, group.id); startConversation(documentAnalysisPrompt(name)) },
       entityId: tab?.kind === 'entity' ? tab.id : undefined, creatingEntity: group.creatingEntity,
       presentation: tab ? group.presentations[tabKey(tab)] : undefined,
       onPresentationChange: (id) => { if (tab) changePresentation(group.id, tab, id) },

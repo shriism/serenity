@@ -13,7 +13,7 @@ export function ReviewPanel({ workspace, onOpenResource, onUpdate, onError, ...a
   onUpdate(snapshot: WorkspaceSnapshot): void
   onError(message: string): void
 }) {
-  const sources = proposalsBySource(workspace.proposals)
+  const sources = proposalsBySource(workspace.proposals, workspace.documents)
   const [shownDuplicates, setShownDuplicates] = useState(12)
   const [shownDecisions, setShownDecisions] = useState(12)
   const [focusTarget, setFocusTarget] = useState<{ kind: 'decision' | 'candidate'; key: string; generation: number } | null>(null)

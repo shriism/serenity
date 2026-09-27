@@ -3,6 +3,7 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { Proposal, WorkspaceSnapshot } from '../../shared/types'
 import { identityCandidates } from '../../shared/identity'
+import { sourceDocument } from '../../shared/provenance'
 
 export interface ProposalActions {
   onResolve(id: string, accept: boolean): void
@@ -24,7 +25,7 @@ export function ProposalCard({ item, workspace, showSource = true, onResolve, on
     <h2>{item.kind === 'claim' ? `${workspace.entities.find((entity) => entity.id === item.subject)?.title ?? 'Unknown entity'} · ${item.key}` : item.title}</h2>
     <strong>{item.kind === 'claim' ? workspace.entities.find((entity) => entity.id === item.value)?.title ?? item.value : item.kind === 'entity' ? `Suggested category: ${item.type}` : item.kind === 'task' ? `Due ${item.due ?? 'not set'}` : `Starts ${item.start}`}</strong>
     {(showSource || (item.kind === 'claim' && item.confidence !== undefined)) && <p>{showSource ? `Source: ${item.source}` : ''}{showSource && item.kind === 'claim' && item.confidence !== undefined ? ' · ' : ''}{item.kind === 'claim' && item.confidence !== undefined ? `AI-estimated confidence: ${Math.round(item.confidence * 100)}%` : ''}</p>}
-    {showSource && workspace.documents.some((document) => document.name === item.source) && <button className="text-button" onClick={() => onOpenSource(item.source)}>Open source document ↗</button>}
+    {showSource && sourceDocument(item.source, workspace.documents) && <button className="text-button" onClick={() => onOpenSource(sourceDocument(item.source, workspace.documents)!)}>Open source document ↗</button>}
     {item.kind === 'entity' && item.body.trim() && <div className="review-context"><ReactMarkdown remarkPlugins={[remarkGfm]} components={{
       a: ({ children }) => <span className="preview-link">{children}</span>, img: ({ alt }) => <span>[Image: {alt || 'no description'}]</span>
     }}>{item.body}</ReactMarkdown></div>}

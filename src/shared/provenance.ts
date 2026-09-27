@@ -35,3 +35,8 @@ export function documentKnowledge(snapshot: WorkspaceSnapshot, name: string): Do
     dismissed: proposals.filter((item) => item.status === 'rejected').length
   }
 }
+
+/** The imported document a free-text source cites, if any; the longest matching name wins (`a.pdf` vs `a.pdf.txt`). */
+export function sourceDocument(source: string | undefined, documents: readonly { name: string }[]): string | null {
+  return documents.filter((document) => citesDocument(source, document.name)).sort((a, b) => b.name.length - a.name.length)[0]?.name ?? null
+}

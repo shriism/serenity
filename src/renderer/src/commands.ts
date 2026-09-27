@@ -1,4 +1,4 @@
-import { Activity, ArrowDown, ArrowLeft, ArrowLeftRight, ArrowRight, ArrowRightLeft, ArrowUp, CalendarDays, Columns2, Rows2, SquareX, MoveRight, FileText, Files, FolderOpen, House, Inbox, Link2, ListTodo, Maximize2, MessageCircle, PanelLeft, PanelRight, Plus, RotateCw, Search, Settings2 } from 'lucide-react'
+import { Layers, Monitor, Moon, Sun, Activity, ArrowDown, ArrowLeft, ArrowLeftRight, ArrowRight, ArrowRightLeft, ArrowUp, CalendarDays, Columns2, Rows2, SquareX, MoveRight, FileText, Files, FolderOpen, House, Inbox, Link2, ListTodo, Maximize2, MessageCircle, PanelLeft, PanelRight, Plus, RotateCw, Search, Settings2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { WorkspaceSnapshot } from '../../shared/types'
 import type { ModuleId } from '../../shared/modules'
@@ -25,6 +25,9 @@ export interface CommandHost {
   moveTabToOtherGroup(): void
   toggleAssistant(): void
   toggleAssistantExpansion(): void
+  setAppearance(theme: 'dark' | 'light' | 'system'): void
+  /** Shows the focused tab through its resource's next view, e.g. an entity's Timeline after its Profile. */
+  cyclePresentation(): void
   refresh(): void
 }
 
@@ -77,6 +80,10 @@ const builtins: CommandContribution[] = [
   { id: 'layout.focus-down', title: 'Focus pane below', icon: ArrowDown, keybinding: 'Mod+Alt+ArrowDown', run: (host) => host.focusPane('down') },
   { id: 'layout.move-tab', title: 'Move tab to next pane', icon: MoveRight, run: (host) => host.moveTabToOtherGroup() },
   { id: 'workspace.search', title: 'Search workspace', icon: Search, keybinding: 'Mod+K', whileTyping: true, hideInPalette: true, run: (host) => host.toggleSearch() },
+  { id: 'appearance.dark', title: 'Appearance: Dark', icon: Moon, run: (host) => host.setAppearance('dark') },
+  { id: 'appearance.light', title: 'Appearance: Light', icon: Sun, run: (host) => host.setAppearance('light') },
+  { id: 'appearance.system', title: 'Appearance: Match system', icon: Monitor, run: (host) => host.setAppearance('system') },
+  { id: 'presentation.next', title: 'Switch view of this tab', icon: Layers, run: (host) => host.cyclePresentation() },
   { id: 'workspace.refresh', title: 'Refresh files', icon: RotateCw, run: (host) => host.refresh() }
 ]
 

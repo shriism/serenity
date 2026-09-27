@@ -15,7 +15,7 @@ import { ThemeControl, useTheme } from './theme'
 import type { View } from './views'
 import { WorkspaceTabs } from './workspace-tabs'
 import { routeResource, tabKey, tabPath, tabTitle, type TabRef } from './resource-routing'
-import { presentationFor } from './presentations'
+import { presentationFor, presentations } from './presentations'
 import { activeTabOf, closeGroup, emptyGroup, enterView, moveTab, presentTab, presentView, findGroup, focusedGroup, initialWorkbench, nextGroupId, orderedGroups, pruneWorkbench, removeTab, restoreWorkbench, showTab, showView, shownUri, splitWorkbench, updateGroup, workbenchSession, type EditorGroup, type Workbench } from './workbench-groups'
 import { layoutGeometry, maxEditorGroups, neighborGroup, resizeSplit, type PaneDirection, type SplitDirection } from '../../shared/layout'
 import { PaneDivider, dropZoneAt, percentRect, tabDragType, type DropZone } from './pane-layout'
@@ -487,6 +487,14 @@ function App() {
     toggleNavigation: () => setLeftOpen((open) => !open),
     toggleAssistant: () => { setRightOpen((open) => !open); setAIExpanded(false) },
     toggleAssistantExpansion: () => { setRightOpen(true); setAIExpanded((expanded) => !expanded) },
+    setAppearance: (preference) => setTheme(preference),
+    cyclePresentation: () => {
+      const tab = activeTabOf(focused)
+      const options = tab ? presentations[tab.kind] : undefined
+      if (!tab || !options || options.length < 2) return
+      const current = presentationFor(tab.kind, focused.presentations[tabKey(tab)])
+      changePresentation(focused.id, tab, options[(options.findIndex((option) => option.id === current) + 1) % options.length].id)
+    },
     splitEditor: (direction) => splitPane(direction),
     closeEditorGroup: () => closeEditorGroup(),
     focusNextGroup: (step) => focusNextGroup(step),

@@ -203,6 +203,18 @@ try {
   assert.deepEqual(presented, { timeline: true, connections: 'Alex', profile: 'Alex' }, 'An entity should switch between its profile, timeline, and connections views')
   const keyboardSwitch = await evaluate(pageUrl, `(async () => { const list = document.querySelector('.presentation-switcher'); list?.querySelector('[aria-selected="true"]')?.focus(); list?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); for (let i = 0; i < 30; i++) { if (document.querySelector('.entity-timeline')) break; await new Promise((resolve) => setTimeout(resolve, 50)) } await new Promise((resolve) => requestAnimationFrame(resolve)); const focused = document.activeElement?.textContent; list?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })); for (let i = 0; i < 30; i++) { if (document.querySelector('.editor .title-input')) break; await new Promise((resolve) => setTimeout(resolve, 50)) } return { focused, profile: Boolean(document.querySelector('.editor .title-input')) } })()`)
   assert.deepEqual(keyboardSwitch, { focused: 'Timeline', profile: true }, 'Arrow keys should move between an entity’s views and keep focus on the chosen one')
+  const cycled = await evaluate(pageUrl, `(async () => {
+    const wait = async (test) => { for (let i = 0; i < 40; i++) { const value = test(); if (value) return value; await new Promise((resolve) => setTimeout(resolve, 50)) } return null }
+    document.querySelector('.topbar-search')?.click()
+    const input = await wait(() => document.querySelector('.palette-input input'))
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Switch view'); input.dispatchEvent(new Event('input', { bubbles: true }))
+    ;(await wait(() => [...document.querySelectorAll('.palette-results button')].find((item) => item.textContent?.includes('Switch view of this tab'))))?.click()
+    const timeline = Boolean(await wait(() => document.querySelector('.entity-timeline')))
+    ;[...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === 'Profile')?.click()
+    await wait(() => document.querySelector('.editor .title-input'))
+    return timeline
+  })()`)
+  assert.equal(cycled, true, 'Switch view of this tab should move an entity from its profile to its timeline')
   const citedConversation = '123e4567-e89b-42d3-a456-426614174095'
   await writeFile(join(workspace, 'conversations', `${citedConversation}.yaml`), YAML.stringify({ id: citedConversation, title: 'Cited answer', retained: true, messages: [
     { id: 'm1', role: 'user', text: 'When is Alex’s birthday?', recordedAt: new Date().toISOString() },

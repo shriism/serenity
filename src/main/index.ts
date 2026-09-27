@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { externalLink } from '../shared/external-links'
 import { fileURLToPath } from 'node:url'
-import chokidar, { type FSWatcher } from 'chokidar'
+import { watchWorkspace } from './workspace-watcher'
 import { Workspace } from './workspace'
 import { sendMessage } from './conversation'
 import { credentialStatus, saveCredential } from './credentials'
@@ -10,14 +10,17 @@ import { buildSemanticIndex, rankSemanticIndex } from './semantic-index'
 import { askProvider } from './providers'
 import { analyzeChangedDocument } from './document-analysis'
 import { extractDocument } from './documents'
-import { basename, dirname, join, sep } from 'node:path'
+import { stat } from 'node:fs/promises'
+import { basename, join } from 'node:path'
 import type { Autonomy, CalendarEvent, Claim, Entity, Provider, ReadScope, TaskItem, WorkflowPermissions, WorkbenchSession, WorkspacePage, WorkspaceSnapshot } from '../shared/types'
 import type { ModuleId } from '../shared/modules'
 
 let window: BrowserWindow | null = null
 let workspace: Workspace | null = null
-let watcher: FSWatcher | null = null
+let watcher: { close(): void } | null = null
 let editorDirty = false
+/** Times of recent renderer crashes, to stop reloading a window that fails every time it starts. */
+let rendererCrashes: number[] = []
 let closePromptOpen = false
 let closeApproved = false
 let activeRequests = 0
@@ -114,29 +117,28 @@ async function openWorkspace(path: string): Promise<WorkspaceSnapshot> {
   const next = new Workspace(path)
   await next.initialize()
   workspace = next
-  const settingsDirectory = join(next.path, '.serenity')
-  watcher = chokidar.watch([...next.directories.slice(0, 8), next.directories[9], next.pagesDirectory, join(next.path, 'archive'), settingsDirectory], {
-    ignoreInitial: true,
-    ignored: (watchedPath) => watchedPath.startsWith(`${settingsDirectory}${sep}`) &&
-      !['modules.yaml', 'semantic-provider.yaml', 'workbench.yaml'].includes(basename(watchedPath)),
-    awaitWriteFinish: { stabilityThreshold: 250, pollInterval: 100 }
-  })
-  watcher.on('all', (event, changedPath) => {
+  const settingsDirectory = '.serenity'
+  watcher = watchWorkspace(next.path, (paths) => {
+    if (workspace !== next) return
     next.markDirty()
-    if (dirname(changedPath) === settingsDirectory) {
-      if (basename(changedPath) === 'workbench.yaml') { window?.webContents.send('workspace:changed'); return }
-      void next.snapshot().then((snapshot) => {
-        if (basename(changedPath) === 'semantic-provider.yaml' || !snapshot.modules.semanticIndex) pauseBackgroundIndex()
-        if (snapshot.modules.semanticIndex) scheduleSemanticIndex(next)
-        if (!snapshot.modules.documentAnalysis) pauseDocumentAnalysis()
-        window?.webContents.send('workspace:changed')
-      }).catch((error) => window?.webContents.send('semantic:index-error', String(error)))
-      return
+    const settings = paths.filter((path) => path.split(/[\\/]/)[0] === settingsDirectory).map((path) => basename(path))
+    const content = paths.filter((path) => path.split(/[\\/]/)[0] !== settingsDirectory)
+    if (content.length) {
+      scheduleSemanticIndex(next)
+      // Added or changed documents (not removals) are candidates for automatic analysis.
+      for (const path of content) {
+        const parts = path.split(/[\\/]/)
+        if (parts[0] === 'documents' && parts.length === 2) void stat(join(next.path, path)).then((info) => { if (info.isFile() && workspace === next) queueDocumentAnalysis(next, parts[1]) }, () => undefined)
+      }
     }
-    window?.webContents.send('workspace:changed')
-    scheduleSemanticIndex(next)
-    if ((event === 'add' || event === 'change') && dirname(changedPath) === next.directories[2]) queueDocumentAnalysis(next, basename(changedPath))
-  })
+    if (!settings.some((name) => name !== 'workbench.yaml')) { window?.webContents.send('workspace:changed'); return }
+    void next.snapshot().then((snapshot) => {
+      if (settings.includes('semantic-provider.yaml') || !snapshot.modules.semanticIndex) pauseBackgroundIndex()
+      if (snapshot.modules.semanticIndex) scheduleSemanticIndex(next)
+      if (!snapshot.modules.documentAnalysis) pauseDocumentAnalysis()
+      window?.webContents.send('workspace:changed')
+    }).catch((error) => window?.webContents.send('semantic:index-error', String(error)))
+  }, (error) => console.error('Workspace watcher stopped reporting changes:', error))
   scheduleSemanticIndex(next)
   return next.snapshot()
 }
@@ -170,10 +172,20 @@ function createWindow(): void {
     const current = window
     if (!current || current.isDestroyed()) return
     editorDirty = false
-    if (background) { current.webContents.reload(); return }
-    void dialog.showMessageBox(current, { type: 'warning', buttons: ['Reload'], defaultId: 0, message: 'Serenity’s window stopped unexpectedly',
-      detail: 'Your workspace files are safe. Text you had not saved in an open editor may be lost.' })
-      .then(() => { if (!current.isDestroyed()) current.webContents.reload() })
+    // A renderer that fails as it starts would otherwise be reloaded forever.
+    const now = Date.now()
+    rendererCrashes = [...rendererCrashes.filter((at) => now - at < 60000), now]
+    const repeated = rendererCrashes.length >= 3
+    if (background) { if (!repeated) current.webContents.reload(); else console.error('Renderer keeps failing; not reloading again'); return }
+    void dialog.showMessageBox(current, { type: 'warning', buttons: repeated ? ['Quit', 'Try again'] : ['Reload'], defaultId: repeated ? 1 : 0, cancelId: 0,
+      message: repeated ? 'Serenity’s window keeps stopping' : 'Serenity’s window stopped unexpectedly',
+      detail: `Your workspace files are safe. Text you had not saved in an open editor may be lost.${repeated ? ` The window failed ${rendererCrashes.length} times in the last minute (${details.reason}).` : ''}` })
+      .then(({ response }) => {
+        if (current.isDestroyed()) return
+        if (repeated && response === 0) { closeApproved = true; app.quit(); return }
+        if (repeated) rendererCrashes = []
+        current.webContents.reload()
+      })
   })
   window.on('close', (event) => {
     if (closeApproved || (!editorDirty && !activeRequests) || !window) return

@@ -32,7 +32,7 @@ Principles that should survive every implementation change:
 | `tests/` | Node tests for data invariants, AI scope, workflows, pages and registries; `desktop-smoke.ts` exercises Electron and a temporary workspace. |
 | `.github/workflows/desktop.yml` | Typecheck, unit tests, package and packaged-app smoke on macOS, Windows and Linux. |
 | `assets/icon.svg`, `scripts/`, `package.json` | App identity, generated platform icons, Node scripts, dependencies and packaging configuration. |
-| `README.md`, `SERENITY.md`, `ARCHITECTURE.md`, `CONTEXT.md` | How to run it; original vision/decisions; technical invariants; this handoff and roadmap. |
+| `README.md`, `SERENITY.md`, `ARCHITECTURE.md`, `CONTEXT.md`, `CHANGELOG.md` | How to run it; original vision/decisions; technical invariants; this handoff and roadmap; user-visible changes per release. |
 
 `out/`, `release/`, `build/icons/`, and `node_modules/` are generated artifacts or dependencies, not the authored product source.
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
-import { ArrowRight, CalendarDays, FileText, Link2, ListTodo, Search, Sparkles, X } from 'lucide-react'
+import { ArrowRight, CalendarDays, FileText, Link2, ListTodo, MessageCircle, Search, Sparkles, X } from 'lucide-react'
 import type { Provider, SearchResult } from '../../shared/types'
 import type { CommandContribution } from './commands'
 
@@ -16,6 +16,8 @@ interface Props {
   onSelect(result: SearchResult, side: boolean): void
   onAISearch(): void
   onSavedSearch(): void
+  /** Offered when results point to entities or documents: a conversation limited to them. */
+  onAskAboutResults?(): void
   onCommand(id: string): void
   shortcutFor(id: string): string | undefined
 }
@@ -79,6 +81,7 @@ export function CommandPalette(props: Props) {
         {props.query.trim() && <div className="palette-actions">
           <button onClick={props.onAISearch} disabled={props.searching}><Sparkles size={16}/>{props.searching ? 'Finding connections…' : `Search meaning with ${props.provider}`}<ArrowRight size={15}/></button>
           {props.savedIndexEnabled && <button onClick={props.onSavedSearch}><Link2 size={16}/>Search saved concepts offline<ArrowRight size={15}/></button>}
+          {props.onAskAboutResults && <button onClick={props.onAskAboutResults}><MessageCircle size={16}/>Ask about these results<ArrowRight size={15}/></button>}
         </div>}
         {entries.length > 0 ? <div className="palette-results">{entries.map((entry, index) => {
           const Icon = entry.type === 'command' ? entry.command.icon : icons[entry.result.kind]

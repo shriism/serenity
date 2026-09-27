@@ -36,9 +36,11 @@ export function useAssistant({ workspace, setWorkspace, refresh, setError, conte
     setReadScope(item?.readScope ?? freshScope())
   }
 
-  function startConversation(prompt = ''): void {
+  /** Starts a new conversation; with `scope`, it may read only those entities and documents. */
+  function startConversation(prompt = '', scope?: Pick<ReadScope, 'entityIds' | 'documentNames'>): void {
     if (message.trim() && !window.confirm('Discard your unsent message?')) return
     restoreConversation(undefined)
+    if (scope) setReadScope({ ...freshScope(), mode: 'selected', entityIds: scope.entityIds, documentNames: scope.documentNames })
     setMessage(prompt)
     reveal(true)
   }

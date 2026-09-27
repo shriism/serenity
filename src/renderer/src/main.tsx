@@ -7,6 +7,7 @@ import { ConversationList } from './conversation-list'
 import { useAssistant } from './use-assistant'
 import { ErrorBoundary } from './error-boundary'
 import { workspaceActivity } from '../../shared/activity'
+import { scopeFromResults } from '../../shared/result-scope'
 import { AppNavigation } from './navigation'
 import { builtinViews, type BuiltinViewContext } from './builtin-views'
 import { CommandPalette } from './command-palette'
@@ -610,6 +611,8 @@ function App() {
     </>
   }
 
+  const askScope = workspace && results?.length ? scopeFromResults(results, workspace) : null
+
   return <div className={`app serenity-studio ${leftOpen ? 'dock-open' : 'left-collapsed'} ${rightOpen ? '' : 'right-collapsed'} ${aiExpanded && rightOpen ? 'ai-expanded' : ''}`}>
     <aside className="sidebar" aria-label="Workspace sidebar">
       <div className="sidebar-inner">
@@ -665,7 +668,7 @@ function App() {
       </ErrorBoundary>
     </aside> : <aside className="assistant-rail" aria-label="AI assistant collapsed"><button onClick={() => runCommand('assistant.toggle')} title={withShortcut('Expand AI sidebar', 'assistant.toggle')} aria-label="Expand AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')}><PanelRightOpen size={20}/></button><span>AI</span></aside>)}
     </div>
-    <CommandPalette open={paletteOpen && Boolean(workspace)} query={query} results={results} searching={searching} provider={assistant.provider} savedIndexEnabled={Boolean(workspace?.modules.semanticIndex)} commands={commands.filter((command) => !command.hideInPalette)} shortcutFor={shortcut} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult} onAISearch={() => void searchSemantically()} onSavedSearch={() => void searchSavedConcepts()} onCommand={runCommand} />
+    <CommandPalette open={paletteOpen && Boolean(workspace)} query={query} results={results} searching={searching} provider={assistant.provider} savedIndexEnabled={Boolean(workspace?.modules.semanticIndex)} commands={commands.filter((command) => !command.hideInPalette)} shortcutFor={shortcut} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult} onAISearch={() => void searchSemantically()} onSavedSearch={() => void searchSavedConcepts()} onAskAboutResults={askScope && (askScope.entityIds.length || askScope.documentNames.length) ? () => { closePalette(); startConversation(`About “${query.trim()}”: `, askScope) } : undefined} onCommand={runCommand} />
   </div>
 }
 

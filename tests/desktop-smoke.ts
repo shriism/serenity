@@ -237,6 +237,23 @@ try {
   assert.equal(paletteResults, true, 'The command palette should search workspace claims')
   const excerpt = await evaluate(pageUrl, `(async () => { if (!document.querySelector('.palette-input input')) document.querySelector('.topbar-search')?.click(); let input = null; for (let i = 0; i < 30 && !input; i++) { input = document.querySelector('.palette-input input'); await new Promise((resolve) => setTimeout(resolve, 50)) } if (!input) return 'no palette'; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'club'); input.dispatchEvent(new Event('input', { bubbles: true })); let mark = null; for (let i = 0; i < 40 && !mark; i++) { mark = document.querySelector('.palette-excerpt mark')?.textContent ?? null; if (!mark) await new Promise((resolve) => setTimeout(resolve, 100)) } window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 100)); return mark })()`)
   assert.match(String(excerpt), /club/i, 'Search results should show and highlight where the words matched')
+  const askedAbout = await evaluate(pageUrl, `(async () => {
+    const wait = async (test) => { for (let i = 0; i < 40; i++) { const value = test(); if (value) return value; await new Promise((resolve) => setTimeout(resolve, 100)) } return null }
+    document.querySelector('.topbar-search')?.click()
+    const input = await wait(() => document.querySelector('.palette-input input'))
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'club'); input.dispatchEvent(new Event('input', { bubbles: true }))
+    ;(await wait(() => [...document.querySelectorAll('.palette-actions button')].find((item) => item.textContent?.includes('Ask about these results'))))?.click()
+    const scope = await wait(() => document.querySelector('select[aria-label="AI read scope"]')?.value === 'selected' && 'selected')
+    const chip = document.querySelector('.read-scope-items .module-link-chip')?.textContent ?? null
+    const box = document.querySelector('textarea[aria-label="Message"]')
+    const prompt = box?.value ?? null
+    // Leave the assistant as it was, so later steps are not asked to discard a draft.
+    if (box) { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, ''); box.dispatchEvent(new Event('input', { bubbles: true })) }
+    const select = document.querySelector('select[aria-label="AI read scope"]')
+    if (select) { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, 'workspace'); select.dispatchEvent(new Event('change', { bubbles: true })) }
+    return { scope, chip: chip?.replace('×', ''), prompt }
+  })()`)
+  assert.deepEqual(askedAbout, { scope: 'selected', chip: 'Alex', prompt: 'About “club”: ' }, 'Asking about search results should start a conversation limited to them')
   const openedClaim = await evaluate(pageUrl, `(async () => { await new Promise((resolve) => setTimeout(resolve, 150)); [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Home'))?.click(); await new Promise((resolve) => setTimeout(resolve, 150)); document.querySelector('.topbar-search')?.click(); for (let i = 0; i < 30; i++) { const input = document.querySelector('.palette-input input'); if (input) { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(input, 'birthday'); input.dispatchEvent(new Event('input', { bubbles: true })); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const match = [...document.querySelectorAll('.palette-results button')].find((item) => item.textContent?.includes('birthday')); if (match) { match.click(); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const title = document.querySelector('.editor .title-input')?.value; if (title === 'Alex') return title; await new Promise((resolve) => setTimeout(resolve, 100)) } return { view: document.querySelector('.main')?.textContent?.slice(0, 150), palette: Boolean(document.querySelector('.command-palette')) } })()`)
   assert.equal(openedClaim, 'Alex', 'Selecting a claim search result should open its entity')
   const pdfResults = await evaluate(pageUrl, `window.serenity.search('QuarterlyCometResearch').then((items) => items.map((item) => item.kind))`) as string[]

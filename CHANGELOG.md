@@ -32,7 +32,8 @@ The desktop workbench for macOS, Windows, and Linux, built on the September 2026
 - Snapshots reuse unchanged files and are ordered, so slower replies never overwrite newer state; a 2,000-entity, 8,000-claim workspace refreshes in about 140 ms.
 - Revision-checked writes are serialized per file, and merges, archives, identity decisions, wikilink updates, and module switches coordinate with editor saves so concurrent edits cannot silently overwrite one another.
 - Damaged session, settings, semantic-index, and document-analysis files are preserved beside a fresh start instead of being overwritten.
-- A view that fails to render is contained to its pane; a crashed window reloads into the same workspace.
+- A view that fails to render is contained to its pane; a crashed window reloads into the same workspace, and a window that keeps failing is not reloaded in a loop.
+- Large workspaces open and stay responsive: the file watcher uses one recursive watch instead of a handle per file (a workspace of about ten thousand files previously could not open its window), wikilinks resolve through a title index, and the search index is rebuilt in the background. `npm run perf:desktop` checks launch, navigation, typing, and search against budgets on a 2,000-entity workspace.
 
 ### Accessibility
 

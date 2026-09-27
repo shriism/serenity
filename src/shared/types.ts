@@ -233,6 +233,8 @@ export interface SearchResult {
   id: string
   title: string
   detail: string
+  /** Text around the match, with matched words between U+0001 and U+0002; absent when only the title matched. */
+  excerpt?: string
 }
 
 export interface SerenityAPI {

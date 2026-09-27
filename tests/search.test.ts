@@ -45,3 +45,17 @@ test('concurrent searches share one index rebuild and a change during it is pick
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
+
+test('search results show where the words matched', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-search-excerpt-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    await workspace.saveEntity({ id: '', title: 'Robotics Club', type: 'group', body: 'We meet on Thursdays to build small rovers for the regional competition.' })
+    const [club] = await workspace.search('rovers')
+    assert.equal(club.title, 'Robotics Club')
+    assert.match(club.excerpt ?? '', /\u0001rovers\u0002/)
+    assert.equal((await workspace.search('robotics'))[0].excerpt, undefined, 'a title-only match needs no excerpt')
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})

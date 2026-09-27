@@ -435,3 +435,5 @@
 .serenity-studio .settings-about h2 { font-size: 15px; font-weight: 600; }
 .serenity-studio .settings-about p { user-select: text; font-size: 12px; }
 .serenity-studio .settings-about small { color: var(--subtle); font-size: 11px; }
+.palette-excerpt { display: block; margin-top: 3px; overflow: hidden; color: var(--muted); font-size: 11px; white-space: nowrap; text-overflow: ellipsis; }
+.palette-excerpt mark { background: color-mix(in srgb, var(--accent) 28%, transparent); color: var(--text); border-radius: 3px; padding: 0 1px; }

@@ -960,9 +960,12 @@ export class Workspace {
     if (!words.length) return []
     const terms = words.slice(0, 16).map((word) => `"${word.replaceAll('"', '""')}"*`)
     // Titles weigh more than details and body text, and records containing every word come before those with some.
-    const select = this.index.prepare('SELECT kind, id, title, detail FROM records WHERE records MATCH ? ORDER BY bm25(records, 0, 0, 8, 2, 1) LIMIT 100')
-    const all = terms.length > 1 ? select.all(terms.join(' AND ')) as unknown as SearchResult[] : []
-    return rankSearchResults(query, [...all, ...select.all(terms.join(' OR ')) as unknown as SearchResult[]]).slice(0, 100)
+    const select = this.index.prepare("SELECT kind, id, title, detail, snippet(records, 4, char(1), char(2), '…', 14) AS excerpt FROM records WHERE records MATCH ? ORDER BY bm25(records, 0, 0, 8, 2, 1) LIMIT 100")
+    const all = terms.length > 1 ? select.all(terms.join(' AND ')) : []
+    // An excerpt helps only when it shows where the words matched; otherwise the title already explains the result.
+    const withExcerpts = (rows: unknown[]): SearchResult[] => (rows as (SearchResult & { excerpt?: string | null })[]).map(({ excerpt, ...result }) =>
+      excerpt && excerpt.includes('\u0001') ? { ...result, excerpt: excerpt.replace(/\s+/g, ' ').trim() } : result)
+    return rankSearchResults(query, [...withExcerpts(all), ...withExcerpts(select.all(terms.join(' OR ')))]).slice(0, 100)
   }
 
   async saveConversation(conversation: Conversation): Promise<void> {

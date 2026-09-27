@@ -22,6 +22,12 @@ interface Props {
 
 const icons = { entity: Link2, claim: Link2, document: FileText, task: ListTodo, event: CalendarDays, page: FileText }
 
+/** Renders a search excerpt, emphasizing the words the index marked with U+0001 … U+0002. */
+function highlighted(excerpt: string) {
+  return excerpt.split(/(\u0001[^\u0002]*\u0002)/).map((part, index) =>
+    part.startsWith('\u0001') ? <mark key={index}>{part.slice(1, -1)}</mark> : part)
+}
+
 export function CommandPalette(props: Props) {
   const input = useRef<HTMLInputElement>(null)
   const dialog = useRef<HTMLDivElement>(null)
@@ -80,7 +86,8 @@ export function CommandPalette(props: Props) {
           const detail = entry.type === 'command' ? ['Command', props.shortcutFor(entry.command.id)].filter(Boolean).join(' · ') : entry.result.detail
           return <button key={entry.type === 'command' ? entry.command.id : `${entry.result.kind}-${entry.result.id}-${index}`}
             className={index === active ? 'active' : ''} onMouseEnter={() => setActive(index)} onClick={(event) => choose(index, event.metaKey || event.ctrlKey)}>
-            <span className="palette-result-icon"><Icon size={17}/></span><span><strong>{title}</strong><small>{detail}</small></span><ArrowRight size={15}/>
+            <span className="palette-result-icon"><Icon size={17}/></span><span><strong>{title}</strong><small>{detail}</small>
+              {entry.type === 'result' && entry.result.excerpt && <span className="palette-excerpt">{highlighted(entry.result.excerpt)}</span>}</span><ArrowRight size={15}/>
           </button>
         })}</div> : <div className="palette-empty">No local matches yet. Try another phrase or search meaning with AI.</div>}
       </div>

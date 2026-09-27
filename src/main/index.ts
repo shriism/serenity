@@ -153,7 +153,8 @@ async function openWorkspace(path: string): Promise<WorkspaceSnapshot> {
     }).catch((error) => window?.webContents.send('semantic:index-error', String(error)))
   }, (error) => console.error('Workspace watcher stopped reporting changes:', error))
   scheduleSemanticIndex(next)
-  warmSearchIndex(next, 500)
+  // Early enough to be ready for a first search, late enough not to compete with opening the window.
+  warmSearchIndex(next, 4000)
   return next.snapshot()
 }
 

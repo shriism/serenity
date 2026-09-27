@@ -456,3 +456,4 @@
 .serenity-studio .search-view-results span { min-width: 0; flex: 1; }
 .serenity-studio .search-view-results strong { display: block; font-size: 13px; }
 .serenity-studio .search-view-results small { display: block; color: var(--subtle); font-size: 11px; }
+.serenity-studio .timeline-filters { margin-top: 16px; }

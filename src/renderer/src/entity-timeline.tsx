@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react'
 import { ArrowUpRight, CalendarDays, GitMerge, Inbox, Link2, ListTodo, Pin, Undo2, X } from 'lucide-react'
 import type { WorkspaceSnapshot } from '../../shared/types'
 import { entityHistory, type HistoryKind } from '../../shared/entity-history'
@@ -5,6 +6,13 @@ import { entityHistory, type HistoryKind } from '../../shared/entity-history'
 const icons: Record<HistoryKind, typeof Link2> = {
   claim: Link2, retraction: X, resolution: Pin, merge: GitMerge, unmerge: Undo2, proposal: Inbox, mention: ArrowUpRight, event: CalendarDays, task: ListTodo
 }
+// Filters group the record's kinds as a person thinks of them.
+const timelineFilters: { id: string; label: string; kinds: HistoryKind[] }[] = [
+  { id: 'facts', label: 'Facts', kinds: ['claim'] }, { id: 'corrections', label: 'Corrections', kinds: ['retraction'] },
+  { id: 'decisions', label: 'Decisions', kinds: ['resolution'] }, { id: 'merges', label: 'Merges', kinds: ['merge', 'unmerge'] },
+  { id: 'suggestions', label: 'AI suggestions', kinds: ['proposal'] }, { id: 'mentions', label: 'Mentions', kinds: ['mention'] },
+  { id: 'plans', label: 'Plans', kinds: ['event', 'task'] }
+]
 const origins = { human: 'direct statement', 'ai-statement': 'AI extraction', 'ai-inference': 'AI inference' }
 
 /** How knowledge about an entity accumulated and changed, with every correction kept in place. */
@@ -15,7 +23,12 @@ export function EntityTimeline({ workspace, entityId, onOpenResource, onOpenSour
   onOpenSource(name: string): void
 }) {
   const entity = workspace.entities.find((item) => item.id === entityId)
-  const entries = entityHistory(workspace, entityId)
+  const all = useMemo(() => entityHistory(workspace, entityId), [workspace, entityId])
+  const [shown, setShown] = useState<ReadonlySet<string>>(new Set())
+  const available = timelineFilters.filter((filter) => all.some((entry) => filter.kinds.includes(entry.kind)))
+  const wanted = new Set(timelineFilters.filter((filter) => shown.has(filter.id)).flatMap((filter) => filter.kinds))
+  const entries = wanted.size ? all.filter((entry) => wanted.has(entry.kind)) : all
+  const toggle = (id: string): void => setShown((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next })
   const upcoming = entries.filter((entry) => entry.upcoming)
   const past = entries.filter((entry) => !entry.upcoming)
   const day = (at: string): string => at.slice(0, 10)
@@ -40,7 +53,10 @@ export function EntityTimeline({ workspace, entityId, onOpenResource, onOpenSour
   return <section className="page entity-timeline" aria-label={`${entity?.title ?? 'Entity'} timeline`}>
     <h1>{entity?.title}</h1>
     <p>How what you know about {entity?.title ?? 'this'} was recorded and corrected. Retracted and replaced claims stay in the record.</p>
+    {available.length > 1 && <div className="library-types timeline-filters" role="group" aria-label="Show only">
+      {available.map((filter) => <button key={filter.id} className={shown.has(filter.id) ? 'active' : ''} aria-pressed={shown.has(filter.id)} onClick={() => toggle(filter.id)}>{filter.label}</button>)}
+    </div>}
     {upcoming.length > 0 && <><h2>Coming up</h2>{render([...upcoming].reverse())}</>}
-    {past.length > 0 ? <><h2>History</h2>{render(past)}</> : <p className="hint">Nothing recorded about {entity?.title ?? 'this entity'} yet.</p>}
+    {past.length > 0 ? <><h2>History</h2>{render(past)}</> : <p className="hint">{all.length ? 'Nothing of these kinds yet.' : `Nothing recorded about ${entity?.title ?? 'this entity'} yet.`}</p>}
   </section>
 }

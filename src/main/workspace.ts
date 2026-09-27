@@ -169,6 +169,7 @@ export class Workspace {
   private ephemeral = new Map<string, Conversation>()
   private index: DatabaseSync | null = null
   private indexDirty = true
+  private indexing: Promise<void> | null = null
 
   private snapshotGeneration = 0
   private identityMutation: Promise<void> = Promise.resolve()
@@ -887,8 +888,18 @@ export class Workspace {
     return text
   }
 
-  async search(term: string): Promise<SearchResult[]> {
-    const query = requiredText(term, 'Search')
+  /**
+   * Brings the full-text index up to date with the workspace. Concurrent callers share one rebuild, and a change that
+   * arrives during a rebuild triggers another, so the index never settles on stale content.
+   */
+  async refreshSearchIndex(): Promise<void> {
+    while (this.indexDirty || !this.index) {
+      this.indexing ??= this.rebuildSearchIndex().finally(() => { this.indexing = null })
+      await this.indexing
+    }
+  }
+
+  private async rebuildSearchIndex(): Promise<void> {
     if (!this.index) {
       const path = join(this.path, '.serenity', 'index.sqlite')
       try {
@@ -907,37 +918,44 @@ export class Workspace {
         this.markDirty()
       }
     }
-    if (this.indexDirty) {
-      const snapshot = await this.snapshot()
-      const insert = this.index.prepare('INSERT INTO records (id, kind, title, detail, content) VALUES (?, ?, ?, ?, ?)')
-      this.index.exec('BEGIN TRANSACTION')
-      try {
-        this.index.exec('DELETE FROM records')
-        for (const page of snapshot.pages) insert.run(page.id, 'page', page.title, 'Workspace page', page.body)
-        for (const entity of snapshot.entities) insert.run(entity.id, 'entity', entity.title, entity.type, `${entity.body} ${JSON.stringify(entity.metadata ?? {})}`)
-        for (const claim of snapshot.claims.filter((item) => item.status !== 'retracted')) {
-          const targetName = snapshot.entities.find((entity) => entity.id === claim.value)?.title ?? claim.value
-          const context = claim.isCurrent ? 'Current' : claim.isCurrent === false ? 'Historical alternative' : 'Sourced claim'
-          insert.run(claim.subject, 'claim', `${claim.key}: ${targetName}`, `${context} · ${claim.source}`, `${targetName} ${claim.value} ${JSON.stringify(claim.metadata ?? {})}`)
-        }
-        if (snapshot.modules.tasks) {
-          for (const task of snapshot.tasks) insert.run(task.id, 'task', task.title, task.due ?? 'Undated task', `${task.notes} ${JSON.stringify(task.metadata ?? {})} ${task.relatedEntityIds.map((id) => snapshot.entities.find((entity) => entity.id === id)?.title ?? id).join(' ')}`)
-        }
-        if (snapshot.modules.calendar) {
-          for (const event of snapshot.events) insert.run(event.id, 'event', event.title, event.start, `${event.notes} ${JSON.stringify(event.metadata ?? {})} ${event.relatedEntityIds.map((id) => snapshot.entities.find((entity) => entity.id === id)?.title ?? id).join(' ')}`)
-        }
-        for (const document of snapshot.documents) {
-          let text = ''
-          try { text = await this.documentText(document.name) } catch { /* unsupported or unreadable document remains in the list */ }
-          insert.run(document.name, 'document', document.name, 'Imported document', text)
-        }
-        this.index.exec('COMMIT')
-        this.indexDirty = false
-      } catch (error) {
-        this.index.exec('ROLLBACK')
-        throw error
+    if (!this.index) return
+    this.indexDirty = false
+    const snapshot = await this.snapshot()
+    const titles = new Map(snapshot.entities.map((entity) => [entity.id, entity.title]))
+    const insert = this.index.prepare('INSERT INTO records (id, kind, title, detail, content) VALUES (?, ?, ?, ?, ?)')
+    this.index.exec('BEGIN TRANSACTION')
+    try {
+      this.index.exec('DELETE FROM records')
+      for (const page of snapshot.pages) insert.run(page.id, 'page', page.title, 'Workspace page', page.body)
+      for (const entity of snapshot.entities) insert.run(entity.id, 'entity', entity.title, entity.type, `${entity.body} ${JSON.stringify(entity.metadata ?? {})}`)
+      for (const claim of snapshot.claims.filter((item) => item.status !== 'retracted')) {
+        const targetName = titles.get(claim.value) ?? claim.value
+        const context = claim.isCurrent ? 'Current' : claim.isCurrent === false ? 'Historical alternative' : 'Sourced claim'
+        insert.run(claim.subject, 'claim', `${claim.key}: ${targetName}`, `${context} · ${claim.source}`, `${targetName} ${claim.value} ${JSON.stringify(claim.metadata ?? {})}`)
       }
+      if (snapshot.modules.tasks) {
+        for (const task of snapshot.tasks) insert.run(task.id, 'task', task.title, task.due ?? 'Undated task', `${task.notes} ${JSON.stringify(task.metadata ?? {})} ${task.relatedEntityIds.map((id) => snapshot.entities.find((entity) => entity.id === id)?.title ?? id).join(' ')}`)
+      }
+      if (snapshot.modules.calendar) {
+        for (const event of snapshot.events) insert.run(event.id, 'event', event.title, event.start, `${event.notes} ${JSON.stringify(event.metadata ?? {})} ${event.relatedEntityIds.map((id) => snapshot.entities.find((entity) => entity.id === id)?.title ?? id).join(' ')}`)
+      }
+      for (const document of snapshot.documents) {
+        let text = ''
+        try { text = await this.documentText(document.name) } catch { /* unsupported or unreadable document remains in the list */ }
+        insert.run(document.name, 'document', document.name, 'Imported document', text)
+      }
+      this.index.exec('COMMIT')
+    } catch (error) {
+      this.index.exec('ROLLBACK')
+      this.indexDirty = true
+      throw error
     }
+  }
+
+  async search(term: string): Promise<SearchResult[]> {
+    const query = requiredText(term, 'Search')
+    await this.refreshSearchIndex()
+    if (!this.index) return []
     const words = query.toLowerCase().match(/[\p{L}\p{N}]+/gu)?.filter((word) => word.length > 1 && !new Set(['what', 'where', 'when', 'which', 'with', 'about', 'from', 'should', 'would']).has(word)) ?? []
     if (!words.length) return []
     const terms = words.slice(0, 16).map((word) => `"${word.replaceAll('"', '""')}"*`)

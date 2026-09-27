@@ -58,6 +58,17 @@ function pauseDocumentAnalysis(): void {
   documentTimer = null
 }
 
+let searchWarmTimer: ReturnType<typeof setTimeout> | null = null
+
+/** Rebuilds the full-text index in the background once changes settle, so a search does not wait for it. */
+function warmSearchIndex(target: Workspace, delay = 1500): void {
+  if (searchWarmTimer) clearTimeout(searchWarmTimer)
+  searchWarmTimer = setTimeout(() => {
+    searchWarmTimer = null
+    if (workspace === target) void target.refreshSearchIndex().catch((error) => console.error('Search index could not be rebuilt:', error))
+  }, delay)
+}
+
 function scheduleSemanticIndex(target: Workspace): void {
   if (indexTimer) clearTimeout(indexTimer)
   indexTimer = setTimeout(() => {
@@ -109,6 +120,7 @@ function queueDocumentAnalysis(target: Workspace, filename: string): void {
 }
 
 async function openWorkspace(path: string): Promise<WorkspaceSnapshot> {
+  if (searchWarmTimer) clearTimeout(searchWarmTimer)
   if (indexTimer) clearTimeout(indexTimer)
   if (documentTimer) clearTimeout(documentTimer)
   pendingDocuments.clear()
@@ -125,6 +137,7 @@ async function openWorkspace(path: string): Promise<WorkspaceSnapshot> {
     const content = paths.filter((path) => path.split(/[\\/]/)[0] !== settingsDirectory)
     if (content.length) {
       scheduleSemanticIndex(next)
+      warmSearchIndex(next)
       // Added or changed documents (not removals) are candidates for automatic analysis.
       for (const path of content) {
         const parts = path.split(/[\\/]/)
@@ -140,6 +153,7 @@ async function openWorkspace(path: string): Promise<WorkspaceSnapshot> {
     }).catch((error) => window?.webContents.send('semantic:index-error', String(error)))
   }, (error) => console.error('Workspace watcher stopped reporting changes:', error))
   scheduleSemanticIndex(next)
+  warmSearchIndex(next, 500)
   return next.snapshot()
 }
 
@@ -251,7 +265,13 @@ app.whenReady().then(async () => {
     const error = await shell.openPath(currentWorkspace().path)
     if (error) throw new Error(error)
   })
-  ipcMain.handle('workspace:refresh', () => { workspace?.markDirty(); return workspace?.snapshot() ?? null })
+  ipcMain.handle('workspace:refresh', () => {
+    if (!workspace) return null
+    // A refresh rechecks every file, so the search index is rebuilt too, in the background rather than on the next search.
+    workspace.markDirty()
+    warmSearchIndex(workspace, 300)
+    return workspace.snapshot()
+  })
   ipcMain.handle('entity:save', (_event, entity: Entity) => currentWorkspace().saveEntity(entity))
   ipcMain.handle('page:save', (_event, page: Pick<WorkspacePage, 'id' | 'path' | 'text' | 'revision'>) => currentWorkspace().savePage(page))
   ipcMain.handle('page:create', () => currentWorkspace().createPage())

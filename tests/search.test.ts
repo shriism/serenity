@@ -28,3 +28,20 @@ test('ranking puts exact then prefix title matches first and removes duplicates'
   assert.deepEqual(rankSearchResults('Sam', [result('Samantha'), result('Notes'), result('sam'), result('Notes')]).map((item) => item.title),
     ['sam', 'Samantha', 'Notes'])
 })
+
+test('concurrent searches share one index rebuild and a change during it is picked up', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-search-refresh-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    await workspace.saveEntity({ id: '', title: 'Alpha', type: 'thing', body: '' })
+    const [first, second] = await Promise.all([workspace.search('alpha'), workspace.search('alpha'), workspace.refreshSearchIndex()])
+    assert.equal(first[0].title, 'Alpha')
+    assert.equal(second[0].title, 'Alpha')
+    const rebuilding = workspace.refreshSearchIndex()
+    await workspace.saveEntity({ id: '', title: 'Beta', type: 'thing', body: '' })
+    await rebuilding
+    assert.equal((await workspace.search('beta'))[0]?.title, 'Beta')
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})

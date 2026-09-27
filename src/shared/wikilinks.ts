@@ -11,18 +11,40 @@ export const unresolvedScheme = 'serenity-wikilink:'
 
 const normalized = (text: string): string => text.normalize('NFKC').trim().replace(/\s+/g, ' ').toLocaleLowerCase()
 
+type TitleMatch = { uri: string; title: string }
+type TitleSources = Pick<WorkspaceSnapshot, 'pages' | 'entities' | 'documents'>
+
+// Resolving by scanning every title made rendering thousands of linked notes quadratic. The index is built once per
+// snapshot (its record arrays are replaced, never mutated, when the workspace changes) and reused by every lookup.
+const titleIndexes = new WeakMap<object, { pages: unknown; documents: unknown; index: Map<string, TitleMatch[]> }>()
+
+function titleIndex(snapshot: TitleSources): Map<string, TitleMatch[]> {
+  const cached = titleIndexes.get(snapshot.entities)
+  if (cached && cached.pages === snapshot.pages && cached.documents === snapshot.documents) return cached.index
+  const index = new Map<string, TitleMatch[]>()
+  const add = (title: string, match: TitleMatch): void => {
+    const key = normalized(title)
+    const list = index.get(key)
+    if (!list) index.set(key, [match])
+    else if (!list.some((item) => item.uri === match.uri)) list.push(match)
+  }
+  for (const page of snapshot.pages) add(page.title, { uri: resourceUri({ kind: 'page', id: page.id }), title: page.title })
+  for (const entity of snapshot.entities) add(entity.title, { uri: resourceUri({ kind: 'entity', id: entity.id }), title: `${entity.title} (${entity.type})` })
+  for (const document of snapshot.documents) {
+    const match = { uri: resourceUri({ kind: 'document', id: document.name }), title: document.name }
+    add(document.name, match)
+    add(document.name.replace(/\.[^.]+$/, ''), match)
+  }
+  titleIndexes.set(snapshot.entities, { pages: snapshot.pages, documents: snapshot.documents, index })
+  return index
+}
+
 /**
  * Finds what `[[target]]` names: a page, entity, or document whose title (or file name, with or without extension)
  * matches exactly, ignoring case. Two or more matches are ambiguous rather than guessed.
  */
-export function resolveWikilink(snapshot: Pick<WorkspaceSnapshot, 'pages' | 'entities' | 'documents'>, target: string): WikiResolution {
-  const wanted = normalized(target)
-  const matches = [
-    ...snapshot.pages.filter((page) => normalized(page.title) === wanted).map((page) => ({ uri: resourceUri({ kind: 'page', id: page.id }), title: page.title })),
-    ...snapshot.entities.filter((entity) => normalized(entity.title) === wanted).map((entity) => ({ uri: resourceUri({ kind: 'entity', id: entity.id }), title: `${entity.title} (${entity.type})` })),
-    ...snapshot.documents.filter((document) => normalized(document.name) === wanted || normalized(document.name.replace(/\.[^.]+$/, '')) === wanted)
-      .map((document) => ({ uri: resourceUri({ kind: 'document', id: document.name }), title: document.name }))
-  ]
+export function resolveWikilink(snapshot: TitleSources, target: string): WikiResolution {
+  const matches = titleIndex(snapshot).get(normalized(target)) ?? []
   if (matches.length === 1) return { kind: 'resolved', ...matches[0] }
   return matches.length ? { kind: 'ambiguous', titles: matches.map((match) => match.title) } : { kind: 'missing' }
 }

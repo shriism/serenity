@@ -94,7 +94,7 @@ export function ReviewPanel({ workspace, onOpenResource, onUpdate, onError, ...a
       })}
       {distinct.length > shownDecisions && <button className="text-button" onClick={() => setShownDecisions((count) => count + 12)}>Show more decisions</button>}
     </section>}
-    {sources.length === 0 && duplicates.length === 0 && distinct.length === 0 && <p className="hint">Nothing to review yet. Conversations can suggest claims, entities, tasks, and events.</p>}
+    {sources.length === 0 && duplicates.length === 0 && distinct.length === 0 && <p className="hint">Nothing to review yet. Conversations can suggest claims, entities, tasks, and events, and analyzing an imported document drafts suggestions from it.</p>}
     {sources.map(({ source, proposals, pending }) => {
       const document = workspace.documents.find((item) => item.name === source)
       return <section key={source} className="review-source" aria-label={`From ${source}`}>

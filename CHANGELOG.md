@@ -6,6 +6,7 @@ Serenity's notable changes, newest first. The workspace format stays readable Ma
 
 - Search results show a snippet of where the words matched, with the matches highlighted.
 - Page queries can show a table or a count (`display: table` / `display: count`), and lists say how many more matched.
+- Empty live lists say how things get there, and the new-workspace Home shows the `[[wikilink]]` syntax literally.
 - **Ask about these results** in search starts a conversation that may read only the entities and documents the search found.
 - Accessibility checks cover every main view in both themes; links show a keyboard focus ring.
 - The Windows installer is named `Serenity-Setup-<version>.exe`.

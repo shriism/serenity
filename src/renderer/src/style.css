@@ -636,8 +636,8 @@ textarea { min-height: 240px; resize: vertical; line-height: 1.7; }
   --border: #e4e4e8;
   --border-strong: #d7d7de;
   --text: #27272f;
-  --muted: #666671;
-  --subtle: #898995;
+  --muted: #52525c;
+  --subtle: #63636c;
   --accent: #69658f;
   --accent-hover: #565277;
   --accent-soft: #eae9f1;
@@ -652,7 +652,7 @@ textarea { min-height: 240px; resize: vertical; line-height: 1.7; }
   --border-strong: #424248;
   --text: #ededf0;
   --muted: #aaaab4;
-  --subtle: #81818d;
+  --subtle: #9899a5;
   --accent: #b9b4df;
   --accent-hover: #cbc6ed;
   --accent-contrast: #24222f;

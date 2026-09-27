@@ -540,6 +540,23 @@ try {
       await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-compact.png'), await captureScreenshot(pageUrl))
     }
   }
+  // Accessibility gate: no serious or critical axe-core violations on the main views, in either theme.
+  await evaluate(pageUrl, `${await readFile(require.resolve('axe-core/axe.min.js'), 'utf8')};true`)
+  const accessibility: string[] = []
+  for (const theme of ['dark', 'light']) {
+    for (const view of ['Home', 'Review', 'Documents', 'Settings']) {
+      const found = await evaluate(pageUrl, `(async () => {
+        document.documentElement.setAttribute('data-theme', '${theme}')
+        ;[...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('${view}'))?.click()
+        await new Promise((resolve) => setTimeout(resolve, 400))
+        const result = await axe.run(document, { resultTypes: ['violations'] })
+        return result.violations.filter((item) => item.impact === 'serious' || item.impact === 'critical')
+          .map((item) => item.id + ' (' + item.nodes.length + ') at ' + item.nodes[0].target.join(' '))
+      })()`) as string[]
+      accessibility.push(...found.map((item) => `${theme} ${view}: ${item}`))
+    }
+  }
+  assert.deepEqual(accessibility, [], 'Main views should have no serious or critical accessibility violations')
   // Crash the renderer on purpose: the window should reload itself with a working bridge and the same workspace.
   await new Promise<void>((resolve) => {
     const socket = new WebSocket(pageUrl)

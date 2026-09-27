@@ -74,6 +74,7 @@
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "@vitejs/plugin-react": "^4.7.0",
+    "axe-core": "^4.13.0",
     "electron": "^44.4.4",
     "electron-builder": "^26.15.3",
     "electron-vite": "^4.0.0",

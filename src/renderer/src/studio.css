@@ -27,7 +27,8 @@
   --border-strong: #44454b;
   --text: var(--studio-ink);
   --muted: #aeafb7;
-  --subtle: #80818d;
+  /* Secondary text stays at 4.5:1 or better on every panel surface, including hover. */
+  --subtle: #9899a5;
   --accent: var(--studio-tint);
   --accent-hover: #d1cbe8;
   --accent-soft: #34323e;

@@ -53,6 +53,9 @@
       "icon": "build/icons",
       "target": "AppImage",
       "category": "Utility"
+    },
+    "nsis": {
+      "artifactName": "Serenity-Setup-${version}.${ext}"
     }
   },
   "dependencies": {

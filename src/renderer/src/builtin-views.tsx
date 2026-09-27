@@ -1,4 +1,4 @@
-import type { WorkspaceSnapshot, WorkspacePage } from '../../shared/types'
+import type { ReadScope, WorkspaceSnapshot, WorkspacePage } from '../../shared/types'
 import { CalendarModule, TasksModule } from './module-views'
 import { ReviewPanel } from './review-panel'
 import { DocumentsPanel } from './documents-panel'
@@ -9,6 +9,7 @@ import { WorkspacePageView } from './workspace-page'
 import { KnowledgeView } from './knowledge-view'
 import { EntityEditor } from './entity-editor'
 import { EntityTimeline } from './entity-timeline'
+import { SearchView } from './search-view'
 import { EntityConnections } from './entity-connections'
 import { DocumentKnowledgeView } from './document-knowledge'
 import { PageConnections } from './page-connections'
@@ -52,6 +53,10 @@ export interface BuiltinViewContext {
   onNewEntity(): void
   onEntityCreated(id: string): void
   onDiscuss(question: string): void
+  /** A new conversation that may read only the given entities and documents. */
+  onAsk(prompt: string, scope: Pick<ReadScope, 'entityIds' | 'documentNames'>): void
+  /** Query to start a Search view with, e.g. carried over from the search palette. */
+  searchQuery: string
 }
 
 export const builtinViews = new ViewRegistry<BuiltinViewContext>()
@@ -100,5 +105,7 @@ builtinViews.register({ id: 'documents', render: ({ workspace, activeDocument, o
       <DocumentPreview name={activeDocument} workspace={workspace} onOpen={onOpenSource} onError={onError} onResolve={onResolve} onAttach={onAttach} onOpenSource={onOpenSource}/>}
   </div> :
     <DocumentsPanel workspace={workspace} onImport={onImport} onOpen={onOpenDocument} onAnalyze={onAnalyze}/> })
+builtinViews.register({ id: 'search', render: ({ workspace, searchQuery, onOpenResource, onAsk }) =>
+  <SearchView workspace={workspace} initialQuery={searchQuery} onOpenResource={(uri, side) => onOpenResource(uri, side)} onAsk={onAsk}/> })
 builtinViews.register({ id: 'activity', render: ({ workspace, activity, onOpenResource }) => <ActivityPanel workspace={workspace} activity={activity} onOpenResource={(uri, side) => onOpenResource(uri, side)}/> })
 builtinViews.register({ id: 'settings', render: ({ workspace, shortcuts, onUpdate, onError }) => <SettingsPanel workspace={workspace} shortcuts={shortcuts} onUpdate={onUpdate} onError={onError}/> })

@@ -2,7 +2,7 @@
 // The tree can describe any arrangement; how many groups the UI allows is a separate policy.
 
 /** Central workbench views that a session may name. */
-export const workbenchViews = ['home', 'knowledge', 'review', 'documents', 'calendar', 'tasks', 'activity', 'settings'] as const
+export const workbenchViews = ['home', 'knowledge', 'review', 'documents', 'calendar', 'tasks', 'activity', 'settings', 'search'] as const
 export type WorkbenchView = (typeof workbenchViews)[number]
 export const isWorkbenchView = (value: string): value is WorkbenchView => (workbenchViews as readonly string[]).includes(value)
 

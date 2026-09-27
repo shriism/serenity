@@ -254,6 +254,22 @@ try {
     return { scope, chip: chip?.replace('×', ''), prompt }
   })()`)
   assert.deepEqual(askedAbout, { scope: 'selected', chip: 'Alex', prompt: 'About “club”: ' }, 'Asking about search results should start a conversation limited to them')
+  const searchPane = await evaluate(pageUrl, `(async () => {
+    const wait = async (test) => { for (let i = 0; i < 40; i++) { const value = test(); if (value) return value; await new Promise((resolve) => setTimeout(resolve, 100)) } return null }
+    document.querySelector('.topbar-search')?.click()
+    const input = await wait(() => document.querySelector('.palette-input input'))
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'club'); input.dispatchEvent(new Event('input', { bubbles: true }))
+    ;(await wait(() => [...document.querySelectorAll('.palette-actions button')].find((item) => item.textContent?.includes('Keep results in a pane'))))?.click()
+    const kept = await wait(() => document.querySelector('.search-view input')?.value)
+    const result = await wait(() => document.querySelector('.search-view-results button'))
+    result?.click()
+    const panes = await wait(() => document.querySelectorAll('.editor-group').length === 2 && 2)
+    const stillListed = document.querySelectorAll('.search-view-results button').length > 0
+    for (let i = 0; i < 4 && document.querySelectorAll('.editor-group').length > 1; i++) { document.querySelectorAll('.group-actions button[aria-label^="Close pane"]')[1]?.click(); await new Promise((resolve) => setTimeout(resolve, 100)) }
+    ;[...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Home'))?.click()
+    return { kept, panes, stillListed }
+  })()`)
+  assert.deepEqual(searchPane, { kept: 'club', panes: 2, stillListed: true }, 'Search kept in a pane should open results beside itself and stay open')
   const openedClaim = await evaluate(pageUrl, `(async () => { await new Promise((resolve) => setTimeout(resolve, 150)); [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Home'))?.click(); await new Promise((resolve) => setTimeout(resolve, 150)); document.querySelector('.topbar-search')?.click(); for (let i = 0; i < 30; i++) { const input = document.querySelector('.palette-input input'); if (input) { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(input, 'birthday'); input.dispatchEvent(new Event('input', { bubbles: true })); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const match = [...document.querySelectorAll('.palette-results button')].find((item) => item.textContent?.includes('birthday')); if (match) { match.click(); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const title = document.querySelector('.editor .title-input')?.value; if (title === 'Alex') return title; await new Promise((resolve) => setTimeout(resolve, 100)) } return { view: document.querySelector('.main')?.textContent?.slice(0, 150), palette: Boolean(document.querySelector('.command-palette')) } })()`)
   assert.equal(openedClaim, 'Alex', 'Selecting a claim search result should open its entity')
   const pdfResults = await evaluate(pageUrl, `window.serenity.search('QuarterlyCometResearch').then((items) => items.map((item) => item.kind))`) as string[]

@@ -56,6 +56,7 @@ const builtins: CommandContribution[] = [
   view('tasks', 'Tasks', ListTodo, 'Organize', 'tasks'),
   view('activity', 'Activity', Activity, 'More'),
   view('settings', 'Settings', Settings2, 'More'),
+  { ...view('search', 'Search in a pane', Search, undefined), keybinding: 'Mod+Shift+F' },
   { id: 'entity.create', title: 'New entity', icon: Plus, run: (host) => host.newEntity() },
   { id: 'page.create', title: 'New page', icon: FileText, run: (host) => host.createPage() },
   { id: 'documents.import', title: 'Import documents', icon: FolderOpen, run: (host) => host.importDocuments() },

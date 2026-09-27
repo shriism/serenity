@@ -39,6 +39,7 @@ Entities, supported documents, and pages other than Home open as tabs. The cente
 - Drag a tab onto another pane to move it, onto a pane's edge to split it off, or onto another tab to reorder.
 - Move between panes with **⌘⌥** / **Ctrl+Alt** and the arrow keys.
 - **⌘/Ctrl-click** a link, or press **⌘/Ctrl+Enter** in search, to open a result in the next pane.
+- **Search in a pane** (**⌘⇧F** / **Ctrl+Shift+F**, or **Keep results in a pane** from search) keeps results open; each opens in the neighboring pane, so you can work through them without searching again.
 
 Each pane has its own tabs and view, so a document, an entity's profile, its timeline, and a page can stay visible together. Closing a pane only closes its views; files stay in your workspace. The arrangement, sizes, and each tab's view are restored with the workspace. When the window is too narrow for every pane, Serenity shows one pane at a time with a switcher.
 

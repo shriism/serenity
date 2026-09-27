@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { ArrowRight, CalendarDays, FileText, Link2, ListTodo, MessageCircle, Search, Sparkles, X } from 'lucide-react'
 import type { Provider, SearchResult } from '../../shared/types'
 import type { CommandContribution } from './commands'
+import { highlighted } from './search-excerpt'
 
 interface Props {
   open: boolean
@@ -18,17 +19,13 @@ interface Props {
   onSavedSearch(): void
   /** Offered when results point to entities or documents: a conversation limited to them. */
   onAskAboutResults?(): void
+  /** Moves the search into a Search view in the focused pane, so results stay open. */
+  onKeepInPane(): void
   onCommand(id: string): void
   shortcutFor(id: string): string | undefined
 }
 
 const icons = { entity: Link2, claim: Link2, document: FileText, task: ListTodo, event: CalendarDays, page: FileText }
-
-/** Renders a search excerpt, emphasizing the words the index marked with U+0001 … U+0002. */
-function highlighted(excerpt: string) {
-  return excerpt.split(/(\u0001[^\u0002]*\u0002)/).map((part, index) =>
-    part.startsWith('\u0001') ? <mark key={index}>{part.slice(1, -1)}</mark> : part)
-}
 
 export function CommandPalette(props: Props) {
   const input = useRef<HTMLInputElement>(null)
@@ -81,6 +78,7 @@ export function CommandPalette(props: Props) {
         {props.query.trim() && <div className="palette-actions">
           <button onClick={props.onAISearch} disabled={props.searching}><Sparkles size={16}/>{props.searching ? 'Finding connections…' : `Search meaning with ${props.provider}`}<ArrowRight size={15}/></button>
           {props.savedIndexEnabled && <button onClick={props.onSavedSearch}><Link2 size={16}/>Search saved concepts offline<ArrowRight size={15}/></button>}
+          <button onClick={props.onKeepInPane}><Search size={16}/>Keep results in a pane<ArrowRight size={15}/></button>
           {props.onAskAboutResults && <button onClick={props.onAskAboutResults}><MessageCircle size={16}/>Ask about these results<ArrowRight size={15}/></button>}
         </div>}
         {entries.length > 0 ? <div className="palette-results">{entries.map((entry, index) => {

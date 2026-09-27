@@ -64,6 +64,8 @@ function App() {
   const paneArea = useRef<HTMLDivElement>(null)
   const [paneAreaSize, setPaneAreaSize] = useState({ width: 0, height: 0 })
   const [dropTarget, setDropTarget] = useState<{ group: string; zone: DropZone } | null>(null)
+  // A query carried from the search palette into a pane's Search view.
+  const [searchSeeds, setSearchSeeds] = useState<Record<string, string>>({})
   const focused = focusedGroup(workbench)
   const view = focused.view
   const activeTabRef = activeTabOf(focused)
@@ -497,7 +499,7 @@ function App() {
   const pending = workspace?.proposals.filter((proposal) => proposal.status === 'pending') ?? []
   // The feed spans every record; rebuild it when the workspace changes, not on each keystroke elsewhere in the shell.
   const activity = useMemo(() => workspace ? workspaceActivity(workspace) : [], [workspace])
-  const title: Record<View, string> = { home: 'Home', knowledge: 'Knowledge', review: 'Review', documents: 'Documents', calendar: 'Calendar', tasks: 'Tasks', activity: 'Activity', settings: 'Settings' }
+  const title: Record<View, string> = { home: 'Home', knowledge: 'Knowledge', review: 'Review', documents: 'Documents', calendar: 'Calendar', tasks: 'Tasks', activity: 'Activity', settings: 'Settings', search: 'Search' }
   const multipleGroups = workbench.groups.length > 1
   const canSplit = workbench.groups.length < maxEditorGroups
   const geometry = useMemo(() => layoutGeometry(workbench.root), [workbench.root])
@@ -541,6 +543,7 @@ function App() {
       calendarPresentation: group.viewPresentations.calendar === 'agenda' ? 'agenda' : 'month',
       onCalendarPresentationChange: (presentation) => setWorkbench((current) => updateGroup(current, group.id, (item) => presentView(item, 'calendar', presentation))),
       onOpenEntity: (id) => { openEntity(id, group.id) }, onNewEntity: () => newEntity(group.id), onDiscuss: startConversation,
+      onAsk: (prompt, scope) => startConversation(prompt, scope), searchQuery: searchSeeds[group.id] ?? '',
       onEntityCreated: (id) => setWorkbench((current) => updateGroup(current, group.id, (item) => showTab(item, { kind: 'entity', id })))
     }
   }
@@ -668,7 +671,7 @@ function App() {
       </ErrorBoundary>
     </aside> : <aside className="assistant-rail" aria-label="AI assistant collapsed"><button onClick={() => runCommand('assistant.toggle')} title={withShortcut('Expand AI sidebar', 'assistant.toggle')} aria-label="Expand AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')}><PanelRightOpen size={20}/></button><span>AI</span></aside>)}
     </div>
-    <CommandPalette open={paletteOpen && Boolean(workspace)} query={query} results={results} searching={searching} provider={assistant.provider} savedIndexEnabled={Boolean(workspace?.modules.semanticIndex)} commands={commands.filter((command) => !command.hideInPalette)} shortcutFor={shortcut} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult} onAISearch={() => void searchSemantically()} onSavedSearch={() => void searchSavedConcepts()} onAskAboutResults={askScope && (askScope.entityIds.length || askScope.documentNames.length) ? () => { closePalette(); startConversation(`About “${query.trim()}”: `, askScope) } : undefined} onCommand={runCommand} />
+    <CommandPalette open={paletteOpen && Boolean(workspace)} query={query} results={results} searching={searching} provider={assistant.provider} savedIndexEnabled={Boolean(workspace?.modules.semanticIndex)} commands={commands.filter((command) => !command.hideInPalette)} shortcutFor={shortcut} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult} onAISearch={() => void searchSemantically()} onSavedSearch={() => void searchSavedConcepts()} onKeepInPane={() => { const kept = query; setSearchSeeds((seeds) => ({ ...seeds, [workbench.focused]: kept })); closePalette(); navigate('search') }} onAskAboutResults={askScope && (askScope.entityIds.length || askScope.documentNames.length) ? () => { closePalette(); startConversation(`About “${query.trim()}”: `, askScope) } : undefined} onCommand={runCommand} />
   </div>
 }
 

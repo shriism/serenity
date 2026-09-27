@@ -238,6 +238,8 @@ export interface SearchResult {
 export interface SerenityAPI {
   chooseWorkspace(): Promise<WorkspaceSnapshot | null>
   openWorkspaceFolder(): Promise<void>
+  /** Opens an http(s) or mailto link in the system's default app; other schemes are refused. */
+  openExternal(url: string): Promise<void>
   setEditorDirty(dirty: boolean): void
   refresh(): Promise<WorkspaceSnapshot | null>
   saveEntity(entity: Entity): Promise<WorkspaceSnapshot>

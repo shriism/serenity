@@ -1,4 +1,5 @@
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { externalLink } from '../shared/external-links'
 import { fileURLToPath } from 'node:url'
 import chokidar, { type FSWatcher } from 'chokidar'
 import { Workspace } from './workspace'
@@ -226,6 +227,11 @@ app.whenReady().then(async () => {
     const snapshot = await openWorkspace(result.filePaths[0])
     editorDirty = false
     return snapshot
+  })
+  ipcMain.handle('link:open-external', async (_event, url: unknown) => {
+    const link = externalLink(url)
+    if (!link) throw new Error('Only web and email links can be opened')
+    await shell.openExternal(link)
   })
   ipcMain.handle('workspace:open-folder', async () => {
     const error = await shell.openPath(currentWorkspace().path)

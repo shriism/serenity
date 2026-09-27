@@ -430,3 +430,4 @@
 .view-error pre { max-width: 720px; overflow: auto; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--muted); font-size: 11px; white-space: pre-wrap; }
 .view-error-actions { margin-top: 14px; }
 .view-error.full-screen { min-height: 100vh; box-sizing: border-box; padding: 12vh 10vw; background: var(--studio-base, var(--canvas)); color: var(--text); }
+.serenity-studio .external-link { display: inline-flex; align-items: center; gap: 2px; color: var(--accent); text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent); text-underline-offset: 2px; }

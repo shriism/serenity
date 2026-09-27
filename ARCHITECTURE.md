@@ -23,7 +23,7 @@ Human judgments that two active entity IDs are distinct are version 1 YAML recor
 
 The generated semantic index is checked before reuse. Malformed YAML or an invalid entry is moved to a `.corrupt-<id>` sibling, and the opt-in indexing job rebuilds it from authored records; a filesystem ownership or permission error still surfaces instead of being treated as corruption.
 
-The renderer reports unsaved entity and page edits to the main process, which asks before closing or switching workspaces. Only the current workspace path can be revealed in the OS file manager; the renderer cannot pass arbitrary paths to that operation.
+The renderer reports unsaved entity and page edits to the main process, which asks before closing or switching workspaces. Only the current workspace path can be revealed in the OS file manager; the renderer cannot pass arbitrary paths to that operation. Web and email links from Markdown are opened through the main process, which accepts only `http`, `https`, and `mailto` URLs; the window itself cannot navigate or open new windows.
 
 ## Resources, commands, and authored pages
 

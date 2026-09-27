@@ -260,6 +260,8 @@ try {
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-document-suggestions.png'), await captureScreenshot(pageUrl))
   if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-documents.png'), await captureScreenshot(pageUrl))
   const invalidOpen = await evaluate(pageUrl, `window.serenity.openDocument('../outside').then(() => 'allowed', (error) => String(error))`) as string
+  const refusedLink = await evaluate(pageUrl, `window.serenity.openExternal('file:///etc/passwd').then(() => 'allowed', (error) => String(error))`) as string
+  assert.match(refusedLink, /Only web and email links/, 'Only http(s) and mailto links may be handed to the system')
   assert.match(invalidOpen, /Invalid document name/)
   const taskCount = await evaluate(pageUrl, `window.serenity.saveTask({ id: '', title: 'Call Alex', due: '${taskDue}', completed: false, notes: '', relatedEntityIds: ['${entityId}'] }).then((snapshot) => snapshot.tasks.length)`)
   assert.equal(taskCount, 1)

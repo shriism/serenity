@@ -547,11 +547,26 @@ try {
   // Accessibility gate: no serious or critical axe-core violations on the main views, in either theme.
   await evaluate(pageUrl, `${await readFile(require.resolve('axe-core/axe.min.js'), 'utf8')};true`)
   const accessibility: string[] = []
+  // Restore the full navigation so every main view can be reached.
+  await writeFile(join(workspace, '.serenity', 'workbench.yaml'), YAML.stringify({ homePage: 'research', navigation: [
+    { group: 'Workspace', commands: ['view.home', 'view.knowledge', 'view.review'] }, { group: 'Organize', commands: ['view.documents', 'view.calendar', 'view.tasks'] },
+    { group: 'More', commands: ['view.activity', 'view.settings'] }] }))
+  await evaluate(pageUrl, `(async () => { for (let i = 0; i < 60 && ![...document.querySelectorAll('.navigation button')].some((item) => item.textContent?.includes('Knowledge')); i++) await new Promise((resolve) => setTimeout(resolve, 100)) })()`)
+  const nav = (name: string) => `[...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('${name}'))?.click()`
+  const views: [string, string][] = [
+    ['Home', nav('Home')], ['Review', nav('Review')], ['Documents', nav('Documents')], ['Settings', nav('Settings')], ['Activity', nav('Activity')],
+    ['Tasks', nav('Tasks')], ['Calendar', nav('Calendar')], ['Knowledge', `${nav('Knowledge')}; ${nav('Knowledge')}`],
+    ['Graph', `[...document.querySelectorAll('.library-mode button')].find((item) => item.textContent?.includes('Graph'))?.click()`],
+    ['Entity profile', `[...document.querySelectorAll('.library-mode button')].find((item) => item.textContent?.includes('Tiles'))?.click(); await new Promise((resolve) => setTimeout(resolve, 200)); document.querySelector('.knowledge-tiles button')?.click()`],
+    ['Timeline', `[...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === 'Timeline')?.click()`],
+    ['Connections', `[...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === 'Connections')?.click()`],
+    ['Split panes', `[...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === 'Profile')?.click(); document.querySelector('.topbar-icon[aria-label="Split right"]')?.click()`]
+  ]
   for (const theme of ['dark', 'light']) {
-    for (const view of ['Home', 'Review', 'Documents', 'Settings']) {
+    for (const [view, setup] of views) {
       const found = await evaluate(pageUrl, `(async () => {
-        document.documentElement.setAttribute('data-theme', '${theme}')
-        ;[...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('${view}'))?.click()
+        document.documentElement.setAttribute('data-theme', '${theme}');
+        ${setup};
         await new Promise((resolve) => setTimeout(resolve, 400))
         // Views fade in; measuring contrast mid-fade would see partly transparent text.
         await Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined)))
@@ -561,6 +576,7 @@ try {
       })()`) as string[]
       accessibility.push(...found.map((item) => `${theme} ${view}: ${item}`))
     }
+    await evaluate(pageUrl, `(async () => { for (let i = 0; i < 6 && document.querySelectorAll('.editor-group').length > 1; i++) { document.querySelector('.group-actions button[aria-label^="Close pane"]')?.click(); await new Promise((resolve) => setTimeout(resolve, 80)) } })()`)
   }
   assert.deepEqual(accessibility, [], 'Main views should have no serious or critical accessibility violations')
   // Crash the renderer on purpose: the window should reload itself with a working bridge and the same workspace.

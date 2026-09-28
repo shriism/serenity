@@ -407,6 +407,10 @@ body.resizing .app { transition: none; }
 .property-value.static { display: flex; align-items: center; color: var(--text-secondary); }
 .property-value:focus-visible { background: var(--surface-sunken) !important; box-shadow: 0 0 0 1px var(--accent) !important; }
 .conflict-bar { margin-top: 0; margin-bottom: 18px; }
+.document-view { position: relative; }
+.save-indicator { position: absolute; top: 14px; right: 20px; color: var(--text-muted); font-size: 11.5px; opacity: 0; transition: opacity .3s ease; pointer-events: none; }
+.save-indicator.shown { opacity: 1; }
+.save-indicator.error { color: var(--danger); }
 
 .section-header { display: flex; align-items: center; gap: 8px; margin: 34px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
 .section-header h2 { font-size: 13px; }

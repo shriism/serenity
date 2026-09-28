@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import YAML from 'yaml'
 import type { WorkspacePage, WorkspaceSnapshot } from '../../shared/types'
 import { resourceUri } from '../../shared/resources'
@@ -15,6 +15,23 @@ function withTitle(text: string, body: string, title: string, original: string):
   const document = YAML.parseDocument(yaml)
   document.set('title', title)
   return `---\n${document.toString()}---\n`
+}
+
+/** A quiet note that edits are being saved, and briefly that they were; autosave should never feel like guesswork. */
+export function SaveIndicator({ state }: { state: SaveState }) {
+  const [justSaved, setJustSaved] = useState(false)
+  const previous = useRef(state)
+  useEffect(() => {
+    const was = previous.current
+    previous.current = state
+    if (state === 'saved' && (was === 'saving' || was === 'pending')) {
+      setJustSaved(true)
+      const timer = window.setTimeout(() => setJustSaved(false), 1600)
+      return () => window.clearTimeout(timer)
+    }
+  }, [state])
+  const text = state === 'pending' || state === 'saving' ? 'Saving…' : state === 'error' ? 'Not saved' : justSaved ? 'Saved' : ''
+  return <span className={`save-indicator ${text ? 'shown' : ''} ${state === 'error' ? 'error' : ''}`} role="status" aria-live="polite">{text}</span>
 }
 
 /** A conflict between this editor's text and a newer version on disk, with a choice rather than a silent overwrite. */
@@ -60,6 +77,7 @@ export function WorkspacePageView({ page, workspace, context, onUpdate, onError 
   }
 
   return <article className="document-view page-document" aria-label={draft.title}>
+    <SaveIndicator state={state}/>
     <ConflictBar state={state} what="page" onResolve={resolve}/>
     <input className="inline-title" value={title} aria-label="Page title" spellCheck={false}
       onChange={(event) => setTitle(event.target.value)} onBlur={() => void commitTitle()}

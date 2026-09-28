@@ -25,6 +25,17 @@ await writeFile(join(workspace, 'tasks', '77777777-7777-4777-8777-777777777777.y
 await writeFile(join(workspace, 'proposals', '88888888-8888-4888-8888-888888888888.yaml'), YAML.stringify({ id: '88888888-8888-4888-8888-888888888888', kind: 'entity', title: 'Jordan Lee',
   type: 'person', body: 'Joined the club in spring.', source: 'club-notes.md', origin: 'ai-inference', provider: 'copilot', conversationId: '99999999-9999-4999-8999-999999999999', status: 'pending', recordedAt: new Date().toISOString() }))
 
+const conversation = '12121212-1212-4212-8212-121212121212'
+await writeFile(join(workspace, 'conversations', `${conversation}.yaml`), YAML.stringify({ id: conversation, title: 'When is Alex’s birthday?', retained: true, messages: [
+  { id: 'm1', role: 'user', text: 'When is Alex’s birthday, and who does Alex work with?', recordedAt: new Date().toISOString() },
+  { id: 'm2', role: 'assistant', provider: 'copilot', recordedAt: new Date().toISOString(),
+    text: 'Alex Rivera’s birthday is March 3 [1]. Alex works with Maya Chen on the Rover project [2], and leads hardware for the robotics club [3].',
+    citations: [
+      { ref: 'claim:44444444-4444-4444-8444-444444444444', title: 'Alex Rivera · birthday', sent: true, quote: 'March 3', quoteFound: true },
+      { ref: 'claim:55555555-5555-4555-8555-555555555555', title: 'Alex Rivera · works with', sent: true },
+      { ref: 'document:club-notes.md', title: 'club-notes.md', sent: true, quote: 'Alex leads hardware.', quoteFound: true }],
+    sharedContext: [{ mode: 'full', records: [{ ref: 'entity:${ids.alex}', title: 'Alex Rivera', startCharacter: 0, sentCharacters: 120, totalCharacters: 120, checksum: 'a'.repeat(64) }], availableCount: 6, catalogShown: 6, sentCharacters: 120 }] }
+] }))
 const app = await launch(workspace, { width: 1440, height: 900 })
 const run = (script: string) => app.evaluate(`(async () => { ${helpers} ${script} })()`)
 const shot = async (name: string) => { await run('await sleep(350)'); await writeFile(join(output, `${name}.png`), await app.screenshot()); console.log(join(output, `${name}.png`)) }
@@ -38,6 +49,8 @@ try {
   await run(`click(byText('.ribbon-btn', 'Calendar')); await sleep(300)`)
   await shot('04-calendar')
   await run(`click(byText('.ribbon-mode button', 'Chat')); await sleep(300)`)
+  await shot('05-chat-empty')
+  await run(`click(byText('.conversation-row', 'When is Alex’s birthday?')); await sleep(400)`)
   await shot('05-chat')
   const views: [string, string][] = [
     ['13-knowledge', `click(byText('.ribbon-btn', 'Knowledge'))`], ['14-graph', `click(byText('.library-mode button', 'Graph'))`],

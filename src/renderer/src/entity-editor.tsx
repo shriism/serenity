@@ -7,7 +7,7 @@ import { wikilinkMentions } from '../../shared/wikilinks'
 import { resourceUri } from '../../shared/resources'
 import { MarkdownEditor, type EditorContext } from './markdown-editor'
 import { useAutosave } from './use-autosave'
-import { ConflictBar } from './workspace-page'
+import { ConflictBar, SaveIndicator } from './workspace-page'
 
 export interface EntityEditorProps {
   workspace: WorkspaceSnapshot
@@ -118,6 +118,7 @@ export function EntityEditor(props: EntityEditorProps) {
   const titleOf = (entityId: string): string => workspace.entities.find((entity) => entity.id === entityId)?.title ?? entityId
 
   return <article className="document-view entity-document" aria-label={draft.title}>
+    <SaveIndicator state={state}/>
     <ConflictBar state={state} what="entity" onResolve={resolve}/>
     <input className="inline-title" value={title} aria-label="Name" spellCheck={false}
       onChange={(event) => setTitle(event.target.value)} onBlur={() => void commitTitle()}

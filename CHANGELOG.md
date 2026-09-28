@@ -6,6 +6,8 @@ Serenity's notable changes, newest first. The workspace format stays readable Ma
 
 ## 2.0.1 (2026-09-28)
 
+- Theme changes apply text and background colors together, avoiding low-contrast frames while switching appearance.
+
 - Escape leaves page, note, and text-document editing; Enter in a page title moves into its body, while Escape cancels a title change.
 - Scrollbars can be hidden without leaving a gutter, or shown again in Settings. The editor and tab-number shortcuts have their own switches.
 - Command shortcuts, including the tab shortcuts, can be changed or cleared per workspace in Settings.

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useState } from 'react'
 
 export type ThemePreference = 'system' | 'light' | 'dark'
 
@@ -20,8 +20,14 @@ export function useTheme(): [ThemePreference, (theme: ThemePreference) => void, 
     return () => media.removeEventListener('change', update)
   }, [])
   const resolved = preference === 'system' ? systemDark ? 'dark' : 'light' : preference
-  useEffect(() => {
-    document.documentElement.dataset.theme = resolved
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    // Theme colors must change together: interpolating text over an already changed
+    // background briefly makes light and dark themes unreadable.
+    root.classList.add('changing-theme')
+    root.dataset.theme = resolved
+    void root.offsetWidth
+    root.classList.remove('changing-theme')
     try { localStorage.setItem('serenity.theme', preference) } catch { /* Theme still works for this window. */ }
   }, [preference, resolved])
   return [preference, setPreference, resolved]

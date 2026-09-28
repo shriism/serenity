@@ -75,6 +75,9 @@ export async function launch(workspace: string, options: { executable?: string; 
     if (!url) await delay(200)
   }
   if (!url) { child.kill('SIGKILL'); throw new Error(`Desktop window or preload bridge did not start.\n${output}`) }
+  // Hidden desktop windows otherwise lose input focus and can stop producing frames
+  // on CI. Emulate a foreground page without taking focus from the developer.
+  await send('Emulation.setFocusEmulationEnabled', { enabled: true })
   if (options.width && options.height) await send('Emulation.setDeviceMetricsOverride', { width: options.width, height: options.height, deviceScaleFactor: 2, mobile: false })
 
   return {

@@ -63,7 +63,9 @@ await writeFile(join(workspace, 'documents', 'old-draft.txt'), 'A draft to archi
 
 const provider = process.env.SERENITY_SMOKE_PROVIDER
 // SERENITY_SMOKE_WINDOW (e.g. 900x640) runs everything in a small window, as CI machines with small screens do.
-const app = await launch(workspace, { executable, keepProfile: Boolean(provider), windowSize: process.env.SERENITY_SMOKE_WINDOW })
+const smokeSize = (process.env.SERENITY_SMOKE_WINDOW ?? '1280x820').split('x').map(Number)
+const app = await launch(workspace, { executable, keepProfile: Boolean(provider), windowSize: process.env.SERENITY_SMOKE_WINDOW,
+  width: smokeSize[0], height: smokeSize[1] })
 const screenshots = process.env.SERENITY_SMOKE_SCREENSHOT_DIR
 const run = <T = unknown>(script: string, timeout?: number) => app.evaluate<T>(`(async () => { ${helpers} ${script} })()`, timeout)
 const shot = async (name: string) => { if (screenshots) await writeFile(join(screenshots, `${name}.png`), await app.screenshot()) }
@@ -273,9 +275,7 @@ try {
     setValue($('.calendar-event-dialog .module-form input'), 'Lunch with Sam at noon'); await sleep(50); $('.calendar-event-dialog .module-form').requestSubmit();
     return Boolean(await waitFor(() => $$('.fc-event').some((item) => item.textContent.includes('Lunch with Sam at noon'))))`)
   assert.equal(editedEvent, true, 'Editing a FullCalendar event saves through Serenity')
-  // CDP's synthetic drag is reliable in the local source app but intermittent in packaged CI windows; packaged
-  // smoke runs still exercise creation, editing, and persisted calendar records above.
-  if (!executable && process.platform === 'darwin' && !(await run<boolean>(`return $('.app').classList.contains('narrow')`))) {
+  if (!(await run<boolean>(`return $('.app').classList.contains('narrow')`))) {
     const tomorrow = futureDate(1)
     const eventDrag = await run<{ from: { x: number; y: number }; to: { x: number; y: number } }>(`const item = $$('.fc-event').find((element) => element.textContent.includes('Lunch with Sam at noon'));
       item.scrollIntoView({ block: 'center', inline: 'nearest' }); await sleep(120);
@@ -407,6 +407,17 @@ try {
   }
   assert.equal(recovered, workspace, 'A crashed window should reload into the same workspace')
   console.log('Desktop smoke passed: workspace files, live-preview editing, panes, search (PDF/DOCX), tasks, calendar, review, settings, chat, accessibility, and crash recovery.')
+} catch (error) {
+  const diagnostics = process.env.SERENITY_SMOKE_ARTIFACT_DIR
+  if (diagnostics) {
+    await mkdir(diagnostics, { recursive: true })
+    await writeFile(join(diagnostics, 'failure.txt'), `${String(error)}\n${app.logs()}`)
+    await app.screenshot().then((bytes) => writeFile(join(diagnostics, 'failure.png'), bytes)).catch(() => undefined)
+    const state = await run(`return { theme: document.documentElement.dataset.theme, viewport: [innerWidth, innerHeight],
+      focused: document.activeElement?.outerHTML, app: $('.app')?.className, body: document.body.innerText }`).catch(String)
+    await writeFile(join(diagnostics, 'state.json'), JSON.stringify(state, null, 2))
+  }
+  throw error
 } finally {
   await app.close()
   await rm(workspace, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })

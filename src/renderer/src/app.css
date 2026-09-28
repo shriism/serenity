@@ -62,6 +62,7 @@
 }
 
 * { box-sizing: border-box; }
+.changing-theme *, .changing-theme *::before, .changing-theme *::after { transition: none !important; }
 html, body, #root { height: 100%; margin: 0; }
 body { font-family: var(--font); font-size: 13px; line-height: 1.45; color: var(--text); background: var(--chrome); -webkit-font-smoothing: antialiased; overflow: hidden; user-select: none; }
 button, input, select, textarea { font: inherit; color: inherit; }

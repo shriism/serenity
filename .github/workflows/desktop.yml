@@ -12,6 +12,8 @@ concurrency:
 
 jobs:
   build:
+    env:
+      SERENITY_SMOKE_ARTIFACT_DIR: smoke-artifacts
     strategy:
       fail-fast: false
       matrix:
@@ -48,6 +50,12 @@ jobs:
         env:
           SERENITY_SMOKE_EXECUTABLE: release/linux-unpacked/serenity
           SERENITY_SMOKE_CREDENTIALS: '1'
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: smoke-diagnostics-${{ matrix.os }}
+          path: smoke-artifacts/
+          if-no-files-found: ignore
       - uses: actions/upload-artifact@v4
         with:
           name: serenity-${{ matrix.os }}

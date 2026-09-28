@@ -20,6 +20,17 @@ import { canExtractText, extractDocument } from './documents'
 /** Extra YAML fields as searchable words; records without any add nothing. */
 const metadataText = (metadata: Record<string, unknown> | undefined): string => metadata && Object.keys(metadata).length ? JSON.stringify(metadata) : ''
 
+/** `name` in `directory`, or, if taken, the same name with a number before its extension; earlier files are kept. */
+async function freeName(directory: string, name: string): Promise<string> {
+  const dot = name.lastIndexOf('.')
+  const [stem, extension] = dot > 0 ? [name.slice(0, dot), name.slice(dot)] : [name, '']
+  for (let attempt = 1; ; attempt++) {
+    const candidate = join(directory, attempt === 1 ? name : `${stem} ${attempt}${extension}`)
+    try { await lstat(candidate) }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return candidate; throw error }
+  }
+}
+
 /** A tab a session may restore: a workspace resource or a view such as Calendar. */
 const isTabUri = (uri: string): boolean => parseResourceUri(uri) !== null || parseViewTabUri(uri) !== null
 
@@ -375,6 +386,13 @@ export class Workspace {
       semanticIndex = { generatedAt: raw.generatedAt, count: raw.entries.length }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') errors.push(`.serenity/semantic-index.yaml: ${String(error)}`)
+    }
+    // Entities archived on purpose (not merged) keep their names available to records that mention them.
+    const removedDirectory = join(this.path, 'archive', 'removed', 'entities')
+    for (const name of await readdir(removedDirectory).catch(() => [] as string[])) {
+      if (!name.endsWith('.md')) continue
+      try { archivedEntities.push({ ...(await this.readOwnedParsed(join(removedDirectory, name), 'entity', parseEntity)).value, archived: true }) }
+      catch (error) { errors.push(`archive/removed/entities/${name}: ${String(error)}`) }
     }
     const mergesDirectory = join(this.path, 'archive', 'merges')
     const archivedDirectory = join(this.path, 'archive', 'entities')
@@ -1203,21 +1221,68 @@ export class Workspace {
     if (!page) throw new Error('Page not found in this workspace')
     if (page.id === snapshot.workbench.homePage) throw new Error('The Home page cannot be archived. Choose another Home page in .serenity/workbench.yaml first.')
     const source = await this.ownedFile(join(this.pagesDirectory, basename(page.path)))
-    const archive = join(this.path, 'archive', 'pages')
-    try { await mkdir(archive) }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
-    const info = await lstat(archive)
-    if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`Workspace directory must be an actual directory: ${archive}`)
+    const archive = await this.archiveDirectory('pages')
     return this.withFileMutation(source, async () => {
       if (checksum(await this.readOwnedText(source)) !== revision) throw new Error('This page changed on disk. Refresh before archiving it.')
-      // An earlier archived page of the same name is kept; this one gets a distinct name beside it.
-      let destination = join(archive, basename(page.path))
-      for (let attempt = 2; ; attempt++) {
-        try { await lstat(destination) }
-        catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') break; throw error }
-        destination = join(archive, basename(page.path).replace(/\.md$/, ` ${attempt}.md`))
-      }
-      await rename(source, destination)
+      await rename(source, await freeName(archive, basename(page.path)))
+      this.markDirty()
+      return this.snapshot()
+    })
+  }
+
+  /** An archive folder, created on first use and checked to be a real directory inside the workspace. */
+  private async archiveDirectory(...parts: string[]): Promise<string> {
+    let current = join(this.path, 'archive')
+    for (const part of parts) {
+      current = join(current, part)
+      try { await mkdir(current) }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
+      const info = await lstat(current)
+      if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`Workspace directory must be an actual directory: ${current}`)
+    }
+    return current
+  }
+
+  /**
+   * Moves an entity, with the facts recorded about it, to `archive/removed/`. Nothing is deleted: the files are
+   * unchanged there, and its name still resolves where other records mention it. An entity that others were merged
+   * into keeps them pointing somewhere, so those merges must be undone first.
+   */
+  async archiveEntity(entityId: string, revision: string): Promise<WorkspaceSnapshot> {
+    return this.withIdentityMutation(async () => {
+      const subject = id(entityId)
+      const source = join(this.directories[0], `${subject}.md`)
+      return this.withFileMutation(source, async () => {
+        const snapshot = await this.snapshot()
+        const entity = snapshot.entities.find((item) => item.id === subject)
+        if (!entity) throw new Error('Entity not found in this workspace')
+        if (entity.revision !== revision) throw new Error('This entity changed on disk. Refresh before archiving it.')
+        if (snapshot.merges.some((merge) => merge.target === subject)) throw new Error('Other entities were merged into this one. Restore them before archiving it.')
+        const entities = await this.archiveDirectory('removed', 'entities')
+        const claims = await this.archiveDirectory('removed', 'claims')
+        const destination = join(entities, `${subject}.md`)
+        try { await lstat(destination); throw new Error('An archived entity with this ID already exists.') }
+        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+        await rename(await this.ownedFile(source), destination)
+        for (const claim of snapshot.claims.filter((item) => item.subject === subject && !item.mergedFrom)) {
+          const file = join(this.directories[1], `${id(claim.id)}.yaml`)
+          await rename(await this.ownedFile(file), await freeName(claims, `${id(claim.id)}.yaml`)).catch((error: NodeJS.ErrnoException) => {
+            if (error.code !== 'ENOENT') throw error
+          })
+        }
+        this.markDirty()
+        return this.snapshot()
+      })
+    })
+  }
+
+  /** Moves an imported document to `archive/documents/`; facts citing it keep their source text. */
+  async archiveDocument(name: string): Promise<WorkspaceSnapshot> {
+    if (typeof name !== 'string' || !name || name !== basename(name) || name.startsWith('.')) throw new Error('Invalid document name')
+    const source = await this.ownedFile(join(this.directories[2], name))
+    const archive = await this.archiveDirectory('documents')
+    return this.withFileMutation(source, async () => {
+      await rename(source, await freeName(archive, name))
       this.markDirty()
       return this.snapshot()
     })

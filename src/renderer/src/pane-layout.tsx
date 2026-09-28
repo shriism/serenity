@@ -50,5 +50,7 @@ export function PaneDivider({ divider, area, onResize, onReset }: {
     className={`pane-divider ${row ? 'row' : 'column'}`} style={percentRect(divider.line)}
     onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId) }}
     onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) pointer(event) }}
-    onDoubleClick={() => onReset(divider.path)} onKeyDown={keys}/>
+    onDoubleClick={() => onReset(divider.path)} onKeyDown={keys}
+    // A drag should not leave the divider focused, or the next key press would light up its focus ring.
+    onMouseDown={(event) => event.preventDefault()}/>
 }

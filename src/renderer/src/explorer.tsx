@@ -21,7 +21,7 @@ interface Folder { id: string; title: string; items: Item[] }
  * The workspace as a tree: pages, entities grouped by their type, and imported documents. Clicking an item opens it in
  * the focused pane; ⌘/Ctrl-click opens it in the next one.
  */
-export const Explorer = memo(function Explorer({ workspace, activeUri, onOpen, onNewPage, onNewEntity, onImport, onArchivePage }: {
+export const Explorer = memo(function Explorer({ workspace, activeUri, onOpen, onNewPage, onNewEntity, onImport, onArchive }: {
   workspace: WorkspaceSnapshot
   /** The resource shown in the focused pane, highlighted in the tree. */
   activeUri?: string
@@ -29,8 +29,8 @@ export const Explorer = memo(function Explorer({ workspace, activeUri, onOpen, o
   onNewPage(): void
   onNewEntity(): void
   onImport(): void
-  /** Moves a page to the workspace archive, after asking. */
-  onArchivePage(id: string): void
+  /** Moves a page, entity, or document to the workspace archive, after asking. */
+  onArchive(uri: string): void
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => stored('serenity.explorer-collapsed'))
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
@@ -70,8 +70,8 @@ export const Explorer = memo(function Explorer({ workspace, activeUri, onOpen, o
   const open = (uri: string) => (event: MouseEvent) => onOpen(uri, event.metaKey || event.ctrlKey)
   const archivable = (uri: string) => {
     const ref = parseResourceUri(uri)
-    return ref?.kind === 'page' && ref.id !== workspace.workbench.homePage
-      ? [{ id: 'archive', label: 'Move to archive…', icon: <Archive size={14}/>, danger: true, separated: true, run: () => onArchivePage(ref.id) }] : []
+    return ref && !(ref.kind === 'page' && ref.id === workspace.workbench.homePage)
+      ? [{ id: 'archive', label: 'Move to archive…', icon: <Archive size={14}/>, danger: true, separated: true, run: () => onArchive(uri) }] : []
   }
   const entityFolders = shown.filter((folder) => folder.id.startsWith('type:'))
   const renderFolder = (folder: Folder, depth: number) => {

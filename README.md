@@ -86,7 +86,7 @@ There is no Save button: edits are saved as you pause, when you leave the editor
 
 ### Pages, links, and live lists
 
-Home is `pages/Home.md`; the built-in template is yours to replace, and **New page** (**⌘N**) creates more. To remove a page, right-click it and choose **Move to archive…**: its file moves to `archive/pages/`, where it stays readable and can be moved back. Page Markdown can contain:
+Home is `pages/Home.md`; the built-in template is yours to replace, and **New page** (**⌘N**) creates more. To remove a page, entity, or document, right-click it (in the sidebar or on its tab) and choose **Move to archive…**. Nothing is deleted: pages move to `archive/pages/`, documents to `archive/documents/`, and an entity, with the facts about it, to `archive/removed/`, where they stay readable and can be moved back. Page Markdown can contain:
 
 - **Wikilinks**, as in Obsidian: `[[Alex]]` or `[[Alex|my friend]]` link a page, entity, or document by its exact title. A name shared by several things, or by nothing yet, is marked instead of guessed. Entity narratives support them too, typing `[[` suggests titles, and renaming an entity offers to update the links that named it.
 - Stable `serenity:` links to resources and `serenity:command/…` links to commands.
@@ -124,7 +124,7 @@ The assistant can use GitHub Copilot or OpenAI Codex. Connect an account with th
 
 - **What it sees.** The focused pane's resource is its primary context and other visible panes add context; chips above the message field show what it can see. By default it may read the whole workspace; a conversation can instead allow only selected entities and documents (chosen with a searchable picker) and separately allow other conversations or calendar and tasks. The current conversation is always included. The conversation inspector shows which records were actually sent. From search, **Ask about these results** starts a conversation that may read only the entities and documents the search found.
 - **Sources.** Answers list the records they rely on as numbered sources you can open. A source the assistant was never given, or a quote that does not appear in the cited record, is flagged as unverified.
-- **What it may change.** Each conversation can ask first, propose changes for review, or auto-save permitted proposal types. Autonomous workflows initially auto-save only sourced claims; entity, task, and event permissions can be granted individually. Provider tools are disabled or read-only: changes go through Serenity's own reviewed workflow.
+- **What it may change.** Ask it to add a task, event, entity, or fact and it proposes one; suggestions appear under its answer (and in Review) with **Accept** and **Dismiss**. Each conversation can ask first, propose changes for review, or auto-save permitted proposal types. Autonomous workflows initially auto-save only sourced claims; entity, task, and event permissions can be granted individually. Provider tools are disabled or read-only: changes go through Serenity's own reviewed workflow.
 - **Background AI.** An optional indexing module builds summaries and topic terms under `.serenity/semantic-index.yaml` that can be searched locally without another provider call, and an optional document analysis module drafts proposals for new or changed documents. Both send workspace content to the selected provider, so both are off by default.
 
 ## Documents

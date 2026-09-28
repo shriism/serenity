@@ -26,7 +26,7 @@ import { MenuButton } from './menu'
 import { Dialog } from './dialog'
 import { SettingsDialog } from './settings-panel'
 import { NewEntityDialog, NewTabScreen, Ribbon, Welcome, type RecentWorkspace } from './shell-parts'
-import { Composer, ContextChips, ConversationList, ConversationSettings, ConversationView, conversationMenu, type ActiveContext, type AssistantState } from './assistant'
+import { Composer, ContextChips, ConversationList, ConversationSettings, ConversationSuggestions, ConversationView, conversationMenu, type ActiveContext, type AssistantState } from './assistant'
 import type { EditorContext } from './markdown-editor'
 import './app.css'
 
@@ -54,6 +54,8 @@ function SidebarResizer({ side, width, min, max, onResize }: { side: 'left' | 'r
     onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); start.current = { x: event.clientX, width }; document.body.classList.add('resizing') }}
     onPointerMove={(event) => { if (!start.current) return; const delta = (event.clientX - start.current.x) * (side === 'left' ? 1 : -1); onResize(Math.min(max, Math.max(min, start.current.width + delta))) }}
     onPointerUp={() => { start.current = null; document.body.classList.remove('resizing') }}
+    // A drag should not leave the handle focused, or the next key press would light up its focus ring.
+    onMouseDown={(event) => event.preventDefault()}
     onKeyDown={(event) => { const step = event.shiftKey ? 40 : 12; if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); const grow = (event.key === 'ArrowRight') === (side === 'left'); onResize(Math.min(max, Math.max(min, width + (grow ? step : -step)))) } }}/>
 }
 
@@ -374,11 +376,25 @@ function App() {
     return openTab({ kind: 'document', id: name }, groupId)
   }
 
-  async function archivePage(id: string): Promise<void> {
-    const page = workspace?.pages.find((item) => item.id === id)
-    if (!page || !window.confirm(`Move “${page.title}” to the archive? Its file moves to archive/pages, where you can still open it or move it back.`)) return
-    try { setWorkspace(await window.serenity.archivePage(page.id, page.revision)) }
-    catch (cause) { setError(String(cause)) }
+  /** Moves a page, entity, or document to the workspace archive after asking; nothing is deleted. */
+  async function archiveResource(uri: string): Promise<void> {
+    const ref = parseResourceUri(uri)
+    if (!workspace || !ref) return
+    try {
+      if (ref.kind === 'page') {
+        const page = workspace.pages.find((item) => item.id === ref.id)
+        if (!page || !window.confirm(`Move “${page.title}” to the archive?\n\nIts file moves to archive/pages, where you can still open it or move it back.`)) return
+        setWorkspace(await window.serenity.archivePage(page.id, page.revision))
+      } else if (ref.kind === 'entity') {
+        const entity = workspace.entities.find((item) => item.id === ref.id)
+        const facts = workspace.claims.filter((claim) => claim.subject === ref.id).length
+        if (!entity?.revision || !window.confirm(`Move “${entity.title}” to the archive?\n\nIts file${facts ? ` and ${facts} ${facts === 1 ? 'fact' : 'facts'}` : ''} move to archive/removed. Other notes that mention it keep its name.`)) return
+        setWorkspace(await window.serenity.archiveEntity(entity.id, entity.revision))
+      } else if (ref.kind === 'document') {
+        if (!window.confirm(`Move “${ref.id}” to the archive?\n\nThe file moves to archive/documents. Facts that cite it keep their source.`)) return
+        setWorkspace(await window.serenity.archiveDocument(ref.id))
+      }
+    } catch (cause) { setError(String(cause)) }
   }
 
   function closeTab(key: string, groupId: string): void {
@@ -626,7 +642,7 @@ function App() {
         onSplit={(direction) => splitPane(direction, group.id)} onClosePane={() => closeEditorGroup(group.id)}
         menu={[...(tab && multipleGroups ? [{ id: 'move', label: 'Move tab to next pane', icon: <MoveRight size={14}/>, run: () => moveTabToOtherGroup(group.id) }] : []),
           ...(tab ? [{ id: 'close-tab', label: 'Close tab', icon: <X size={14}/>, run: () => closeTab(tabKey(tab), group.id) }] : []),
-          ...(tab?.kind === 'page' && tab.id !== snapshot.workbench.homePage ? [{ id: 'archive', label: 'Move page to archive…', icon: <Archive size={14}/>, danger: true, separated: true, run: () => void archivePage(tab.id) }] : [])]}
+          ...(tab && isResourceTab(tab) && !(tab.kind === 'page' && tab.id === snapshot.workbench.homePage) ? [{ id: 'archive', label: 'Move to archive…', icon: <Archive size={14}/>, danger: true, separated: true, run: () => void archiveResource(resourceUri(tab)) }] : [])]}
         trailing={edge.top && edge.right && !rightOpen && mode === 'workspace' ? assistantToggle : undefined}
         tabMenu={(key) => {
           const index = group.tabs.findIndex((item) => tabKey(item) === key)
@@ -637,7 +653,9 @@ function App() {
             { id: 'right', label: 'Close tabs to the right', disabled: index === group.tabs.length - 1, run: () => closeAll(group.tabs.slice(index + 1).map(tabKey)) },
             { id: 'split', label: 'Open in new pane to the right', icon: <Columns2 size={14}/>, separated: true, disabled: !canSplit,
               run: () => dropTab(group.id, key, group.id, 'right') },
-            ...(multipleGroups ? [{ id: 'move', label: 'Move to next pane', icon: <MoveRight size={14}/>, run: () => { const target = nextGroupId(workbench, group.id); if (target) setWorkbench((current) => moveTab(current, group.id, key, target)) } }] : [])
+            ...(multipleGroups ? [{ id: 'move', label: 'Move to next pane', icon: <MoveRight size={14}/>, run: () => { const target = nextGroupId(workbench, group.id); if (target) setWorkbench((current) => moveTab(current, group.id, key, target)) } }] : []),
+            ...((() => { const item = group.tabs[index]; return item && isResourceTab(item) && !(item.kind === 'page' && item.id === snapshot.workbench.homePage)
+              ? [{ id: 'archive', label: 'Move to archive…', icon: <Archive size={14}/>, danger: true, separated: true, run: () => void archiveResource(resourceUri(item)) }] : [] })())
           ]
         }}/>
       {tab && isResourceTab(tab) && <div className="view-bar">
@@ -668,6 +686,9 @@ function App() {
   }
 
   const askScope = workspace && results?.length ? scopeFromResults(results, workspace) : null
+  const suggestions = workspace ? <ConversationSuggestions workspace={workspace} conversationId={conversationId}
+    onResolve={(id, accept) => { void resolveProposal(id, accept) }} onAttach={(id, entityId) => { void attachProposal(id, entityId) }}
+    onOpenSource={(name) => { openDocumentTab(name) }}/> : null
   const assistantState = assistant as unknown as AssistantState
   const newChat = (): void => startConversation()
   const chatIntro = (heading: string) => <div className="chat-intro"><h1>{heading}</h1>
@@ -688,7 +709,7 @@ function App() {
       mode={mode} onMode={setMode} modeShortcut={shortcut('assistant.expand')} shortcutFor={shortcut} onCommand={runCommand}/>}
     {workspace && <aside className="left-sidebar" aria-label={mode === 'chat' ? 'Chats' : 'Workspace'} inert={!showLeft} aria-hidden={!showLeft}>
       {mode === 'workspace' ? <Explorer workspace={workspace} activeUri={shownUri(focused)} onOpen={(uri, side) => { openResource(uri, { side }) }}
-        onNewPage={() => void createPage()} onNewEntity={() => setNewEntityOpen(true)} onImport={() => void importDocuments()} onArchivePage={(id) => void archivePage(id)}/> :
+        onNewPage={() => void createPage()} onNewEntity={() => setNewEntityOpen(true)} onImport={() => void importDocuments()} onArchive={(uri) => void archiveResource(uri)}/> :
         <div className="chat-sidebar">
           <button type="button" className="sidebar-action" onClick={newChat}><MessageSquarePlus size={15}/> New chat</button>
           <ConversationList workspace={workspace} activeId={conversationId} busy={assistant.busy} onSelect={(item: Conversation) => selectConversation(item)}/>
@@ -722,7 +743,7 @@ function App() {
         <ErrorBoundary label="The conversation">
           <div className={`chat-body ${assistant.conversation || assistant.busy ? '' : 'empty'}`}>
             <div className="chat-scroll" tabIndex={0} role="region" aria-label="Messages">
-              <ConversationView assistant={assistantState} intro={chatIntro('What’s on your mind?')} onOpenResource={(uri, side) => { openResource(uri, { side }) }}/>
+              <ConversationView assistant={assistantState} intro={chatIntro('What’s on your mind?')} onOpenResource={(uri, side) => { openResource(uri, { side }) }} suggestions={suggestions}/>
             </div>
             <div className="chat-composer"><Composer assistant={assistantState} onOpenSettings={() => setConversationSettingsOpen(true)} autoFocus/></div>
           </div>
@@ -742,7 +763,7 @@ function App() {
       </header>
       <ErrorBoundary label="The assistant">
         <div className="assistant-scroll" tabIndex={0} role="region" aria-label="Messages">
-          <ConversationView assistant={assistantState} onOpenResource={(uri, side) => { openResource(uri, { side }) }}
+          <ConversationView assistant={assistantState} onOpenResource={(uri, side) => { openResource(uri, { side }) }} suggestions={suggestions}
             intro={<div className="chat-intro compact"><h2>{activeFile ? `Ask about ${activeFile.name}` : 'Ask about your workspace'}</h2>
               <p>{activeFile?.allowed ? 'What’s open in your panes can inform the answer.' : 'Answers cite their sources, and suggested changes wait for your review.'}</p></div>}/>
         </div>

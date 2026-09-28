@@ -11,6 +11,8 @@ export interface Entity {
   source?: string
   origin?: 'human' | 'ai-statement' | 'ai-inference'
   metadata?: Record<string, unknown>
+  /** Set on entities moved to the archive on purpose, rather than merged into another. */
+  archived?: boolean
 }
 
 export interface Claim {
@@ -268,6 +270,10 @@ export interface SerenityAPI {
   createPage(): Promise<WorkspaceSnapshot>
   /** Moves a page to `archive/pages/`; the Home page cannot be archived. */
   archivePage(id: string, revision: string): Promise<WorkspaceSnapshot>
+  /** Moves an entity and its facts to `archive/removed/`. */
+  archiveEntity(id: string, revision: string): Promise<WorkspaceSnapshot>
+  /** Moves an imported document to `archive/documents/`. */
+  archiveDocument(name: string): Promise<WorkspaceSnapshot>
   renameWikilinks(from: string, to: string, uris: string[]): Promise<{ snapshot: WorkspaceSnapshot; count: number }>
   loadSession(): Promise<WorkbenchSession | null>
   saveSession(session: WorkbenchSession): Promise<void>

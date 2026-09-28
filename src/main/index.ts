@@ -423,6 +423,8 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('calendar:save', (_event, item: CalendarEvent) => currentWorkspace().saveEvent(item))
   ipcMain.handle('page:archive', (_event, id: string, revision: string) => currentWorkspace().archivePage(id, revision))
+  ipcMain.handle('entity:archive', (_event, id: string, revision: string) => currentWorkspace().archiveEntity(id, revision))
+  ipcMain.handle('document:archive', (_event, name: string) => currentWorkspace().archiveDocument(name))
   ipcMain.handle('task:save', (_event, item: TaskItem) => currentWorkspace().saveTask(item))
   ipcMain.handle('calendar:archive', (_event, id: string, revision: string) => currentWorkspace().archiveEvent(id, revision))
   ipcMain.handle('calendar:restore', (_event, id: string) => currentWorkspace().restoreEvent(id))

@@ -43,6 +43,11 @@ await writeFile(join(workspace, 'proposals', `${proposalId}.yaml`), YAML.stringi
   source: 'Smoke document', origin: 'ai-inference', provider: 'copilot',
   conversationId: '123e4567-e89b-42d3-a456-426614174093', status: 'pending', recordedAt: new Date().toISOString()
 }))
+await mkdir(join(workspace, 'conversations'))
+await writeFile(join(workspace, 'conversations', '123e4567-e89b-42d3-a456-426614174093.yaml'), YAML.stringify({
+  id: '123e4567-e89b-42d3-a456-426614174093', title: 'Robotics club notes', retained: true, messages: [
+    { id: 'm1', role: 'user', text: 'Who did I meet at the robotics club?', recordedAt: new Date().toISOString() },
+    { id: 'm2', role: 'assistant', provider: 'copilot', text: 'You met Alex. I suggested adding Alex as a person.', recordedAt: new Date().toISOString() }] }))
 const pdf = await PDFDocument.create()
 pdf.addPage([400, 200]).drawText('QuarterlyCometResearch', { x: 25, y: 130, size: 16 })
 await writeFile(join(workspace, 'documents', 'research.pdf'), await pdf.save())
@@ -53,6 +58,7 @@ docx.file('word/document.xml', `<?xml version="1.0" encoding="UTF-8"?><w:documen
 await writeFile(join(workspace, 'documents', 'syllabus.docx'), await docx.generateAsync({ type: 'nodebuffer' }))
 await writeFile(join(workspace, 'documents', 'notes.md'), `# Intro\n${'x'.repeat(155000)}\n## Deep section\nA useful observation.\n`)
 await writeFile(join(workspace, 'documents', 'unreadable.bin'), 'Not a supported document type')
+await writeFile(join(workspace, 'documents', 'old-draft.txt'), 'A draft to archive')
 
 const provider = process.env.SERENITY_SMOKE_PROVIDER
 // SERENITY_SMOKE_WINDOW (e.g. 900x640) runs everything in a small window, as CI machines with small screens do.
@@ -112,7 +118,13 @@ try {
     row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: rect.left + 10, clientY: rect.top + 5 }));
     await waitFor(() => $('.menu.context')); const labels = $$('.menu.context .menu-label').map((item) => item.textContent);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); $('.menu.context')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await sleep(50); return labels`)
-  assert.deepEqual(contextMenu, ['Open', 'Open in next pane', 'Copy link'], 'Files have a right-click menu')
+  assert.deepEqual(contextMenu, ['Open', 'Open in next pane', 'Copy link', 'Move to archive…'], 'Files have a right-click menu')
+  // Archiving moves a file aside rather than deleting it.
+  await run(`window.confirm = () => true; const row = byText('.tree-row', 'old-draft.txt'); const rect = row.getBoundingClientRect();
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: rect.left + 10, clientY: rect.top + 5 }));
+    await waitFor(() => $('.menu.context')); click(byText('.menu.context .menu-item', 'Move to archive…'));
+    await waitFor(() => !$$('.tree-row').some((item) => item.textContent === 'old-draft.txt'))`)
+  assert.ok((await stat(join(workspace, 'archive', 'documents', 'old-draft.txt'))).isFile(), 'An archived document moves to archive/documents')
 
   // New entity dialog, notes with a wikilink, a sourced fact, and other views of the entity.
   await run(`await showSidebar(); click(byText('.sidebar-actions button', 'New entity')); await waitFor(() => $('#new-entity-title'));
@@ -197,14 +209,18 @@ try {
   assert.deepEqual({ ...settings, rows: true }, { rows: true, light: true, calendarHidden: true, calendarBack: true })
 
   // Chat mode, and conversation settings for a read scope limited to chosen knowledge.
-  const chat = await run<{ composer: boolean; scope: string }>(`click(byText('.ribbon-mode button', 'Chat')); await waitFor(() => $('.chat-main .composer'));
+  const chat = await run<{ composer: boolean; scope: string; suggestions: string }>(`click(byText('.ribbon-mode button', 'Chat')); await waitFor(() => $('.chat-main .composer'));
     click($('.chat-main .composer button[aria-label^="Read scope"]')); await waitFor(() => $('[role="radiogroup"][aria-label="AI read scope"]'));
     click(byText('[role="radio"]', 'Selected knowledge')); await sleep(80); const scope = $('.chat-main .composer button[aria-label^="Read scope"]').textContent;
-    click(byText('[role="radio"]', 'Whole workspace')); click(byText('.dialog button', 'Done')); await sleep(80);
+    click(byText('[role="radio"]', 'Whole workspace')); click(byText('.dialog button', 'Done') ?? byText('.dialog button', 'Save')); await sleep(80);
+    await showSidebar(); if (!byText('.conversation-row', 'Robotics club notes')) throw new Error('Conversations listed: ' + $$('.conversation-row').map((row) => row.textContent).join(', ') + ' | sidebar: ' + $('.app').className);
+    click(byText('.conversation-row', 'Robotics club notes')); await waitFor(() => $('.chat-suggestions'));
+    const suggestions = $('.chat-suggestions').textContent;
     const composer = Boolean($('.chat-main textarea[aria-label="Message"]')); click(byText('.ribbon-mode button', 'Workspace')); await waitFor(() => $('.pane'));
-    return { composer, scope }`)
+    return { composer, scope, suggestions }`)
   assert.equal(chat.composer, true)
-  assert.match(chat.scope, /0 selected/)
+  assert.match(chat.suggestions, /1 decided suggestion/, 'A conversation shows the changes it suggested')
+  assert.match(chat.scope, /selected/)
   await shot('serenity-chat')
 
   // The layout is kept with the workspace and restored when the window reloads.

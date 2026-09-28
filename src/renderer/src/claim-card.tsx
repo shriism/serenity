@@ -5,6 +5,8 @@ import { MenuButton } from './menu'
 interface Props {
   claim: Claim
   target?: Entity
+  /** The linked entity's name when it has been moved to the archive. */
+  archivedTarget?: string
   mergedFrom?: MergeRecord
   conflicting: boolean
   previousAlternative: boolean
@@ -19,13 +21,14 @@ interface Props {
 const origins = { human: '', 'ai-statement': 'AI extraction', 'ai-inference': 'AI inference' }
 
 /** One sourced fact about an entity, with where it came from and what can be done with it. */
-export function ClaimCard({ claim, target, mergedFrom, conflicting, previousAlternative,
+export function ClaimCard({ claim, target, archivedTarget, mergedFrom, conflicting, previousAlternative,
   onSelectTarget, onMarkCurrent, onRetract, sourceDocument, onOpenSource }: Props) {
   const badge = claim.isCurrent ? 'Current' : conflicting ? 'Conflict' : previousAlternative ? 'Earlier answer' : claim.status === 'retracted' ? 'Retracted' : null
   return <div className={`fact ${claim.status === 'retracted' ? 'retracted' : ''} ${conflicting ? 'conflicting' : ''}`}>
     <span className="fact-key">{claim.key}</span>
     <div className="fact-value">
       {target ? <button className="text-button link" onClick={() => onSelectTarget(target)}>{target.title}</button> :
+        archivedTarget ? <span>{archivedTarget} <span className="badge">Archived</span></span> :
         claim.key === 'context' ? <details className="fact-context"><summary>Attached context</summary><p>{claim.value}</p></details> : <span>{claim.value}</span>}
       {badge && <span className={`badge ${badge === 'Conflict' ? 'warning' : badge === 'Current' ? 'accent' : ''}`}>{badge}</span>}
       <small className="fact-meta">

@@ -19,7 +19,9 @@ A rebuilt interface that looks and behaves like a native desktop app. The worksp
 - Calendar, Tasks, Review, Documents, Knowledge, Activity, and Search open as tabs like any file. An empty tab offers quick actions. Closing a tab shows the one beside it.
 - Settings is a dialog with sections, and new entities are named in a short dialog that points out possible duplicates.
 - An application menu lists every action with its shortcut. New tab (**⌘T**), Close tab (**⌘W**, which no longer closes the window), Next and Previous tab (**⌘⇧]** / **⌘⇧[**), Settings (**⌘,**), New page (**⌘N**), and Open another workspace (**⌘O**) are new. The menu no longer includes developer tools in release builds.
-- Pages other than Home can be moved to the archive (`archive/pages/`) from their right-click or pane menu; nothing is deleted.
+- Pages, entities, and documents can be moved to the archive from their right-click, tab, or pane menu; nothing is deleted. Pages go to `archive/pages/`, documents to `archive/documents/`, and an entity with the facts about it to `archive/removed/`, where other notes still show its name. An entity that others were merged into, and the Home page, cannot be archived.
+- Changes the assistant suggests in a conversation (tasks, events, entities, facts) appear under its answer with Accept and Dismiss, as well as in Review. The assistant knows today's date, so "add a task for tomorrow" gets the right day, and it proposes what you ask it to create rather than only describing it.
+- Segmented switches (List/Board, Profile/Timeline, and others) show the selected option clearly, and resize handles no longer stay highlighted after a drag.
 - Pages and entities say **Saving…** and **Saved** as edits reach disk.
 - Files in the sidebar and tabs have right-click menus: open in the next pane, copy a `[[link]]`, close other tabs or tabs to the right, and move or split a tab.
 - The sidebars can be resized and float over the content in narrow windows. Pane content adapts to the pane's width.

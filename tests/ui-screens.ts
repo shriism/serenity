@@ -23,7 +23,7 @@ await writeFile(join(workspace, 'documents', 'club-notes.md'), '# Club notes\n\n
 const due = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)
 await writeFile(join(workspace, 'tasks', '77777777-7777-4777-8777-777777777777.yaml'), YAML.stringify({ id: '77777777-7777-4777-8777-777777777777', title: 'Order rover motors', due, completed: false, notes: '', relatedEntityIds: [ids.robot] }))
 await writeFile(join(workspace, 'proposals', '88888888-8888-4888-8888-888888888888.yaml'), YAML.stringify({ id: '88888888-8888-4888-8888-888888888888', kind: 'entity', title: 'Jordan Lee',
-  type: 'person', body: 'Joined the club in spring.', source: 'club-notes.md', origin: 'ai-inference', provider: 'copilot', conversationId: '99999999-9999-4999-8999-999999999999', status: 'pending', recordedAt: new Date().toISOString() }))
+  type: 'person', body: 'Joined the club in spring.', source: 'club-notes.md', origin: 'ai-inference', provider: 'copilot', conversationId: '12121212-1212-4212-8212-121212121212', status: 'pending', recordedAt: new Date().toISOString() }))
 
 const conversation = '12121212-1212-4212-8212-121212121212'
 await writeFile(join(workspace, 'conversations', `${conversation}.yaml`), YAML.stringify({ id: conversation, title: 'When is Alex’s birthday?', retained: true, messages: [

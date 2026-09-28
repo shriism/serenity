@@ -5,6 +5,7 @@ import { answerSegments, citationUri, type Citation } from '../../shared/citatio
 import { MenuButton } from './menu'
 import { Dialog } from './dialog'
 import { ResourcePicker } from './resource-picker'
+import { ProposalCard, type ProposalActions } from './proposal-card'
 
 export const providerNames: Record<Provider, string> = { copilot: 'GitHub Copilot', codex: 'OpenAI Codex' }
 const autonomyNames: Record<Autonomy, string> = { ask: 'Ask first', propose: 'Read & propose', autonomous: 'Auto-save permitted' }
@@ -121,8 +122,30 @@ function Thinking({ provider }: { provider: Provider }) {
   </div>
 }
 
+/**
+ * Changes the assistant suggested in this conversation, shown where they were asked for: pending ones can be accepted
+ * or dismissed right here, and decided ones are summarized.
+ */
+export function ConversationSuggestions({ workspace, conversationId, ...actions }: ProposalActions & { workspace: WorkspaceSnapshot; conversationId: string | null }) {
+  const [showDecided, setShowDecided] = useState(false)
+  if (!conversationId) return null
+  const suggestions = workspace.proposals.filter((item) => item.conversationId === conversationId)
+  if (!suggestions.length) return null
+  const pending = suggestions.filter((item) => item.status === 'pending')
+  const decided = suggestions.length - pending.length
+  return <section className="chat-suggestions" aria-label="Suggested changes">
+    <h3>{pending.length ? `${pending.length} suggested ${pending.length === 1 ? 'change' : 'changes'} for you to review` : 'Suggestions from this chat'}</h3>
+    {pending.map((item) => <ProposalCard key={item.id} item={item} workspace={workspace} {...actions}/>)}
+    {decided > 0 && <button type="button" className="text-button" onClick={() => setShowDecided((value) => !value)} aria-expanded={showDecided}>
+      {showDecided ? 'Hide' : 'Show'} {decided} decided {decided === 1 ? 'suggestion' : 'suggestions'}</button>}
+    {showDecided && suggestions.filter((item) => item.status !== 'pending').map((item) => <ProposalCard key={item.id} item={item} workspace={workspace} {...actions}/>)}
+  </section>
+}
+
 /** The messages of a conversation, or a short welcome for a new one. */
-export function ConversationView({ assistant, intro, onOpenResource }: { assistant: AssistantState; intro: ReactNode; onOpenResource(uri: string, side: boolean): void }) {
+export function ConversationView({ assistant, intro, onOpenResource, suggestions }: { assistant: AssistantState; intro: ReactNode; onOpenResource(uri: string, side: boolean): void
+  /** Changes suggested in this conversation, shown after its messages. */
+  suggestions?: ReactNode }) {
   const end = useRef<HTMLDivElement>(null)
   const count = assistant.conversation?.messages.length ?? 0
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [count, assistant.busy, assistant.conversationId])
@@ -144,6 +167,7 @@ export function ConversationView({ assistant, intro, onOpenResource }: { assista
         </div>)}
       </details>)}
     </article>)}
+    {!assistant.busy && suggestions}
     {assistant.busy && <Thinking provider={assistant.provider}/>}
     <div ref={end}/>
   </div>

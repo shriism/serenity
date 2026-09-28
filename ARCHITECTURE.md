@@ -26,7 +26,7 @@ The chosen directory is the source of truth; everything else is rebuildable.
 | `documents/` | Imported copies of source files |
 | `calendar/`, `tasks/` | Records of the optional internal modules |
 | `activity/` | Provider-request records (operation, provider, referenced IDs, prompt size and checksum, outcome) |
-| `archive/` | Merged entities and their redirects, merge history, archived tasks, events, and pages |
+| `archive/` | Merged entities and their redirects, merge history, archived tasks, events, pages, and documents, and entities removed on purpose with their facts (`archive/removed/`) |
 | `.serenity/` | `modules.yaml`, `workbench.yaml`, `session.yaml`, `semantic-provider.yaml`, and derived `index.sqlite` and `semantic-index.yaml` |
 
 Record IDs are stable UUIDs, so renaming or retyping an entity breaks nothing. Types and relationship names are user-chosen strings, not a fixed ontology. Claims keep confirmations, conflicts, and retractions distinct; a correction is recorded as a resolution rather than by rewriting the original claims. Edits to a known field update YAML nodes in place, preserving unknown fields and comments.

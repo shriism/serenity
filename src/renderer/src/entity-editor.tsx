@@ -158,7 +158,8 @@ export function EntityEditor(props: EntityEditorProps) {
         <input aria-label="Source" placeholder="Source" required value={claim.source} onChange={(event) => setClaim({ ...claim, source: event.target.value })}/>
         <div className="form-buttons"><button type="button" className="secondary" onClick={() => setAdding(false)}>Cancel</button><button type="submit" className="primary">Add fact</button></div>
       </form>}
-      {claims.map((item) => <ClaimCard key={item.id} claim={item} target={workspace.entities.find((entity) => entity.id === item.value)} mergedFrom={workspace.merges.find((merge) => merge.id === item.mergedFrom)}
+      {claims.map((item) => <ClaimCard key={item.id} claim={item} target={workspace.entities.find((entity) => entity.id === item.value)}
+        archivedTarget={workspace.archivedEntities.find((entity) => entity.id === item.value && entity.archived)?.title} mergedFrom={workspace.merges.find((merge) => merge.id === item.mergedFrom)}
         conflicting={conflicts.includes(item.key)} previousAlternative={resolvedKeys.includes(item.key) && !item.isCurrent} sourceDocument={sourceDocument(item.source, workspace.documents) ?? undefined}
         onOpenSource={props.onOpenSource} onSelectTarget={(entity) => props.onOpenEntity(entity.id)} onMarkCurrent={markCurrent} onRetract={retract}/>)}
       {claims.length === 0 && !adding && <p className="hint">No facts yet. Add one with its source, such as a birthday or who {draft.title} works with.</p>}

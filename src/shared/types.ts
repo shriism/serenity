@@ -245,6 +245,8 @@ export interface SerenityAPI {
   /** Versions for bug reports: the app, its Electron and Chromium runtime, and the operating system. */
   appInfo(): Promise<{ version: string; electron: string; chrome: string; platform: string }>
   setEditorDirty(dirty: boolean): void
+  /** Matches the system-drawn title bar controls to the app's appearance. */
+  setWindowTheme(theme: 'dark' | 'light'): void
   refresh(): Promise<WorkspaceSnapshot | null>
   saveEntity(entity: Entity): Promise<WorkspaceSnapshot>
   addClaim(claim: Pick<Claim, 'subject' | 'key' | 'value' | 'source'>): Promise<WorkspaceSnapshot>

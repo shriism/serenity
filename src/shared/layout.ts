@@ -6,6 +6,16 @@ export const workbenchViews = ['home', 'knowledge', 'review', 'documents', 'cale
 export type WorkbenchView = (typeof workbenchViews)[number]
 export const isWorkbenchView = (value: string): value is WorkbenchView => (workbenchViews as readonly string[]).includes(value)
 
+/** Views that open as tabs of their own. Home is a page, and Settings is a dialog rather than a place. */
+export const tabViews = ['knowledge', 'review', 'documents', 'calendar', 'tasks', 'activity', 'search'] as const satisfies readonly WorkbenchView[]
+export type TabView = (typeof tabViews)[number]
+export const isTabView = (value: string): value is TabView => (tabViews as readonly string[]).includes(value)
+export const viewTabUri = (view: TabView): string => `serenity:view/${view}`
+export function parseViewTabUri(uri: string): TabView | null {
+  const match = /^serenity:view\/([a-z]+)$/.exec(uri)
+  return match && isTabView(match[1]) ? match[1] : null
+}
+
 export type SplitDirection = 'row' | 'column'
 /** `sizes` are the children's shares of the split, summing to 1; without them children share equally. */
 export type LayoutNode = { group: string } | { split: SplitDirection; children: LayoutNode[]; sizes?: number[] }

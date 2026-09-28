@@ -62,9 +62,9 @@ export function ReviewPanel({ workspace, onOpenResource, onUpdate, onError, ...a
     }
     catch (error) { onError(String(error)) }
   }
-  return <section className="page" ref={reviewRef}>
-    <span className="eyebrow">KNOWLEDGE REVIEW</span><h1 tabIndex={-1}>Proposals & activity</h1>
-    <p>Decide which suggested knowledge belongs in your workspace. Suggestions are grouped by their source; previous decisions remain visible.</p>
+  return <section className="page wide" ref={reviewRef}>
+    <header className="view-header"><div><h1 tabIndex={-1}>Review</h1><p className="view-subtitle">Decide which suggestions belong in your workspace. Earlier decisions stay visible.</p></div></header>
+    {workspace.proposals.some((item) => item.status === 'pending' && item.reviewReason) && <div className="callout warning" role="status">Some suggestions involve similar entities. Check the identity before accepting them.</div>}
     {duplicates.length > 0 && <section className="review-source" aria-label="Possible duplicates">
       <header className="review-source-header"><div><h2>Same identity?</h2><small>{duplicates.length} possible {duplicates.length === 1 ? 'duplicate' : 'duplicates'} · similar names are not proof</small></div></header>
       {duplicates.slice(0, shownDuplicates).map(({ a, b, reasons }) => <article key={`${a.id}|${b.id}`} data-identity-pair={[a.id, b.id].sort().join('|')} className="review-card duplicate-card">
@@ -94,7 +94,7 @@ export function ReviewPanel({ workspace, onOpenResource, onUpdate, onError, ...a
       })}
       {distinct.length > shownDecisions && <button className="text-button" onClick={() => setShownDecisions((count) => count + 12)}>Show more decisions</button>}
     </section>}
-    {sources.length === 0 && duplicates.length === 0 && distinct.length === 0 && <p className="hint">Nothing to review yet. Conversations can suggest claims, entities, tasks, and events, and analyzing an imported document drafts suggestions from it.</p>}
+    {sources.length === 0 && duplicates.length === 0 && distinct.length === 0 && <div className="empty-state"><h2>Nothing to review</h2><p>Conversations can suggest facts, entities, tasks, and events, and analyzing a document drafts suggestions from it. They wait here for you.</p></div>}
     {sources.map(({ source, proposals, pending }) => {
       const document = workspace.documents.find((item) => item.name === source)
       return <section key={source} className="review-source" aria-label={`From ${source}`}>

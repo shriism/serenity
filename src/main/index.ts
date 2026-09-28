@@ -158,6 +158,10 @@ async function openWorkspace(path: string): Promise<WorkspaceSnapshot> {
   return next.snapshot()
 }
 
+// Title bar controls drawn by the system follow the app's appearance.
+const windowColors = { dark: { background: '#19191b', symbol: '#c9c9cf' }, light: { background: '#f3f3f4', symbol: '#3a3a40' } } as const
+let windowTheme: keyof typeof windowColors = 'dark'
+
 // `--background` runs without taking focus or showing a window, e.g. for automated checks while someone keeps working.
 const background = process.argv.includes('--background')
 
@@ -167,9 +171,15 @@ function createWindow(): void {
     show: !background,
     width: 1280,
     height: 820,
-    minWidth: 900,
-    minHeight: 600,
+    minWidth: 720,
+    minHeight: 520,
     title: 'Serenity',
+    // The window's content reaches the top edge, like other native workbenches: tabs sit in the title bar, beside
+    // the macOS traffic lights or under Windows and Linux window controls drawn by the system.
+    titleBarStyle: 'hidden',
+    backgroundColor: windowColors[windowTheme].background,
+    ...(process.platform === 'darwin' ? { trafficLightPosition: { x: 16, y: 13 } } :
+      { titleBarOverlay: { color: windowColors[windowTheme].background, symbolColor: windowColors[windowTheme].symbol, height: 40 } }),
     webPreferences: {
       preload: fileURLToPath(new URL('../preload/index.cjs', import.meta.url)),
       contextIsolation: true,
@@ -237,6 +247,14 @@ process.on('unhandledRejection', (reason) => console.error('Unhandled rejection 
 
 app.whenReady().then(async () => {
   ipcMain.on('editor:dirty', (_event, dirty: unknown) => { editorDirty = dirty === true })
+  ipcMain.on('window:theme', (event, theme: unknown) => {
+    if (theme !== 'dark' && theme !== 'light') return
+    windowTheme = theme
+    const target = BrowserWindow.fromWebContents(event.sender)
+    if (!target || target.isDestroyed()) return
+    target.setBackgroundColor(windowColors[theme].background)
+    if (process.platform !== 'darwin') target.setTitleBarOverlay({ color: windowColors[theme].background, symbolColor: windowColors[theme].symbol, height: 40 })
+  })
   ipcMain.handle('workspace:choose', async () => {
     if (activeRequests) throw new Error('Wait for the current AI request before switching workspaces.')
     if (editorDirty && window) {

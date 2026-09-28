@@ -37,6 +37,7 @@ export function SearchView({ workspace, initialQuery, onOpenResource, onAsk }: {
   const scope = useMemo(() => results?.length ? scopeFromResults(results, workspace) : null, [results, workspace])
   const uriOf = (result: SearchResult): string => resourceUri({ kind: result.kind === 'claim' && !workspace.claims.some((claim) => claim.id === result.id) ? 'entity' : result.kind, id: result.id })
   return <section className="page search-view" aria-label="Search">
+    <header className="view-header"><div><h1>Search</h1></div></header>
     <label className="library-search search-view-field"><Search size={16}/><input ref={field} value={query} onChange={(event) => setQuery(event.target.value)}
       placeholder="Search this workspace" aria-label="Search this workspace"/></label>
     {error && <p className="page-query-error" role="alert">{error}</p>}

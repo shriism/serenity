@@ -1,6 +1,7 @@
-import { spawn } from 'node:child_process'
+// Drives the desktop app end to end against a temporary workspace: files, IPC, the workbench, editing, search,
+// modules, review, accessibility, and recovery from a crashed renderer. `npm run smoke:desktop`.
 import { createRequire } from 'node:module'
-import { mkdtemp, mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
@@ -8,12 +9,12 @@ import assert from 'node:assert/strict'
 import { PDFDocument } from 'pdf-lib'
 import JSZip from 'jszip'
 import YAML from 'yaml'
+import { helpers, launch } from './electron-harness'
 
 const require = createRequire(import.meta.url)
-const electron = process.env.SERENITY_SMOKE_EXECUTABLE ?? require('electron') as string
-const packaged = Boolean(process.env.SERENITY_SMOKE_EXECUTABLE)
-if (packaged) {
-  const resources = process.platform === 'darwin' ? join(dirname(electron), '..', 'Resources') : join(dirname(electron), 'resources')
+const executable = process.env.SERENITY_SMOKE_EXECUTABLE
+if (executable) {
+  const resources = process.platform === 'darwin' ? join(dirname(executable), '..', 'Resources') : join(dirname(executable), 'resources')
   const platform = `${process.platform}-${process.arch}`
   const copilot = join(resources, 'app.asar.unpacked', 'node_modules', `@github/copilot-sdk-${platform}`,
     'prebuilds', platform, process.platform === 'win32' ? 'copilot-runtime.exe' : 'copilot-runtime')
@@ -27,17 +28,13 @@ if (packaged) {
   assert.ok((await stat(copilot)).isFile(), 'The packaged Copilot runtime must be available')
   assert.ok((await stat(codex)).isFile(), 'The packaged Codex runtime must be available')
 }
+
 const workspace = await mkdtemp(join(tmpdir(), 'serenity-desktop-smoke-'))
-// A fresh browser profile keeps runs independent of each other and of the person's own Serenity settings. Live
-// provider runs keep the normal profile, where the provider credentials are stored.
-const profile = process.env.SERENITY_SMOKE_PROVIDER ? null : await mkdtemp(join(tmpdir(), 'serenity-desktop-profile-'))
 const futureDate = (days: number): string => {
   const day = new Date()
   day.setDate(day.getDate() + days)
   return `${day.getFullYear()}-${String(day.getMonth() + 1).padStart(2, '0')}-${String(day.getDate()).padStart(2, '0')}`
 }
-const taskDue = futureDate(7)
-const eventDate = futureDate(8)
 await mkdir(join(workspace, 'documents'))
 await mkdir(join(workspace, 'proposals'))
 const proposalId = '123e4567-e89b-42d3-a456-426614174092'
@@ -56,598 +53,197 @@ docx.file('word/document.xml', `<?xml version="1.0" encoding="UTF-8"?><w:documen
 await writeFile(join(workspace, 'documents', 'syllabus.docx'), await docx.generateAsync({ type: 'nodebuffer' }))
 await writeFile(join(workspace, 'documents', 'notes.md'), `# Intro\n${'x'.repeat(155000)}\n## Deep section\nA useful observation.\n`)
 await writeFile(join(workspace, 'documents', 'unreadable.bin'), 'Not a supported document type')
-const port = 20000 + Math.floor(Math.random() * 30000)
-const child = spawn(electron, [`--remote-debugging-port=${port}`, ...(profile ? [`--user-data-dir=${profile}`] : []), ...(process.env.SERENITY_SMOKE_VISIBLE ? [] : ['--background']), ...(packaged ? [] : ['.']), `--workspace=${workspace}`], {
-  stdio: ['ignore', 'pipe', 'pipe'],
-  env: { ...process.env }
-})
-let output = ''
-child.stdout.on('data', (chunk: Buffer) => { output += chunk.toString() })
-child.stderr.on('data', (chunk: Buffer) => { output += chunk.toString() })
 
-async function evaluate(url: string, expression: string): Promise<unknown> {
-  const socket = new WebSocket(url)
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => { socket.close(); reject(new Error(`Renderer evaluation timed out for ${expression.slice(0, 85)}. App logs: ${output.slice(-1200)}`)) },
-      process.env.SERENITY_SMOKE_PROVIDER ? 90000 : 30000)
-    socket.addEventListener('open', () => socket.send(JSON.stringify({ id: 1, method: 'Runtime.evaluate', params: {
-      expression, awaitPromise: true, returnByValue: true
-    } })))
-    socket.addEventListener('message', (event) => {
-      const result = JSON.parse(String(event.data)) as {
-        id?: number; result?: { result?: { value?: unknown }; exceptionDetails?: { text: string; exception?: { description?: string } } }
-      }
-      if (result.id !== 1) return
-      clearTimeout(timeout)
-      socket.close()
-      if (result.result?.exceptionDetails) reject(new Error(`${result.result.exceptionDetails.exception?.description ?? result.result.exceptionDetails.text}\nApp logs: ${output.slice(-3000)}`))
-      else resolve(result.result?.result?.value)
-    })
-    socket.addEventListener('error', () => { clearTimeout(timeout); reject(new Error('Could not connect to the renderer')) })
-  })
-}
-
-async function captureScreenshot(url: string): Promise<Buffer> {
-  const socket = new WebSocket(url)
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => { socket.close(); reject(new Error('UI screenshot timed out')) }, 10000)
-    socket.addEventListener('open', () => socket.send(JSON.stringify({ id: 2, method: 'Page.captureScreenshot', params: { format: 'png' } })))
-    socket.addEventListener('message', (event) => {
-      const result = JSON.parse(String(event.data)) as { id?: number; result?: { data?: string } }
-      if (result.id !== 2) return
-      clearTimeout(timeout)
-      socket.close()
-      result.result?.data ? resolve(Buffer.from(result.result.data, 'base64')) : reject(new Error('Screenshot contained no image data'))
-    })
-    socket.addEventListener('error', () => { clearTimeout(timeout); reject(new Error('Could not capture the desktop UI')) })
-  })
+const provider = process.env.SERENITY_SMOKE_PROVIDER
+const app = await launch(workspace, { executable, keepProfile: Boolean(provider), width: 1400, height: 880 })
+const screenshots = process.env.SERENITY_SMOKE_SCREENSHOT_DIR
+const run = <T = unknown>(script: string, timeout?: number) => app.evaluate<T>(`(async () => { ${helpers} ${script} })()`, timeout)
+const shot = async (name: string) => { if (screenshots) await writeFile(join(screenshots, `${name}.png`), await app.screenshot()) }
+/** Types into the focused element as a person would, so editors see ordinary input events. */
+const type = (text: string) => app.send('Input.insertText', { text })
+const key = (key: string, modifiers = 0) => app.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key.length === 1 ? `Key${key.toUpperCase()}` : key,
+  windowsVirtualKeyCode: key === 'Enter' ? 13 : key === 'Escape' ? 27 : key.toUpperCase().charCodeAt(0), modifiers }).then(() =>
+  app.send('Input.dispatchKeyEvent', { type: 'keyUp', key, modifiers }))
+const mod = process.platform === 'darwin' ? 4 : 2
+const until = async (label: string, check: () => Promise<boolean>, ms = 8000) => {
+  const end = Date.now() + ms
+  while (Date.now() < end) { if (await check()) return; await delay(100) }
+  assert.fail(`Timed out waiting for ${label}`)
 }
 
 try {
-  let pageUrl = ''
-  let observed: unknown = null
-  for (let attempt = 0; attempt < 60; attempt++) {
-    if (child.exitCode !== null) throw new Error(`Electron exited before opening a window.\n${output}`)
-    try {
-      const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() as { type: string; webSocketDebuggerUrl: string }[]
-      const page = pages.find((item) => item.type === 'page')
-      if (page) {
-        const result = await evaluate(page.webSocketDebuggerUrl, '({ bridge: typeof window.serenity?.refresh, title: document.title })') as { bridge: string; title: string }
-        observed = result
-        if (result.bridge === 'function' && result.title === 'Serenity') { pageUrl = page.webSocketDebuggerUrl; break }
-      }
-    } catch { /* Renderer may still be loading. */ }
-    await delay(200)
-  }
-  assert.ok(pageUrl, `Desktop window or preload bridge did not start. Observed ${JSON.stringify(observed)}\n${output}`)
+  assert.equal(await app.evaluate('window.serenity.refresh().then((snapshot) => snapshot?.path)'), workspace)
 
-  const path = await evaluate(pageUrl, 'window.serenity.refresh().then((snapshot) => snapshot?.path)')
-  assert.equal(path, workspace)
-  const home = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const heading = document.querySelector('.home-page h1'); if (heading) return heading.textContent; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`) as string | null
-  assert.equal(home, 'Your world, in context')
+  // A new workspace opens on its Home page: an editable Markdown file with live lists.
+  const home = await run<{ title: string; review: string }>(`await waitFor(() => $('.page-document .cm-content') && $$('.page-query-list').length);
+    return { title: $('.inline-title')?.value, review: $$('.page-query-list').map((list) => list.textContent).join(' | ') }`)
+  assert.equal(home.title, 'Home')
+  assert.match(home.review, /Alex/, 'Home should render a live review list from its Markdown file')
   assert.match(await readFile(join(workspace, 'pages', 'Home.md'), 'utf8'), /```serenity-query/)
-  const homeReview = await evaluate(pageUrl, `document.querySelector('.home-review-list button')?.textContent ?? null`)
-  assert.match(String(homeReview), /Alex/, 'Home should render a live review query from its Markdown file')
-  const editedHome = await evaluate(pageUrl, `(async () => { document.querySelector('.page-toolbar button')?.click(); await new Promise((resolve) => setTimeout(resolve, 80)); const textarea = document.querySelector('#page-source'); const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set; setter.call(textarea, textarea.value.replace('# Your world, in context', '# My own workspace') + '\\n## Sources\\n\\n\x60\x60\x60serenity-query\\nfrom: documents\\nlimit: 3\\n\x60\x60\x60\\n'); textarea.dispatchEvent(new Event('input', { bubbles: true })); for (let i = 0; i < 30; i++) { const button = document.querySelector('.page-save'); if (button && !button.disabled) { button.click(); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { if (document.querySelector('.page-prose h1')?.textContent === 'My own workspace' && [...document.querySelectorAll('.page-query-list')].some((list) => list.textContent?.includes('research.pdf'))) return true; await new Promise((resolve) => setTimeout(resolve, 100)) } return JSON.stringify({ heading: document.querySelector('.page-prose h1')?.textContent, editing: Boolean(document.querySelector('#page-source')), lists: [...document.querySelectorAll('.page-query-list, .page-query-empty, .page-query-error')].map((item) => item.textContent?.slice(0, 80)), notices: [...document.querySelectorAll('.notice')].map((item) => item.textContent) }) })()`)
-  assert.equal(editedHome, true, `The Home page should save editable Markdown and render newly added workspace queries: ${editedHome}`)
-  assert.match(await readFile(join(workspace, 'pages', 'Home.md'), 'utf8'), /# My own workspace/)
-  const paneControls = await evaluate(pageUrl, `(async () => { const shell = document.querySelector('.serenity-studio'); const initial = Boolean(shell && document.querySelector('.assistant-sidebar') && document.querySelector('#workspace-main')); document.querySelector('[aria-label="Collapse navigation"]')?.click(); await new Promise((resolve) => setTimeout(resolve, 400)); const logo = document.querySelector('.brand-icon')?.getBoundingClientRect().left; const icon = document.querySelector('.navigation button svg')?.getBoundingClientRect().left; const main = document.querySelector('#workspace-main')?.getBoundingClientRect().left; const left = shell?.classList.contains('left-collapsed') && Boolean(document.querySelector('[aria-label="Expand navigation"]')); document.querySelector('[aria-label="Expand navigation"]')?.click(); await new Promise((resolve) => setTimeout(resolve, 400)); const stable = logo === document.querySelector('.brand-icon')?.getBoundingClientRect().left && icon === document.querySelector('.navigation button svg')?.getBoundingClientRect().left && main === document.querySelector('#workspace-main')?.getBoundingClientRect().left; document.querySelector('[aria-label="Collapse AI sidebar"]')?.click(); await new Promise((resolve) => setTimeout(resolve, 50)); const right = shell?.classList.contains('right-collapsed') && Boolean(document.querySelector('.assistant-rail button')); document.querySelector('.assistant-rail button')?.click(); await new Promise((resolve) => setTimeout(resolve, 50)); document.querySelector('[aria-label="Expand AI over workspace"]')?.click(); await new Promise((resolve) => setTimeout(resolve, 50)); const expanded = shell?.classList.contains('ai-expanded') && getComputedStyle(document.querySelector('#workspace-main')).display === 'none'; document.querySelector('[aria-label="Return AI to sidebar"]')?.click(); await new Promise((resolve) => setTimeout(resolve, 50)); return { initial, left, stable, right, expanded, restored: Boolean(document.querySelector('.assistant-sidebar')) && !shell?.classList.contains('ai-expanded') } })()`)
-  assert.deepEqual(paneControls, { initial: true, left: true, stable: true, right: true, expanded: true, restored: true }, 'The dock must not shift its logo, icons, or canvas when it reveals labels')
-  const collapsedAssistant = await evaluate(pageUrl, `(async () => { document.querySelector('[aria-label="Collapse AI sidebar"]')?.click(); await new Promise((resolve) => setTimeout(resolve, 60)); const icon = document.querySelector('.assistant-rail button svg')?.getAttribute('class') ?? ''; const menu = document.querySelector('.topbar-more summary')?.getBoundingClientRect().right ?? 0; const edge = document.querySelector('#workspace-main')?.getBoundingClientRect().right ?? 0; document.querySelector('.assistant-rail button')?.click(); await new Promise((resolve) => setTimeout(resolve, 60)); return { icon, menuAtRight: edge - menu < 75 } })()`) as { icon: string; menuAtRight: boolean }
-  assert.match(collapsedAssistant.icon, /lucide-panel-right-open/, 'The collapsed AI rail should show the expand-panel symbol')
-  assert.equal(collapsedAssistant.menuAtRight, true, 'Workspace actions should stay at the far right even with the AI pane closed')
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-dock-expanded.png'), await captureScreenshot(pageUrl))
-  await evaluate(pageUrl, `(async () => { document.querySelector('[aria-label="Collapse navigation"]')?.click(); await new Promise((resolve) => setTimeout(resolve, 410)) })()`)
-  const railShortcuts = await evaluate(pageUrl, `(async () => { const mod = navigator.platform.includes('Mac') ? 'metaKey' : 'ctrlKey'; const press = (key) => window.dispatchEvent(new KeyboardEvent('keydown', { key, [mod]: true, bubbles: true })); press('b'); await new Promise((resolve) => setTimeout(resolve, 60)); const nav = document.querySelector('.serenity-studio')?.classList.contains('dock-open'); press('b'); await new Promise((resolve) => setTimeout(resolve, 60)); press('j'); await new Promise((resolve) => setTimeout(resolve, 60)); const assistant = document.querySelector('.serenity-studio')?.classList.contains('right-collapsed'); press('j'); await new Promise((resolve) => setTimeout(resolve, 60)); return { nav, assistant, restored: Boolean(document.querySelector('.assistant-sidebar')) && Boolean(document.querySelector('.left-collapsed')) } })()`)
-  assert.deepEqual(railShortcuts, { nav: true, assistant: true, restored: true }, 'Keyboard shortcuts should toggle each panel without affecting open files')
-  const secondaryControls = await evaluate(pageUrl, `(() => { document.querySelector('.topbar-more summary')?.click(); document.querySelector('.compose-options summary')?.click(); document.querySelector('.conversation-workflow summary')?.click(); const result = { newEntity: [...document.querySelectorAll('.topbar-menu button')].some((item) => item.textContent?.includes('New entity')), refresh: [...document.querySelectorAll('.topbar-menu button')].some((item) => item.textContent?.includes('Refresh files')), providers: document.querySelector('.compose-options select')?.options.length, readScope: Boolean(document.querySelector('.conversation-workflow select')) }; document.querySelector('.topbar-more summary')?.click(); document.querySelector('.compose-options summary')?.click(); document.querySelector('.conversation-workflow summary')?.click(); return result })()`)
-  assert.deepEqual(secondaryControls, { newEntity: true, refresh: true, providers: 2, readScope: true }, 'Advanced actions should remain available through quiet disclosures')
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-home.png'), await captureScreenshot(pageUrl))
-  const theme = await evaluate(pageUrl, `(async () => { const select = document.querySelector('.theme-control select'); select.value = 'dark'; select.dispatchEvent(new Event('change', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 100)); const changed = document.documentElement.dataset.theme; select.value = 'system'; select.dispatchEvent(new Event('change', { bubbles: true })); return changed })()`) as string
-  assert.equal(theme, 'dark')
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) {
-    await evaluate(pageUrl, `(async () => { const select = document.querySelector('.theme-control select'); select.value = 'light'; select.dispatchEvent(new Event('change', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 120)) })()`)
-    await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-home-light.png'), await captureScreenshot(pageUrl))
-    await evaluate(pageUrl, `(async () => { const select = document.querySelector('.theme-control select'); select.value = 'system'; select.dispatchEvent(new Event('change', { bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 120)) })()`)
-  }
-  const spotlight = await evaluate(pageUrl, `(async () => { const trigger = document.querySelector('.topbar-search'); trigger.focus(); trigger.click(); for (let i = 0; i < 30 && !document.querySelector('.command-palette'); i++) await new Promise((resolve) => setTimeout(resolve, 100)); await new Promise((resolve) => setTimeout(resolve, 240)); const rect = document.querySelector('.command-palette')?.getBoundingClientRect(); return { compact: trigger.getBoundingClientRect().width <= 44, centered: Boolean(rect && Math.abs(rect.left + rect.width / 2 - innerWidth / 2) < 20 && Math.abs(rect.top + rect.height / 2 - innerHeight / 2) < 20), opened: Boolean(rect) } })()`) as { compact: boolean; centered: boolean; opened: boolean }
-  assert.equal(spotlight.compact && spotlight.centered && spotlight.opened, true, `The magnifying glass should open a centered Spotlight-style search palette: ${JSON.stringify(spotlight)}`)
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-search.png'), await captureScreenshot(pageUrl))
-  const paletteFocus = await evaluate(pageUrl, `(async () => { const dialog = document.querySelector('.command-palette'); const controls = [...dialog.querySelectorAll('button:not(:disabled), input:not(:disabled)')]; const first = controls[0], last = controls.at(-1); first.focus(); first.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', shiftKey: true, bubbles: true, cancelable: true })); const wrappedBack = document.activeElement === last; last.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })); const wrappedForward = document.activeElement === first; first.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await new Promise((resolve) => setTimeout(resolve, 60)); return { wrappedBack, wrappedForward, closed: !document.querySelector('.command-palette'), restored: document.activeElement === document.querySelector('.topbar-search') } })()`)
-  assert.deepEqual(paletteFocus, { wrappedBack: true, wrappedForward: true, closed: true, restored: true }, 'The command palette keeps focus inside and returns it to its trigger')
-  const providers = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Settings')); if (button) { button.click(); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const select = document.querySelector('#index-provider'); if (select) return [...select.options].map((option) => option.value); await new Promise((resolve) => setTimeout(resolve, 100)) } return [] })()`) as string[]
-  assert.deepEqual(providers, ['copilot', 'codex'])
-  const displayedPath = await evaluate(pageUrl, `document.querySelector('.settings-workspace strong')?.textContent`)
-  const searchShortcut = await evaluate(pageUrl, `[...document.querySelectorAll('.settings-shortcuts tr')].find((row) => row.textContent?.includes('workspace.search'))?.querySelector('kbd')?.textContent ?? null`)
-  assert.match(String(searchShortcut), /^(⌘K|Ctrl\+K)$/, 'Settings should list each command with its current shortcut')
-  const aboutLine = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const text = document.querySelector('.settings-about p')?.textContent; if (text) return text; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
-  assert.match(String(aboutLine), /^Version \d+\.\d+\.\d+ · Electron /, 'Settings should show the app version for bug reports')
-  assert.equal(displayedPath, workspace)
-  const settingsError = await evaluate(pageUrl, `(async () => { await new Promise((resolve) => setTimeout(resolve, 250)); return document.querySelector('.notice.error')?.textContent ?? null })()`)
-  assert.equal(settingsError, null, `Settings should load credentials without an error: ${settingsError}`)
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-settings.png'), await captureScreenshot(pageUrl))
-  await evaluate(pageUrl, `[...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Knowledge'))?.click()`)
-  if (process.env.SERENITY_SMOKE_CREDENTIALS === '1') {
-    const connected = await evaluate(pageUrl, `window.serenity.saveCredential('codex', 'test-session-only-key').then((status) => status.codex)`)
-    assert.equal(connected, true)
-    const disconnected = await evaluate(pageUrl, `window.serenity.saveCredential('codex', '').then((status) => status.codex)`)
-    assert.equal(disconnected, false)
-    await assert.rejects(readFile(join(workspace, 'provider-credentials.json'), 'utf8'), /ENOENT/)
-  }
-  const entityId = await evaluate(pageUrl, `window.serenity.saveEntity({ id: '', title: 'Alex', type: 'person', body: '# Alex\\nFrom **AI Club**.' }).then((snapshot) => snapshot.entities[0].id)`) as string
-  assert.match(entityId, /^[a-f0-9-]{36}$/)
-  assert.match(await readFile(join(workspace, 'entities', `${entityId}.md`), 'utf8'), /AI Club/)
-  const graphMode = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 40 && !document.querySelector('.library-mode'); i++) await new Promise((resolve) => setTimeout(resolve, 50)); [...document.querySelectorAll('.library-mode button')].find((item) => item.textContent?.includes('Graph'))?.click(); let nodes = 0; for (let i = 0; i < 40 && !nodes; i++) { nodes = document.querySelectorAll('.graph-node').length; await new Promise((resolve) => setTimeout(resolve, 50)) } [...document.querySelectorAll('.library-mode button')].find((item) => item.textContent?.includes('Tiles'))?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return nodes })()`)
-  assert.ok(Number(graphMode) >= 1, 'The Knowledge library should draw its entities as a graph')
-  const preview = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const button = [...document.querySelectorAll('.entity-link, .knowledge-tiles button')].find((item) => item.textContent?.includes('Alex')); if (button) { button.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.markdown-preview strong')?.textContent ?? null } await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
-  assert.equal(preview, 'AI Club')
-  const activeEntityTab = await evaluate(pageUrl, `document.querySelector('.workspace-tab.active')?.textContent ?? null`)
-  assert.match(String(activeEntityTab), /Alex/, 'Opened entities should remain available as workspace tabs')
-  const homePath = join(workspace, 'pages', 'Home.md')
-  await writeFile(homePath, `${await readFile(homePath, 'utf8')}\n[Alex](serenity:entity/${entityId})\n`)
-  const linkedEntity = await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Home'))?.click(); for (let i = 0; i < 40; i++) { const link = [...document.querySelectorAll('.page-link')].find((item) => item.textContent?.includes('Alex')); if (link) { link.click(); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const title = document.querySelector('.editor .title-input')?.value; if (title === 'Alex') return title; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
-  assert.equal(linkedEntity, 'Alex', 'An externally edited Home page should open its linked workspace entity')
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-knowledge.png'), await captureScreenshot(pageUrl))
-  const review = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Review')); button?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.review-identity select')?.textContent ?? null })()`)
-  assert.match(String(review), /Alex/)
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-review.png'), await captureScreenshot(pageUrl))
-  const attached = await evaluate(pageUrl, `window.serenity.attachEntityProposal('${proposalId}', '${entityId}').then((snapshot) => ({ entities: snapshot.entities.length, source: snapshot.claims.find((item) => item.key === 'context')?.source, target: snapshot.proposals.find((item) => item.id === '${proposalId}')?.resolvedInto }))`) as { entities: number; source: string; target: string }
-  assert.deepEqual(attached, { entities: 1, source: 'Smoke document', target: entityId })
-  const attachedContext = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Knowledge')); button?.click(); for (let i = 0; i < 40; i++) { const rich = document.querySelector('.claim-context strong'); if (rich) { document.querySelector('.claim-context summary')?.click(); return { text: rich.textContent, view: 'knowledge' } } await new Promise((resolve) => setTimeout(resolve, 100)) } return { text: null, view: document.querySelector('.main')?.textContent?.slice(0, 200) } })()`) as { text: string | null; view: string }
-  assert.equal(attachedContext.text, 'robotics club', attachedContext.view)
-  const claimCount = await evaluate(pageUrl, `window.serenity.addClaim({ subject: '${entityId}', key: 'birthday', value: 'September 7', source: 'Alex' }).then((snapshot) => snapshot.claims.length)`)
-  assert.equal(claimCount, 2)
-  const homeContext = await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Home'))?.click(); for (let i = 0; i < 30; i++) { const recent = document.querySelector('.home-recent-list')?.textContent; if (recent?.includes('birthday') && recent?.includes('Alex')) return true; await new Promise((resolve) => setTimeout(resolve, 100)) } return false })()`)
-  assert.equal(homeContext, true, 'Editable Home should update its live query from existing claims')
-  const presented = await evaluate(pageUrl, `(async () => { const wait = async (test) => { for (let i = 0; i < 40; i++) { const value = test(); if (value) return value; await new Promise((resolve) => setTimeout(resolve, 100)) } return null }; const tab = (name) => [...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === name); [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Knowledge'))?.click(); const switcher = await wait(() => tab('Timeline')); switcher?.click(); const timeline = await wait(() => [...document.querySelectorAll('.timeline-title')].map((item) => item.textContent).find((text) => text?.includes('Recorded birthday: September 7'))); tab('Connections')?.click(); const connections = await wait(() => document.querySelector('.entity-connections h1')?.textContent); tab('Profile')?.click(); const profile = await wait(() => document.querySelector('.editor .title-input')?.value); return { timeline: Boolean(timeline), connections, profile } })()`)
-  assert.deepEqual(presented, { timeline: true, connections: 'Alex', profile: 'Alex' }, 'An entity should switch between its profile, timeline, and connections views')
-  const keyboardSwitch = await evaluate(pageUrl, `(async () => { const list = document.querySelector('.presentation-switcher'); list?.querySelector('[aria-selected="true"]')?.focus(); list?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })); for (let i = 0; i < 30; i++) { if (document.querySelector('.entity-timeline')) break; await new Promise((resolve) => setTimeout(resolve, 50)) } await new Promise((resolve) => requestAnimationFrame(resolve)); const focused = document.activeElement?.textContent; list?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true })); for (let i = 0; i < 30; i++) { if (document.querySelector('.editor .title-input')) break; await new Promise((resolve) => setTimeout(resolve, 50)) } return { focused, profile: Boolean(document.querySelector('.editor .title-input')) } })()`)
-  assert.deepEqual(keyboardSwitch, { focused: 'Timeline', profile: true }, 'Arrow keys should move between an entity’s views and keep focus on the chosen one')
-  const cycled = await evaluate(pageUrl, `(async () => {
-    const wait = async (test) => { for (let i = 0; i < 40; i++) { const value = test(); if (value) return value; await new Promise((resolve) => setTimeout(resolve, 50)) } return null }
-    document.querySelector('.topbar-search')?.click()
-    const input = await wait(() => document.querySelector('.palette-input input'))
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Switch view'); input.dispatchEvent(new Event('input', { bubbles: true }))
-    ;(await wait(() => [...document.querySelectorAll('.palette-results button')].find((item) => item.textContent?.includes('Switch view of this tab'))))?.click()
-    const timeline = Boolean(await wait(() => document.querySelector('.entity-timeline')))
-    ;[...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === 'Profile')?.click()
-    await wait(() => document.querySelector('.editor .title-input'))
-    return timeline
-  })()`)
-  assert.equal(cycled, true, 'Switch view of this tab should move an entity from its profile to its timeline')
-  const citedConversation = '123e4567-e89b-42d3-a456-426614174095'
-  await writeFile(join(workspace, 'conversations', `${citedConversation}.yaml`), YAML.stringify({ id: citedConversation, title: 'Cited answer', retained: true, messages: [
-    { id: 'm1', role: 'user', text: 'When is Alex’s birthday?', recordedAt: new Date().toISOString() },
-    { id: 'm2', role: 'assistant', provider: 'codex', recordedAt: new Date().toISOString(), text: 'Alex was born on September 7 [1]. Sam agrees [2].',
-      citations: [{ ref: `entity:${entityId}`, title: 'Alex', sent: true }, { ref: 'entity:invented', title: 'entity:invented', sent: false }] }
-  ] }))
-  const cited = await evaluate(pageUrl, `(async () => { const wait = async (test) => { for (let i = 0; i < 40; i++) { const value = test(); if (value) return value; await new Promise((resolve) => setTimeout(resolve, 100)) } return null }; const entry = await wait(() => [...document.querySelectorAll('.conversation-history-list button')].find((item) => item.textContent?.includes('Cited answer'))); entry?.click(); const markers = await wait(() => document.querySelectorAll('.citation-marker').length === 2 && document.querySelectorAll('.citation-marker')); const unverified = document.querySelectorAll('.citations li.unverified').length; [...document.querySelectorAll('.citations .citation-title')].find((item) => item.textContent === 'Alex')?.click(); const opened = await wait(() => document.querySelector('.workspace-tab.active')?.textContent?.includes('Alex') && document.querySelector('.breadcrumbs')?.textContent); return { markers: markers ? markers.length : 0, unverified, opened } })()`)
-  assert.deepEqual(cited, { markers: 2, unverified: 1, opened: 'Alex' }, 'Answers should show their sources, flag unverified citations, and open cited records')
-  const scopePicker = await evaluate(pageUrl, `(async () => {
-    const select = document.querySelector('select[aria-label="AI read scope"]')
-    if (!select) return 'no scope control'
-    const choose = (value) => { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, value); select.dispatchEvent(new Event('change', { bubbles: true })) }
-    choose('selected')
-    let option = null
-    for (let i = 0; i < 30 && !option; i++) { option = [...document.querySelectorAll('.read-scope-items .module-link-matches button')].find((item) => item.textContent?.startsWith('Alex')); await new Promise((resolve) => setTimeout(resolve, 50)) }
-    option?.click()
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    const chip = document.querySelector('.read-scope-items .module-link-chip')?.textContent ?? null
-    choose('workspace')
-    return chip
-  })()`)
-  assert.match(String(scopePicker), /^Alex/, 'The read-scope picker should add an allowed entity as a removable chip')
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) {
-    await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === 'Timeline')?.click(); await new Promise((resolve) => setTimeout(resolve, 200)) })()`)
-    await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-timeline.png'), await captureScreenshot(pageUrl))
-    await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === 'Profile')?.click(); await new Promise((resolve) => setTimeout(resolve, 200)) })()`)
-  }
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-home-with-data.png'), await captureScreenshot(pageUrl))
-  const results = await evaluate(pageUrl, `window.serenity.search('birthday').then((items) => items.map((item) => item.kind))`) as string[]
-  assert.ok(results.includes('claim'))
-  const paletteResults = await evaluate(pageUrl, `(async () => { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', [navigator.platform.includes('Mac') ? 'metaKey' : 'ctrlKey']: true, bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 80)); const input = document.querySelector('.palette-input input'); const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(input, 'birthday'); input.dispatchEvent(new Event('input', { bubbles: true })); for (let i = 0; i < 30; i++) { const match = [...document.querySelectorAll('.palette-results button')].find((item) => item.textContent?.includes('birthday')); if (match) { window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return true } await new Promise((resolve) => setTimeout(resolve, 100)) } window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return false })()`) as boolean
-  assert.equal(paletteResults, true, 'The command palette should search workspace claims')
-  const excerpt = await evaluate(pageUrl, `(async () => { if (!document.querySelector('.palette-input input')) document.querySelector('.topbar-search')?.click(); let input = null; for (let i = 0; i < 30 && !input; i++) { input = document.querySelector('.palette-input input'); await new Promise((resolve) => setTimeout(resolve, 50)) } if (!input) return 'no palette'; Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'club'); input.dispatchEvent(new Event('input', { bubbles: true })); let mark = null; for (let i = 0; i < 40 && !mark; i++) { mark = document.querySelector('.palette-excerpt mark')?.textContent ?? null; if (!mark) await new Promise((resolve) => setTimeout(resolve, 100)) } window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await new Promise((resolve) => setTimeout(resolve, 100)); return mark })()`)
-  assert.match(String(excerpt), /club/i, 'Search results should show and highlight where the words matched')
-  const askedAbout = await evaluate(pageUrl, `(async () => {
-    const wait = async (test) => { for (let i = 0; i < 40; i++) { const value = test(); if (value) return value; await new Promise((resolve) => setTimeout(resolve, 100)) } return null }
-    document.querySelector('.topbar-search')?.click()
-    const input = await wait(() => document.querySelector('.palette-input input'))
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'club'); input.dispatchEvent(new Event('input', { bubbles: true }))
-    ;(await wait(() => [...document.querySelectorAll('.palette-actions button')].find((item) => item.textContent?.includes('Ask about these results'))))?.click()
-    const scope = await wait(() => document.querySelector('select[aria-label="AI read scope"]')?.value === 'selected' && 'selected')
-    const chip = document.querySelector('.read-scope-items .module-link-chip')?.textContent ?? null
-    const box = document.querySelector('textarea[aria-label="Message"]')
-    const prompt = box?.value ?? null
-    // Leave the assistant as it was, so later steps are not asked to discard a draft.
-    if (box) { Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(box, ''); box.dispatchEvent(new Event('input', { bubbles: true })) }
-    const select = document.querySelector('select[aria-label="AI read scope"]')
-    if (select) { Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(select, 'workspace'); select.dispatchEvent(new Event('change', { bubbles: true })) }
-    return { scope, chip: chip?.replace('×', ''), prompt }
-  })()`)
-  assert.deepEqual(askedAbout, { scope: 'selected', chip: 'Alex', prompt: 'About “club”: ' }, 'Asking about search results should start a conversation limited to them')
-  const searchPane = await evaluate(pageUrl, `(async () => {
-    const wait = async (test) => { for (let i = 0; i < 40; i++) { const value = test(); if (value) return value; await new Promise((resolve) => setTimeout(resolve, 100)) } return null }
-    document.querySelector('.topbar-search')?.click()
-    const input = await wait(() => document.querySelector('.palette-input input'))
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'club'); input.dispatchEvent(new Event('input', { bubbles: true }))
-    ;(await wait(() => [...document.querySelectorAll('.palette-actions button')].find((item) => item.textContent?.includes('Keep results in a pane'))))?.click()
-    const kept = await wait(() => document.querySelector('.search-view input')?.value)
-    const result = await wait(() => document.querySelector('.search-view-results button'))
-    result?.click()
-    const panes = await wait(() => document.querySelectorAll('.editor-group').length === 2 && 2)
-    const stillListed = document.querySelectorAll('.search-view-results button').length > 0
-    for (let i = 0; i < 4 && document.querySelectorAll('.editor-group').length > 1; i++) { document.querySelectorAll('.group-actions button[aria-label^="Close pane"]')[1]?.click(); await new Promise((resolve) => setTimeout(resolve, 100)) }
-    ;[...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Home'))?.click()
-    return { kept, panes, stillListed }
-  })()`)
-  assert.deepEqual(searchPane, { kept: 'club', panes: 2, stillListed: true }, 'Search kept in a pane should open results beside itself and stay open')
-  const openedClaim = await evaluate(pageUrl, `(async () => { await new Promise((resolve) => setTimeout(resolve, 150)); [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Home'))?.click(); await new Promise((resolve) => setTimeout(resolve, 150)); document.querySelector('.topbar-search')?.click(); for (let i = 0; i < 30; i++) { const input = document.querySelector('.palette-input input'); if (input) { const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; setter.call(input, 'birthday'); input.dispatchEvent(new Event('input', { bubbles: true })); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const match = [...document.querySelectorAll('.palette-results button')].find((item) => item.textContent?.includes('birthday')); if (match) { match.click(); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const title = document.querySelector('.editor .title-input')?.value; if (title === 'Alex') return title; await new Promise((resolve) => setTimeout(resolve, 100)) } return { view: document.querySelector('.main')?.textContent?.slice(0, 150), palette: Boolean(document.querySelector('.command-palette')) } })()`)
-  assert.equal(openedClaim, 'Alex', 'Selecting a claim search result should open its entity')
-  const pdfResults = await evaluate(pageUrl, `window.serenity.search('QuarterlyCometResearch').then((items) => items.map((item) => item.kind))`) as string[]
-  assert.ok(pdfResults.includes('document'), 'PDF text should be searchable in the desktop app')
-  const docxResults = await evaluate(pageUrl, `window.serenity.search('DocxSyllabusDeadline').then((items) => items.map((item) => item.kind))`) as string[]
-  assert.ok(docxResults.includes('document'), 'DOCX text should be searchable in the desktop app')
-  const unsupported = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Documents')); button?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); const row = [...document.querySelectorAll('.document-row')].find((item) => item.textContent?.includes('unreadable.bin')); const actions = [...(row?.querySelectorAll('button') ?? [])].map((item) => item.textContent); return { label: row?.textContent, canAnalyze: actions.some((label) => label?.includes('Analyze')), canOpen: actions.some((label) => label?.includes('Open')) } })()`) as { label?: string; canAnalyze: boolean; canOpen: boolean }
-  assert.match(unsupported.label ?? '', /No text extraction/)
-  assert.equal(unsupported.canAnalyze, false)
-  assert.equal(unsupported.canOpen, true)
-  const documentText = await evaluate(pageUrl, `window.serenity.readDocument('research.pdf').then((text) => text?.includes('QuarterlyCometResearch'))`)
-  assert.equal(documentText, true, 'Extractable documents should be readable inside the workspace')
-  const documentTab = await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Documents'))?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); [...document.querySelectorAll('.document-row')].find((item) => item.textContent?.includes('research.pdf'))?.querySelector('button')?.click(); for (let i = 0; i < 30; i++) { if (document.querySelector('.document-text')?.textContent?.includes('QuarterlyCometResearch')) return document.querySelector('.workspace-tab.active')?.textContent; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
-  assert.match(String(documentTab), /research.pdf/, 'Reading a document should open a contextual tab')
-  const documentProposal = '123e4567-e89b-42d3-a456-426614174094'
-  await writeFile(join(workspace, 'proposals', `${documentProposal}.yaml`), YAML.stringify({ id: documentProposal, kind: 'task', title: 'Read the comet chapter', notes: '', relatedEntityIds: [],
-    source: 'research.pdf', origin: 'ai-statement', provider: 'codex', conversationId: '123e4567-e89b-42d3-a456-426614174093', status: 'pending', recordedAt: new Date().toISOString() }))
-  const besideDocument = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 40; i++) { const suggestion = [...document.querySelectorAll('.document-suggestions h2')].find((item) => item.textContent === 'Read the comet chapter'); if (suggestion) return document.querySelector('.document-suggestions > small')?.textContent; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
-  assert.match(String(besideDocument), /1 waiting for your review/, 'A document should show the proposals drawn from it beside its text')
-  const learned = await evaluate(pageUrl, `(async () => { const tab = (name) => [...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === name); tab('Knowledge from it')?.click(); let text = null; for (let i = 0; i < 40 && !text; i++) { text = document.querySelector('.document-knowledge > p')?.textContent ?? null; await new Promise((resolve) => setTimeout(resolve, 50)) } tab('Text')?.click(); for (let i = 0; i < 40 && !document.querySelector('.document-suggestions'); i++) await new Promise((resolve) => setTimeout(resolve, 50)); return text })()`)
-  assert.match(String(learned), /1 suggestion is still waiting for review/, 'A document should list what was learned from it and what is still pending')
-  const outlineJump = await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Documents'))?.click(); await new Promise((resolve) => setTimeout(resolve, 80)); [...document.querySelectorAll('.document-row')].find((item) => item.textContent?.includes('notes.md'))?.querySelector('button')?.click(); for (let i = 0; i < 30 && !document.querySelector('.document-outline'); i++) await new Promise((resolve) => setTimeout(resolve, 100)); const outline = document.querySelector('.document-outline'); outline?.querySelector('summary')?.click(); [...(outline?.querySelectorAll('button') ?? [])].find((item) => item.textContent === 'Deep section')?.click(); for (let i = 0; i < 30 && !document.querySelector('[data-outline-index="1"]'); i++) await new Promise((resolve) => setTimeout(resolve, 50)); const jumped = document.querySelector('.document-text')?.textContent?.startsWith('## Deep section') && Boolean(document.querySelector('.document-more button')); [...document.querySelectorAll('.document-more button')].find((item) => item.textContent === 'Start of document')?.click(); await new Promise((resolve) => setTimeout(resolve, 50)); return { headings: outline?.querySelectorAll('li').length, jumped, returned: document.querySelector('.document-text')?.textContent?.startsWith('# Intro') } })()`)
-  assert.deepEqual(outlineJump, { headings: 2, jumped: true, returned: true }, 'Markdown document outline should jump to a deep section without rendering the whole file')
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-document-outline.png'), await captureScreenshot(pageUrl))
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-document-suggestions.png'), await captureScreenshot(pageUrl))
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-documents.png'), await captureScreenshot(pageUrl))
-  const invalidOpen = await evaluate(pageUrl, `window.serenity.openDocument('../outside').then(() => 'allowed', (error) => String(error))`) as string
-  const refusedLink = await evaluate(pageUrl, `window.serenity.openExternal('file:///etc/passwd').then(() => 'allowed', (error) => String(error))`) as string
-  assert.match(refusedLink, /Only web and email links/, 'Only http(s) and mailto links may be handed to the system')
-  assert.match(invalidOpen, /Invalid document name/)
-  const taskCount = await evaluate(pageUrl, `window.serenity.saveTask({ id: '', title: 'Call Alex', due: '${taskDue}', completed: false, notes: '', relatedEntityIds: ['${entityId}'] }).then((snapshot) => snapshot.tasks.length)`)
-  assert.equal(taskCount, 1)
-  const eventCount = await evaluate(pageUrl, `window.serenity.saveEvent({ id: '', title: 'Meet Alex', start: '${eventDate}T10:00', notes: '', relatedEntityIds: ['${entityId}'] }).then((snapshot) => snapshot.events.length)`)
-  assert.equal(eventCount, 1)
-  const archivedEventCount = await evaluate(pageUrl, `window.serenity.refresh().then((snapshot) => window.serenity.archiveEvent(snapshot.events[0].id, snapshot.events[0].revision)).then((snapshot) => snapshot.archivedEvents.length)`)
-  assert.equal(archivedEventCount, 1)
-  const restoredEventCount = await evaluate(pageUrl, `window.serenity.refresh().then((snapshot) => window.serenity.restoreEvent(snapshot.archivedEvents[0].id)).then((snapshot) => snapshot.events.length)`)
-  assert.equal(restoredEventCount, 1)
-  const archivedTaskCount = await evaluate(pageUrl, `window.serenity.refresh().then((snapshot) => window.serenity.archiveTask(snapshot.tasks[0].id, snapshot.tasks[0].revision)).then((snapshot) => snapshot.archivedTasks.length)`)
-  assert.equal(archivedTaskCount, 1)
-  const restoredTaskCount = await evaluate(pageUrl, `window.serenity.refresh().then((snapshot) => window.serenity.restoreTask(snapshot.archivedTasks[0].id)).then((snapshot) => snapshot.tasks.length)`)
-  assert.equal(restoredTaskCount, 1)
-  const focusedEvent = await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Home'))?.click(); for (let i = 0; i < 30; i++) { const item = [...document.querySelectorAll('.home-list button')].find((button) => button.textContent?.includes('Meet Alex')); if (item) { item.click(); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const selected = document.querySelector('.module-aside .module-form input')?.value; if (selected === 'Meet Alex') return selected; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
-  assert.equal(focusedEvent, 'Meet Alex', 'Home should open the selected event on its calendar date')
-  const focusedTask = await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Home'))?.click(); for (let i = 0; i < 30; i++) { const item = [...document.querySelectorAll('.home-list button')].find((button) => button.textContent?.includes('Call Alex')); if (item) { item.click(); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const selected = document.querySelector('.module-aside .module-form input')?.value; if (selected === 'Call Alex') return selected; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
-  assert.equal(focusedTask, 'Call Alex', 'Home should open the selected task')
-  const calendarView = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Calendar')); if (button) { button.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.module-page h1')?.textContent ?? null } await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
-  assert.equal(calendarView, 'Calendar')
-  const agendaView = await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.task-view-toggle button')].find((item) => item.textContent === 'Agenda')?.click(); for (let i = 0; i < 30 && !document.querySelector('.calendar-agenda'); i++) await new Promise((resolve) => setTimeout(resolve, 50)); let entry = [...document.querySelectorAll('.calendar-agenda button')].find((item) => item.textContent?.includes('Meet Alex')); if (!entry) { document.querySelector('.calendar-toolbar button:last-child')?.click(); await new Promise((resolve) => setTimeout(resolve, 50)); entry = [...document.querySelectorAll('.calendar-agenda button')].find((item) => item.textContent?.includes('Meet Alex')) } entry?.click(); for (let i = 0; i < 30 && document.querySelector('.module-aside .module-form input')?.value !== 'Meet Alex'; i++) await new Promise((resolve) => setTimeout(resolve, 50)); return { entry: Boolean(entry), selected: document.querySelector('.module-aside .module-form input')?.value, pressed: [...document.querySelectorAll('.task-view-toggle button')].find((item) => item.textContent === 'Agenda')?.getAttribute('aria-pressed') } })()`)
-  assert.deepEqual(agendaView, { entry: true, selected: 'Meet Alex', pressed: 'true' }, 'Agenda should list this month’s events and open them for editing')
-  let savedAgenda = false
-  for (let i = 0; i < 30 && !savedAgenda; i++) {
-    const session = YAML.parse(await readFile(join(workspace, '.serenity', 'session.yaml'), 'utf8')) as { layout?: { groups: { viewPresentations?: { calendar?: string } }[] } }
-    savedAgenda = Boolean(session.layout?.groups.some((group) => group.viewPresentations?.calendar === 'agenda'))
-    if (!savedAgenda) await new Promise((resolve) => setTimeout(resolve, 100))
-  }
-  assert.equal(savedAgenda, true, 'The Calendar agenda choice should persist per pane')
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-calendar-agenda.png'), await captureScreenshot(pageUrl))
-  await evaluate(pageUrl, `[...document.querySelectorAll('.task-view-toggle button')].find((item) => item.textContent === 'Month')?.click()`)
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-calendar.png'), await captureScreenshot(pageUrl))
-  const tasksView = await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Tasks')); button?.click(); await new Promise((resolve) => setTimeout(resolve, 100)); return document.querySelector('.module-page h1')?.textContent ?? null })()`)
-  assert.equal(tasksView, 'Tasks')
-  const taskBoard = await evaluate(pageUrl, `(async () => { document.querySelector('.task-view-toggle button:last-child')?.click(); await new Promise((resolve) => setTimeout(resolve, 50)); const card = [...document.querySelectorAll('.task-board-card')].find((item) => item.querySelector('strong')?.textContent === 'Call Alex'); const column = card?.closest('.task-board-column')?.querySelector('h2')?.textContent?.trim(); [...(card?.querySelectorAll('button') ?? [])].find((item) => item.textContent === 'Edit')?.click(); await new Promise((resolve) => requestAnimationFrame(resolve)); return { columns: document.querySelectorAll('.task-board-column').length, column, editFocused: document.activeElement === document.querySelector('.module-aside .module-form input'), pressed: document.querySelector('.task-view-toggle button:last-child')?.getAttribute('aria-pressed') } })()`)
-  assert.deepEqual(taskBoard, { columns: 5, column: 'Next 7 days 1', editFocused: true, pressed: 'true' }, 'The task board should group due tasks and move keyboard focus to Edit')
-  let savedTaskBoard = false
-  for (let i = 0; i < 30 && !savedTaskBoard; i++) {
-    const taskSession = YAML.parse(await readFile(join(workspace, '.serenity', 'session.yaml'), 'utf8')) as { layout?: { groups: { viewPresentations?: { tasks?: string } }[] } }
-    savedTaskBoard = Boolean(taskSession.layout?.groups.some((group) => group.viewPresentations?.tasks === 'board'))
-    if (!savedTaskBoard) await new Promise((resolve) => setTimeout(resolve, 100))
-  }
-  assert.equal(savedTaskBoard, true, 'The task board choice should persist with this workspace')
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-tasks.png'), await captureScreenshot(pageUrl))
-  const chatView = await evaluate(pageUrl, `Boolean(document.querySelector('.assistant-sidebar .conversation-panel'))`)
-  assert.equal(chatView, true)
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-conversation.png'), await captureScreenshot(pageUrl))
-  const disabled = await evaluate(pageUrl, `window.serenity.setModule('calendar', false).then((snapshot) => snapshot.modules.calendar)`)
-  assert.equal(disabled, false)
+  await shot('serenity-home')
 
-  const provider = process.env.SERENITY_SMOKE_PROVIDER
-  let privateId: string | undefined
-  if (process.env.SERENITY_SMOKE_SCOPE === 'selected') {
-    privateId = await evaluate(pageUrl, `window.serenity.saveEntity({ id: '', title: 'Private Project', type: 'project', body: 'SecretAstralToken' }).then((snapshot) => snapshot.entities.find((entity) => entity.title === 'Private Project').id)`) as string
-  }
+  // Live preview editing, saved without a Save button.
+  await run(`const content = $('.page-document .cm-content'); focusEnd(content)`)
+  await type('\n## Sources\n\n```serenity-query\nfrom: documents\nlimit: 3\n```\n\nSee [[Home]] and [[Nobody here]].')
+  await until('the page to save', async () => /## Sources[\s\S]*from: documents/.test(await readFile(join(workspace, 'pages', 'Home.md'), 'utf8')))
+  const rendered = await run<{ documents: boolean; resolved: number; missing: number }>(`$('.page-document .cm-content').blur(); await sleep(300);
+    return { documents: $$('.page-query-list').some((list) => list.textContent.includes('research.pdf')), resolved: $$('.cm-wikilink.resolved').length, missing: $$('.cm-wikilink.missing').length }`)
+  assert.deepEqual(rendered, { documents: true, resolved: 1, missing: 1 }, 'New query blocks render as live lists, and wikilinks resolve by title or say they match nothing')
+  // Renaming a page through its inline title writes the frontmatter.
+  await run(`const title = $('.inline-title'); title.focus(); setValue(title, 'My Home'); title.blur()`)
+  await until('the title to save', async () => /title: My Home/.test(await readFile(join(workspace, 'pages', 'Home.md'), 'utf8')))
+
+  // The explorer lists the workspace; the ribbon opens views as tabs; the assistant has one toggle.
+  const shell = await run<{ explorer: string[]; toggles: number; ribbon: string[] }>(`return { explorer: $$('.tree-row .tree-label').map((item) => item.textContent),
+    toggles: $$('button[aria-label="Hide assistant"], button[aria-label="Show assistant"]').length, ribbon: $$('.ribbon-btn').map((item) => item.getAttribute('aria-label')) }`)
+  assert.ok(shell.explorer.includes('My Home') && shell.explorer.includes('research.pdf'), `Explorer: ${shell.explorer}`)
+  assert.equal(shell.toggles, 1, 'Exactly one control shows or hides the assistant')
+  assert.ok(shell.ribbon.includes('Calendar') && shell.ribbon.includes('Settings'), `Ribbon: ${shell.ribbon}`)
+  const hidden = await run(`click($('button[aria-label="Hide assistant"]')); await waitFor(() => !$('.right-sidebar')); const shown = Boolean($('button[aria-label="Show assistant"]'));
+    click($('button[aria-label="Show assistant"]')); await waitFor(() => $('.right-sidebar')); return shown && $$('button[aria-label="Hide assistant"]').length === 1`)
+  assert.equal(hidden, true, 'The same single toggle hides and shows the assistant')
+
+  // New entity dialog, notes with a wikilink, a sourced fact, and other views of the entity.
+  await run(`click(byText('.sidebar-actions button', 'New entity')); await waitFor(() => $('#new-entity-title'));
+    setValue($('#new-entity-title'), 'Sam Rivera'); setValue($('#new-entity-type'), 'person'); await sleep(50); click(byText('.dialog button', 'Create'));
+    await waitFor(() => $('.entity-document') && $('.inline-title')?.value === 'Sam Rivera')`)
+  const entityId = await app.evaluate<string>(`window.serenity.refresh().then((snapshot) => snapshot.entities.find((entity) => entity.title === 'Sam Rivera').id)`)
+  await run(`focusEnd($('.entity-document .cm-content'))`)
+  await type('Leads the [[My Home]] project.')
+  await until('the entity notes to save', async () => /\[\[My Home\]\]/.test(await readFile(join(workspace, 'entities', `${entityId}.md`), 'utf8')))
+  await run(`click($('.facts [aria-label="Add a fact"]')); await waitFor(() => $('.fact-form'));
+    setValue($('.fact-form [aria-label="Fact"]'), 'birthday'); setValue($('.fact-form [aria-label="Value"]'), 'September 7'); await sleep(50);
+    $('.fact-form').requestSubmit(); await waitFor(() => $$('.fact').some((fact) => fact.textContent.includes('September 7')))`)
+  const claimFiles = await readdir(join(workspace, 'claims'))
+  assert.ok(claimFiles.length >= 1, 'Adding a fact writes a claim file')
+  const presentations = await run<string[]>(`const seen = [];
+    for (const name of ['Timeline', 'Connections', 'Profile']) { click(byText('.presentation-switcher button', name)); await sleep(250); seen.push(name + ':' + Boolean($('.entity-timeline, .entity-connections, .entity-document'))) }
+    return seen`)
+  assert.deepEqual(presentations, ['Timeline:true', 'Connections:true', 'Profile:true'])
+  await shot('serenity-entity')
+
+  // Panes: split, open beside, move a tab, and close a pane without losing files.
+  const panes = await run<{ split: number; moved: boolean; closed: number }>(`click($('[aria-label^="Pane actions"]')); await sleep(80); click(byText('.menu-item', 'Split right'));
+    await waitFor(() => $$('.pane').length === 2); const split = $$('.pane').length;
+    click(byText('.tree-row', 'research.pdf')); await waitFor(() => $('.pane.focused .document-text'));
+    click($$('[aria-label^="Pane actions"]')[1]); await sleep(80); click(byText('.menu-item', 'Move tab to next pane')); await sleep(200);
+    const moved = $$('.pane')[0].textContent.includes('research.pdf');
+    click($$('[aria-label^="Pane actions"]')[1]); await sleep(80); click(byText('.menu-item', 'Close pane')); await waitFor(() => $$('.pane').length === 1);
+    return { split, moved, closed: $$('.pane').length }`)
+  assert.deepEqual(panes, { split: 2, moved: true, closed: 1 })
+  assert.ok((await stat(join(workspace, 'documents', 'research.pdf'))).isFile(), 'Closing a pane leaves files alone')
+
+  // Search: PDF and DOCX text, excerpts, and keeping results in a pane.
+  await key('k', mod)
+  const results = await run<string[]>(`await waitFor(() => $('.palette-input input')); setValue($('.palette-input input'), 'QuarterlyCometResearch');
+    await waitFor(() => $$('.palette-results button').some((item) => item.textContent.includes('research.pdf')), 8000);
+    setValue($('.palette-input input'), 'DocxSyllabusDeadline'); await waitFor(() => $$('.palette-results button').some((item) => item.textContent.includes('syllabus.docx')), 8000);
+    return $$('.palette-results button').map((item) => item.textContent)`)
+  assert.ok(results.some((item) => item.includes('syllabus.docx') && item.includes('DocxSyllabusDeadline')), `Search results: ${results}`)
+  const kept = await run(`click(byText('.palette-actions button', 'Keep results in a pane')); await waitFor(() => $$('.search-view-results button').length);
+    return $('.tab.active')?.textContent.includes('Search')`)
+  assert.equal(kept, true, 'Search results stay open in a Search tab')
+
+  // Documents open as text with an outline; unsupported formats are marked.
+  const documents = await run<{ text: boolean; outline: boolean; marked: boolean }>(`click(byText('.ribbon-btn', 'Documents')); await waitFor(() => $$('.document-row').length);
+    const marked = $$('.document-row').some((row) => row.textContent.includes('unreadable.bin') && row.textContent.includes('opens in its app'));
+    click(byText('.document-name', 'notes.md')); await waitFor(() => $('.document-text'));
+    return { text: Boolean($('.document-text')), outline: Boolean(await waitFor(() => $('.document-outline'))), marked }`)
+  assert.deepEqual(documents, { text: true, outline: true, marked: true })
+
+  // Tasks and calendar: records written to the workspace, with their alternative views.
+  const taskDue = futureDate(7)
+  await run(`click(byText('.ribbon-btn', 'Tasks')); await waitFor(() => $('.module-form'));
+    setValue($('.module-form input'), 'Buy Sam a gift'); setValue($('.module-form input[type="date"]'), '${taskDue}'); await sleep(50);
+    $('.module-form').requestSubmit(); await waitFor(() => $$('.task-row').some((row) => row.textContent.includes('Buy Sam a gift')))`)
+  const board = await run(`click(byText('.task-view-toggle button', 'Board')); await waitFor(() => $$('.task-board-column').length === 5);
+    return $$('.task-board-card').some((card) => card.textContent.includes('Buy Sam a gift'))`)
+  assert.equal(board, true)
+  await run(`click(byText('.ribbon-btn', 'Calendar')); await waitFor(() => $('.calendar-grid') || $('.calendar-agenda'));
+    setValue($('.module-form input'), 'Lunch with Sam'); await sleep(50); $('.module-form').requestSubmit();
+    await waitFor(() => $$('.module-record').some((item) => item.textContent.includes('Lunch with Sam')))`)
+  const agenda = await run(`click(byText('.task-view-toggle button', 'Agenda')); await waitFor(() => $('.calendar-agenda'));
+    return $$('.calendar-agenda button').map((item) => item.textContent).join(' | ')`)
+  assert.match(String(agenda), /Lunch with Sam/)
+
+  // Review: an AI-suggested entity can be created after review.
+  const reviewed = await run(`click($('.ribbon-btn[aria-label^="Review"]')); await waitFor(() => $$('.review-card').length);
+    click(byText('.review-card button', 'Create separate entity')); return Boolean(await waitFor(() => $$('.tree-row').some((row) => row.textContent === 'Alex')))`)
+  assert.equal(reviewed, true)
+
+  // Settings is a dialog: shortcuts, appearance, and module switches.
+  const settings = await run<{ rows: number; light: boolean; calendarHidden: boolean; calendarBack: boolean }>(`click($('.ribbon-btn[aria-label="Settings"]')); await waitFor(() => $('.settings-dialog'));
+    click(byText('.settings-nav button', 'Shortcuts')); await waitFor(() => $$('.settings-shortcuts tr').length); const rows = $$('.settings-shortcuts tbody tr').length;
+    click(byText('.settings-nav button', 'General')); await sleep(50); click(byText('.settings-dialog .segmented button', 'Light')); await sleep(100);
+    const light = document.documentElement.dataset.theme === 'light';
+    click(byText('.settings-nav button', 'Modules')); await sleep(50); click($('.switch[aria-label="Calendar"]'));
+    const calendarHidden = Boolean(await waitFor(() => !$$('.ribbon-btn').some((item) => item.getAttribute('aria-label') === 'Calendar')));
+    click($('.switch[aria-label="Calendar"]')); const calendarBack = Boolean(await waitFor(() => $$('.ribbon-btn').some((item) => item.getAttribute('aria-label') === 'Calendar')));
+    click(byText('.settings-nav button', 'General')); await sleep(50); click(byText('.settings-dialog .segmented button', 'Dark')); click($('.dialog-close'));
+    return { rows, light, calendarHidden, calendarBack }`)
+  assert.ok(settings.rows > 10, 'Settings lists every command with its shortcut')
+  assert.deepEqual({ ...settings, rows: true }, { rows: true, light: true, calendarHidden: true, calendarBack: true })
+
+  // Chat mode, and conversation settings for a read scope limited to chosen knowledge.
+  const chat = await run<{ composer: boolean; scope: string }>(`click(byText('.mode-switch button', 'Chat')); await waitFor(() => $('.chat-main .composer'));
+    click($('.chat-main .composer button[aria-label^="Read scope"]')); await waitFor(() => $('[role="radiogroup"][aria-label="AI read scope"]'));
+    click(byText('[role="radio"]', 'Selected knowledge')); await sleep(80); const scope = $('.chat-main .composer button[aria-label^="Read scope"]').textContent;
+    click(byText('[role="radio"]', 'Whole workspace')); click(byText('.dialog button', 'Done')); await sleep(80);
+    const composer = Boolean($('.chat-main textarea[aria-label="Message"]')); click(byText('.mode-switch button', 'Workspace')); await waitFor(() => $('.pane'));
+    return { composer, scope }`)
+  assert.equal(chat.composer, true)
+  assert.match(chat.scope, /0 selected/)
+  await shot('serenity-chat')
+
+  // The layout is kept with the workspace and restored when the window reloads.
+  await run(`click($('[aria-label^="Pane actions"]')); await sleep(80); click(byText('.menu-item', 'Split down')); await waitFor(() => $$('.pane').length === 2); await sleep(400)`)
+  await app.send('Page.reload')
+  await delay(500)
+  const restored = await run(`await waitFor(() => $$('.pane').length === 2, 10000); return $$('.pane').length`)
+  assert.equal(restored, 2, 'Panes are restored with the workspace')
+
   if (provider === 'copilot' || provider === 'codex') {
-    const activeContext = await evaluate(pageUrl, `(async () => { document.querySelector('.workspace-tab-label')?.click(); for (let i = 0; i < 30; i++) { const file = document.querySelector('.ai-context-strip'); if (file?.textContent?.includes('Alex') && file?.title?.includes('entities/')) return file.title; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
-    assert.match(String(activeContext), /entities\//, 'The assistant should show the currently open file before sending')
-    const scope = privateId ? `, readScope: { mode: 'selected', entityIds: ['${entityId}'], documentNames: [], includeOtherConversations: false, includeCalendarAndTasks: false }` : ''
-    const answer = await evaluate(pageUrl, `window.serenity.sendMessage({ text: 'According to the sourced claim about Alex, what is his birthday? Include the date. Do not propose any changes.', provider: '${provider}', autonomy: 'propose', retained: true${scope} }).then((snapshot) => { const conversation = snapshot.conversations.find((item) => item.title.startsWith('According to the sourced claim about Alex')); return { id: conversation?.id, text: conversation?.messages.at(-1)?.text, citations: conversation?.messages.at(-1)?.citations, shared: conversation?.messages[0].sharedContext?.length, sharedRecords: conversation?.messages[0].sharedContext?.flatMap((entry) => entry.records.map((record) => record.ref)), readScope: conversation?.readScope, permissions: conversation?.permissions, activity: snapshot.providerActivity.find((entry) => entry.provider === '${provider}') } })`) as { id: string; text: string; citations?: { ref: string; sent: boolean; quoteFound?: boolean }[]; shared: number; sharedRecords: string[]; readScope: { mode: string }; permissions: { claims: boolean; tasks: boolean }; activity: { status: string; operation: string; refs: string[] } }
+    const answer = await app.evaluate<{ text: string; citations?: { ref: string; sent: boolean; quoteFound?: boolean }[]; shared: string[] }>(`window.serenity.sendMessage({ text: 'According to the sourced claim about Sam Rivera, what is their birthday? Include the date. Do not propose any changes.', provider: '${provider}', autonomy: 'propose', retained: true, activeRef: 'entity:${entityId}' }).then((snapshot) => { const conversation = snapshot.conversations.at(-1); const last = conversation.messages.at(-1); return { text: last.text, citations: last.citations, shared: conversation.messages[0].sharedContext?.flatMap((entry) => entry.records.map((record) => record.ref)) ?? [] } })`, 120000)
     assert.match(answer.text, /September 7/i)
-    assert.ok(answer.shared > 0)
-    assert.ok(answer.sharedRecords.includes(`entity:${entityId}`), 'The open entity should be available in the context sent to AI')
-    assert.ok(answer.citations?.some((citation) => citation.ref.startsWith('claim:') && citation.sent && citation.quoteFound),
-      `The provider should cite the sourced claim with a verified excerpt: ${JSON.stringify(answer.citations)}`)
-    assert.equal(answer.activity?.status, 'completed')
-    assert.equal(answer.activity?.operation, 'conversation')
-    assert.ok(answer.activity?.refs.some((ref) => ref.startsWith('claim:')))
-    assert.equal(answer.permissions?.claims, true)
-    assert.equal(answer.permissions?.tasks, false)
-    if (privateId) {
-      assert.equal(answer.readScope.mode, 'selected')
-      assert.equal(answer.sharedRecords.includes(`entity:${privateId}`), false)
-      assert.equal(answer.sharedRecords.some((ref) => ref.startsWith('document:')), false)
-      assert.equal(answer.activity.refs.includes(`entity:${privateId}`), false)
-    }
-    const settings = await evaluate(pageUrl, `window.serenity.updateConversationSettings('${answer.id}', { autonomy: 'autonomous', permissions: { claims: true, entities: false, tasks: true, events: false }, retained: true }).then((snapshot) => snapshot.conversations.find((item) => item.id === '${answer.id}'))`) as { autonomy: string; permissions: { tasks: boolean } }
-    assert.equal(settings.autonomy, 'autonomous')
-    assert.equal(settings.permissions.tasks, true)
-    if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) {
-      const shown = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const button = document.querySelector('.conversation-history-list button'); if (button) { button.click(); break } await new Promise((resolve) => setTimeout(resolve, 100)) } for (let i = 0; i < 30; i++) { const count = document.querySelectorAll('.message').length; if (count >= 2) return count; await new Promise((resolve) => setTimeout(resolve, 100)) } return document.querySelectorAll('.message').length })()`)
-      assert.ok(Number(shown) >= 2)
-      await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-conversation-reply.png'), await captureScreenshot(pageUrl))
-    }
+    assert.ok(answer.shared.includes(`entity:${entityId}`), 'The focused entity is offered as context')
+    assert.ok(answer.citations?.some((citation) => citation.ref.startsWith('claim:') && citation.sent), `Citations: ${JSON.stringify(answer.citations)}`)
     console.log(`${provider} conversation completed through Electron IPC.`)
-    if (process.env.SERENITY_SMOKE_CANCEL === '1') {
-      await evaluate(pageUrl, `window.__cancelledRun = window.serenity.sendMessage({ text: 'Write a thorough multi-page plan about the history of robotics and include many detailed examples.', provider: '${provider}', autonomy: 'propose', retained: true }).then(() => ({ status: 'completed' }), (error) => ({ status: 'cancelled', error: String(error) })); 'started'`)
-      let cancelled = false
-      for (let attempt = 0; attempt < 20; attempt++) {
-        cancelled = await evaluate(pageUrl, 'window.serenity.cancelMessage()') as boolean
-        if (cancelled) break
-        await delay(50)
-      }
-      assert.equal(cancelled, true, 'The active request should be cancellable')
-      const result = await evaluate(pageUrl, 'window.__cancelledRun') as { status: string; error?: string }
-      assert.equal(result.status, 'cancelled', result.error)
-      console.log(`${provider} request cancelled through Electron IPC.`)
-    }
-    if (process.env.SERENITY_SMOKE_EXTRACTION === '1') {
-      await evaluate(pageUrl, `window.serenity.setModule('calendar', true)`)
-      const extracted = await evaluate(pageUrl, `window.serenity.sendMessage({ text: 'Remember that Alex likes chess. Also make a task called Buy Alex a gift due 2026-10-03, and add an event called Lunch with Alex on 2026-10-04 at 12:00. Connect the task and event to Alex. Suggest each as a proposal with its source.', provider: '${provider}', autonomy: 'propose', retained: true }).then((snapshot) => snapshot.proposals.filter((item) => item.status === 'pending').map((item) => ({ kind: item.kind, source: item.source })))`) as { kind: string; source: string }[]
-      assert.ok(extracted.some((item) => item.kind === 'claim'), `Expected a claim proposal: ${JSON.stringify(extracted)}`)
-      assert.ok(extracted.some((item) => item.kind === 'task'), `Expected a task proposal: ${JSON.stringify(extracted)}`)
-      assert.ok(extracted.some((item) => item.kind === 'event'), `Expected an event proposal: ${JSON.stringify(extracted)}`)
-      console.log(`${provider} extracted claim, task, and event proposals from conversation.`)
-    }
-    if (process.env.SERENITY_SMOKE_SEMANTIC === '1') {
-      const search = `window.serenity.semanticSearch('Find Alex birthday September 7', '${provider}').then((items) => items.map((item) => item.kind))`
-      const small = await evaluate(pageUrl, search) as string[]
-      assert.ok(small.includes('claim'), `Expected a sourced claim in semantic results: ${small}`)
-      await evaluate(pageUrl, `window.serenity.refresh().then((snapshot) => window.serenity.saveEntity({ ...snapshot.entities.find((entity) => entity.id === '${entityId}'), body: 'Unrelated archive content. '.repeat(12000) }))`)
-      const large = await evaluate(pageUrl, search) as string[]
-      assert.ok(large.includes('claim'), `Expected relevant evidence in large-workspace results: ${large}`)
-      console.log(`${provider} semantic retrieval worked with a large workspace.`)
-    }
   }
-  const duplicateId = await evaluate(pageUrl, `window.serenity.saveEntity({ id: '', title: 'Alex from club', type: 'person', body: 'Possible duplicate.' }).then((snapshot) => snapshot.entities.find((entity) => entity.title === 'Alex from club').id)`) as string
-  const merged = await evaluate(pageUrl, `window.serenity.mergeEntities('${duplicateId}', '${entityId}').then((snapshot) => ({ active: snapshot.merges.length, archived: snapshot.archivedEntities.length }))`) as { active: number; archived: number }
-  assert.equal(merged.active, 1)
-  assert.equal(merged.archived, 1)
-  const reversed = await evaluate(pageUrl, `window.serenity.unmergeEntities('${duplicateId}', 'Different Alex').then((snapshot) => ({ active: snapshot.merges.length, history: snapshot.mergeHistory.length, restored: snapshot.entities.some((entity) => entity.id === '${duplicateId}') }))`) as { active: number; history: number; restored: boolean }
-  assert.deepEqual(reversed, { active: 0, history: 1, restored: true })
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) {
-    await evaluate(pageUrl, `(async () => { const button = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Activity')); button?.click(); await new Promise((resolve) => setTimeout(resolve, 120)) })()`)
-    await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-activity.png'), await captureScreenshot(pageUrl))
-  }
-  await writeFile(join(workspace, '.serenity', 'modules.yaml'), YAML.stringify({ calendar: false, tasks: false, semanticIndex: false, documentAnalysis: false }))
-  const watched = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 50; i++) { const names = [...document.querySelectorAll('.navigation button')].map((item) => item.textContent ?? ''); if (!names.some((name) => name.includes('Tasks'))) return true; await new Promise((resolve) => setTimeout(resolve, 100)) } return false })()`)
-  assert.equal(watched, true, 'Outside edits to module settings should update the desktop UI')
-  await writeFile(join(workspace, 'pages', 'Research.md'), '---\nid: research\ntitle: Research\nkind: page\n---\n# Research notebook\n')
-  await writeFile(join(workspace, '.serenity', 'workbench.yaml'), YAML.stringify({ homePage: 'research', navigation: [{ group: 'My space', commands: ['view.home', 'page.open.home', 'view.review'] }, { group: 'Tools', commands: ['view.documents', 'view.settings'] }] }))
-  const customWorkbench = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 50; i++) { const group = document.querySelector('.nav-heading')?.textContent; if (group === 'My space') break; await new Promise((resolve) => setTimeout(resolve, 100)) } const home = [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Home')); home?.click(); for (let i = 0; i < 30; i++) { if (document.querySelector('.page-prose h1')?.textContent === 'Research notebook') break; await new Promise((resolve) => setTimeout(resolve, 100)) } const chosen = document.querySelector('.page-prose h1')?.textContent; [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Home') && item !== home)?.click(); for (let i = 0; i < 30; i++) { if (document.querySelector('.page-prose h1')?.textContent === 'My own workspace') break; await new Promise((resolve) => setTimeout(resolve, 100)) } return { group: document.querySelector('.nav-heading')?.textContent, chosen, linked: document.querySelector('.page-prose h1')?.textContent } })()`)
-  assert.deepEqual(customWorkbench, { group: 'My space', chosen: 'Research notebook', linked: 'My own workspace' }, 'A workspace YAML edit should recompose Home and the navigation without new UI code')
-  const createdPage = await evaluate(pageUrl, `(async () => { document.querySelector('.topbar-more summary')?.click(); [...document.querySelectorAll('.topbar-menu button')].find((button) => button.textContent?.includes('New page'))?.click(); for (let i = 0; i < 30; i++) { const path = document.querySelector('.page-toolbar > span')?.textContent; if (path?.startsWith('pages/page-') && document.querySelector('.page-prose h1')?.textContent === 'Untitled page') return path; await new Promise((resolve) => setTimeout(resolve, 100)) } return JSON.stringify({ path: document.querySelector('.page-toolbar > span')?.textContent, heading: document.querySelector('.page-prose h1')?.textContent, tabs: [...document.querySelectorAll('.workspace-tab')].map((item) => item.textContent), title: document.querySelector('.breadcrumbs')?.textContent, notices: [...document.querySelectorAll('.notice')].map((item) => item.textContent), menu: document.querySelector('.topbar-more')?.hasAttribute('open') }) })()`)
-  assert.match(String(createdPage), /^pages\/page-[a-f0-9-]{36}\.md$/, 'New page should create and open a Markdown file owned by this workspace')
-  const split = await evaluate(pageUrl, `(async () => { document.querySelector('.topbar-icon[aria-label="Split right"]')?.click(); for (let i = 0; i < 30; i++) { const groups = [...document.querySelectorAll('.editor-group')]; if (groups.length === 2 && groups.every((group) => group.querySelector('.page-prose h1')?.textContent === 'Untitled page')) return { groups: groups.length, focused: groups[1].classList.contains('focused') }; await new Promise((resolve) => setTimeout(resolve, 100)) } return { groups: document.querySelectorAll('.editor-group').length } })()`)
-  assert.deepEqual(split, { groups: 2, focused: true }, 'Splitting should show the same page in a second, focused editor group')
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-split.png'), await captureScreenshot(pageUrl))
-  let savedLayout: { groups?: unknown[] } | undefined
-  for (let i = 0; i < 30 && savedLayout?.groups?.length !== 2; i++) {
-    savedLayout = (YAML.parse(await readFile(join(workspace, '.serenity', 'session.yaml'), 'utf8')) as { layout?: { groups?: unknown[] } }).layout
-    if (savedLayout?.groups?.length !== 2) await new Promise((resolve) => setTimeout(resolve, 100))
-  }
-  assert.equal(savedLayout?.groups?.length, 2, 'The two-group layout should be saved in workspace session state')
-  const closedSplit = await evaluate(pageUrl, `(async () => { document.querySelectorAll('.group-actions button[aria-label^="Close pane"]')[1]?.click(); for (let i = 0; i < 30; i++) { if (document.querySelectorAll('.editor-group').length === 1) { await new Promise((resolve) => requestAnimationFrame(resolve)); return { title: document.querySelector('.page-prose h1')?.textContent, focus: document.activeElement === document.querySelector('.editor-group') } } await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
-  assert.deepEqual(closedSplit, { title: 'Untitled page', focus: true }, 'Closing a pane should keep the other pane and move keyboard focus into it')
-  assert.match(await readFile(join(workspace, String(createdPage)), 'utf8'), /# Untitled page/)
-  const lastPage = await evaluate(pageUrl, `(async () => { for (let i = 0; i < 30; i++) { const session = await window.serenity.loadSession(); if (session?.activeUri?.startsWith('serenity:page/page-')) return session.activeUri; await new Promise((resolve) => setTimeout(resolve, 100)) } return null })()`)
-  assert.match(String(lastPage), /^serenity:page\/page-[a-f0-9-]{36}$/, 'The last worked-on page should be remembered inside the workspace')
-  assert.doesNotMatch(await readFile(join(workspace, '.serenity', 'session.yaml'), 'utf8'), new RegExp(workspace.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
-  await evaluate(pageUrl, `window.serenity.saveEntity({ id: '', title: 'Alex M.', type: 'person', body: '' }).then(() => true)`)
-  const compared = await evaluate(pageUrl, `(async () => { const wait = async (test) => { for (let i = 0; i < 40; i++) { const value = test(); if (value) return value; await new Promise((resolve) => setTimeout(resolve, 100)) } return null }; [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Review'))?.click(); const card = await wait(() => [...document.querySelectorAll('.duplicate-card')].find((item) => item.querySelector('h2')?.textContent?.includes('Alex M.'))); [...(card?.querySelectorAll('button') ?? [])].find((item) => item.textContent?.includes('Compare side by side'))?.click(); const shown = await wait(() => { const titles = [...document.querySelectorAll('.editor-group .editor .title-input')].map((input) => input.value); return titles.length === 2 && titles }); document.querySelectorAll('.group-actions button[aria-label^="Close pane"]')[1]?.click(); return shown })()`)
-  assert.deepEqual(compared, ['Alex', 'Alex M.'], 'A possible duplicate should open both entities side by side for comparison')
-  const markedDistinct = await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Review'))?.click(); for (let i = 0; i < 40 && ![...document.querySelectorAll('.duplicate-card')].some((item) => item.querySelector('h2')?.textContent?.includes('Alex M.')); i++) await new Promise((resolve) => setTimeout(resolve, 50)); const card = [...document.querySelectorAll('.duplicate-card')].find((item) => item.querySelector('h2')?.textContent?.includes('Alex M.')); window.confirm = () => true; [...(card?.querySelectorAll('button') ?? [])].find((item) => item.textContent === 'Mark as distinct')?.click(); for (let i = 0; i < 40 && document.activeElement !== document.querySelector('.distinct-card button'); i++) await new Promise((resolve) => setTimeout(resolve, 50)); return { decision: Boolean(document.querySelector('.distinct-card')), candidate: [...document.querySelectorAll('.duplicate-card')].some((item) => item.querySelector('h2')?.textContent?.includes('Alex M.')), focused: document.activeElement === document.querySelector('.distinct-card button') } })()`)
-  assert.deepEqual(markedDistinct, { decision: true, candidate: false, focused: true }, 'Review should store distinct identities and focus the Undo action')
-  const identityDecisionId = await evaluate(pageUrl, `window.serenity.refresh().then((snapshot) => snapshot.identityDecisions.find((item) => !item.undoneAt)?.id)`) as string
-  assert.equal((YAML.parse(await readFile(join(workspace, 'identity-decisions', `${identityDecisionId}.yaml`), 'utf8')) as { kind: string }).kind, 'distinct')
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-distinct-identities.png'), await captureScreenshot(pageUrl))
-  const restoredCandidate = await evaluate(pageUrl, `(async () => { document.querySelector('.distinct-card button')?.click(); for (let i = 0; i < 40 && document.activeElement !== [...document.querySelectorAll('.duplicate-card')].find((item) => item.querySelector('h2')?.textContent?.includes('Alex M.'))?.querySelector('.review-actions button:last-child'); i++) await new Promise((resolve) => setTimeout(resolve, 50)); const card = [...document.querySelectorAll('.duplicate-card')].find((item) => item.querySelector('h2')?.textContent?.includes('Alex M.')); return { candidate: Boolean(card), focused: document.activeElement === card?.querySelector('.review-actions button:last-child') } })()`)
-  assert.deepEqual(restoredCandidate, { candidate: true, focused: true }, 'Undoing the decision should bring the possible duplicate back with keyboard focus')
-  const panes = await evaluate(pageUrl, `(async () => {
-    const wait = async (test) => { for (let i = 0; i < 40; i++) { const value = test(); if (value) return value; await new Promise((resolve) => setTimeout(resolve, 50)) } return null }
-    const count = () => document.querySelectorAll('.editor-group').length
-    document.querySelector('[aria-label="Split pane 1 down"]')?.click()
-    await wait(() => count() === 2)
-    document.querySelector('[aria-label="Split pane 2 right"]')?.click()
-    await wait(() => count() === 3)
-    const dividers = document.querySelectorAll('.pane-divider').length
-    const rootDivider = [...document.querySelectorAll('.pane-divider')].find((item) => item.getAttribute('aria-orientation') === 'horizontal')
-    rootDivider?.focus(); rootDivider?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', shiftKey: true, bubbles: true }))
-    const resized = await wait(() => rootDivider?.getAttribute('aria-valuenow') === '60' && '60')
-    const source = document.querySelector('[data-group="main"] .workspace-tab')
-    const title = source?.textContent
-    const target = document.querySelectorAll('.editor-group')[2]
-    const box = target.getBoundingClientRect()
-    const transfer = new DataTransfer()
-    source?.dispatchEvent(new DragEvent('dragstart', { dataTransfer: transfer, bubbles: true }))
-    const at = { dataTransfer: transfer, bubbles: true, cancelable: true, clientX: box.right - 4, clientY: box.top + box.height / 2 }
-    target.dispatchEvent(new DragEvent('dragover', at))
-    target.dispatchEvent(new DragEvent('drop', at))
-    await wait(() => count() === 4)
-    const focused = document.querySelector('.editor-group.focused .workspace-tab.active')?.textContent
-    return { dividers, resized, afterDrop: count(), movedToNewPane: focused === title }
-  })()`)
-  assert.deepEqual(panes, { dividers: 2, resized: '60', afterDrop: 4, movedToNewPane: true }, 'Panes should split both ways, resize, and accept a tab dropped on an edge as a new pane')
-  let paneSession: { groups?: unknown[]; root?: { sizes?: number[] } } | undefined
-  for (let i = 0; i < 30 && paneSession?.groups?.length !== 4; i++) {
-    paneSession = (YAML.parse(await readFile(join(workspace, '.serenity', 'session.yaml'), 'utf8')) as { layout?: typeof paneSession }).layout
-    await new Promise((resolve) => setTimeout(resolve, 100))
-  }
-  assert.equal(paneSession?.groups?.length, 4, 'The four-pane arrangement should be saved with the workspace')
-  assert.ok(Math.abs((paneSession?.root?.sizes?.[0] ?? 0) - 0.6) < 0.01, 'Pane sizes should be saved with the arrangement')
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-panes.png'), await captureScreenshot(pageUrl))
-  const focusedAbove = await evaluate(pageUrl, `(async () => { const mod = navigator.platform.includes('Mac') ? 'metaKey' : 'ctrlKey'; window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', code: 'ArrowUp', [mod]: true, altKey: true, bubbles: true })); for (let i = 0; i < 30; i++) { if (document.querySelector('.editor-group.focused')?.getAttribute('data-group') === 'main') return 'main'; await new Promise((resolve) => setTimeout(resolve, 50)) } return document.querySelector('.editor-group.focused')?.getAttribute('data-group') })()`)
-  assert.equal(focusedAbove, 'main', 'Mod+Alt+ArrowUp should focus the pane above')
-  const narrowPanes = await evaluate(pageUrl, `(async () => {
-    const area = document.querySelector('.editor-groups'); area.style.width = '420px'
-    for (let i = 0; i < 40 && !document.querySelector('.pane-switcher'); i++) await new Promise((resolve) => setTimeout(resolve, 50))
-    const result = { switcher: document.querySelectorAll('.pane-switcher button').length, visible: document.querySelectorAll('.editor-group:not([hidden])').length }
-    area.style.width = ''
-    for (let i = 0; i < 40 && document.querySelector('.pane-switcher'); i++) await new Promise((resolve) => setTimeout(resolve, 50))
-    for (let i = 0; i < 6 && document.querySelectorAll('.editor-group').length > 1; i++) { document.querySelector('.group-actions button[aria-label^="Close pane"]')?.click(); await new Promise((resolve) => setTimeout(resolve, 80)) }
-    return { ...result, remaining: document.querySelectorAll('.editor-group').length }
-  })()`)
-  assert.deepEqual(narrowPanes, { switcher: 4, visible: 1, remaining: 1 }, 'A narrow window should show one pane at a time with a switcher, and panes should close back to one')
-  const wikilinks = await evaluate(pageUrl, `(async () => {
-    const page = (await window.serenity.refresh()).pages.find((item) => item.id === 'research')
-    await window.serenity.savePage({ id: page.id, path: page.path, revision: page.revision, text: page.text + '\\nSee [[Untitled page]] and [[Someone new]].\\n' })
-    ;[...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Home'))?.click()
-    for (let i = 0; i < 40; i++) {
-      const link = [...document.querySelectorAll('.page-prose .page-link')].find((item) => item.textContent?.includes('Untitled page'))
-      const missing = document.querySelector('.page-prose .wikilink-unresolved.missing')?.textContent
-      if (link && missing) return { link: true, missing }
-      await new Promise((resolve) => setTimeout(resolve, 100))
-    }
-    return { link: false, missing: null }
-  })()`)
-  assert.deepEqual(wikilinks, { link: true, missing: 'Someone new' }, 'Wikilinks should link named resources and mark names that match nothing')
-  const pageLinks = await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.page-prose .page-link')].find((item) => item.textContent?.includes('Untitled page'))?.click(); for (let i = 0; i < 30 && ![...document.querySelectorAll('.presentation-switcher button')].some((item) => item.textContent === 'Links'); i++) await new Promise((resolve) => setTimeout(resolve, 50)); [...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === 'Links')?.click(); for (let i = 0; i < 30 && !document.querySelector('.page-connections'); i++) await new Promise((resolve) => setTimeout(resolve, 50)); const incoming = [...document.querySelectorAll('.page-connections .page-links-list button')].some((item) => item.textContent?.includes('Research')); const selected = [...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === 'Links')?.getAttribute('aria-selected'); return { incoming, selected } })()`)
-  assert.deepEqual(pageLinks, { incoming: true, selected: 'true' }, 'A page should have a Links presentation with backlinks')
-  const openedPageUri = `serenity:page/${String(createdPage).slice('pages/'.length, -3)}`
-  let savedPageLinks = false
-  for (let i = 0; i < 30 && !savedPageLinks; i++) {
-    const session = YAML.parse(await readFile(join(workspace, '.serenity', 'session.yaml'), 'utf8')) as { layout?: { groups: { presentations?: Record<string, string> }[] } }
-    savedPageLinks = Boolean(session.layout?.groups.some((group) => group.presentations?.[openedPageUri] === 'links'))
-    if (!savedPageLinks) await new Promise((resolve) => setTimeout(resolve, 100))
-  }
-  assert.equal(savedPageLinks, true, 'The page Links presentation should persist in the workspace session')
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-page-links.png'), await captureScreenshot(pageUrl))
-  const returnedPage = await evaluate(pageUrl, `(async () => { [...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === 'Page')?.click(); [...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('Home'))?.click(); for (let i = 0; i < 30 && document.querySelector('.page-prose h1')?.textContent !== 'Research notebook'; i++) await new Promise((resolve) => setTimeout(resolve, 50)); return document.querySelector('.page-prose h1')?.textContent })()`)
-  assert.equal(returnedPage, 'Research notebook')
-  const completed = await evaluate(pageUrl, `(async () => {
-    document.querySelector('.page-toolbar button')?.click()
-    let field = null
-    for (let i = 0; i < 40 && !field; i++) { field = document.querySelector('#page-source'); await new Promise((resolve) => setTimeout(resolve, 50)) }
-    if (!field) return 'no editor'
-    const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
-    const text = field.value + '\\nAsk [[Unt'
-    setter.call(field, text); field.setSelectionRange(text.length, text.length); field.dispatchEvent(new Event('input', { bubbles: true }))
-    let option = null
-    for (let i = 0; i < 40 && !option; i++) { option = document.querySelector('.wikilink-suggestions [role="option"]'); await new Promise((resolve) => setTimeout(resolve, 50)) }
-    field.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    const value = field.value.split('\\n').at(-1)
-    const confirmDiscard = window.confirm
-    window.confirm = () => true
-    ;[...document.querySelectorAll('.page-toolbar button')].find((item) => item.textContent?.includes('Cancel'))?.click()
-    window.confirm = confirmDiscard
-    return value
-  })()`)
-  assert.equal(completed, 'Ask [[Untitled page]]', 'Typing [[ should suggest titles and Enter should complete the link')
-  const renamedLinks = await evaluate(pageUrl, `(async () => {
-    const wait = async (test) => { for (let i = 0; i < 50; i++) { const value = test(); if (value) return value; await new Promise((resolve) => setTimeout(resolve, 100)) } return null }
-    const note = (await window.serenity.saveEntity({ id: '', title: 'Rename note', type: 'note', body: 'Ask [[Alex M.]] soon.' })).entities.find((item) => item.title === 'Rename note')
-    // Written behind the UI's back, so let the shell pick it up now rather than after the file watcher settles.
-    document.querySelector('.topbar-more summary')?.click(); [...document.querySelectorAll('.topbar-menu button')].find((item) => item.textContent?.includes('Refresh files'))?.click()
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    document.querySelector('.topbar-search')?.click()
-    const input = await wait(() => document.querySelector('.palette-input input'))
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Alex M.'); input.dispatchEvent(new Event('input', { bubbles: true }))
-    ;(await wait(() => [...document.querySelectorAll('.palette-results button')].find((item) => item.textContent?.includes('Alex M.') && item.textContent?.includes('person'))))?.click()
-    const title = await wait(() => [...document.querySelectorAll('.editor-group.focused .editor .title-input')].find((item) => item.value === 'Alex M.'))
-    if (!title) return 'entity did not open'
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(title, 'Alex Morgan'); title.dispatchEvent(new Event('input', { bubbles: true }))
-    const confirmRename = window.confirm
-    window.confirm = () => true
-    ;(await wait(() => document.querySelector('.editor-group.focused .editor button[type="submit"]')))?.click()
-    const body = await (async () => { for (let i = 0; i < 50; i++) { const found = (await window.serenity.refresh()).entities.find((item) => item.id === note.id)?.body; if (found?.includes('Morgan')) return found; await new Promise((resolve) => setTimeout(resolve, 100)) } return 'not updated' })()
-    window.confirm = confirmRename
-    return body
-  })()`)
-  assert.equal(renamedLinks, 'Ask [[Alex Morgan]] soon.', 'Renaming an entity should offer to update wikilinks that named it')
-  const closedTabFocus = await evaluate(pageUrl, `(async () => { const tab = document.querySelector('.editor-group.focused .workspace-tab:not(.active) .workspace-tab-close'); if (!tab) return null; tab.focus(); tab.click(); for (let i = 0; i < 30 && tab.isConnected; i++) await new Promise((resolve) => setTimeout(resolve, 50)); await new Promise((resolve) => requestAnimationFrame(resolve)); return { removed: !tab.isConnected, focusedTab: document.activeElement?.classList.contains('workspace-tab-label') } })()`)
-  assert.deepEqual(closedTabFocus, { removed: true, focusedTab: true }, 'Closing an inactive tab should focus a surviving tab')
-  if (process.env.SERENITY_SMOKE_SCREENSHOT_DIR) {
-    const narrow = await evaluate(pageUrl, `(async () => { window.resizeTo(900, 760); for (let i = 0; i < 30 && innerWidth <= 1020 && !document.querySelector('.serenity-studio')?.classList.contains('left-collapsed'); i++) await new Promise((resolve) => setTimeout(resolve, 100)); return { width: innerWidth, main: document.querySelector('#workspace-main')?.getBoundingClientRect().width, right: Boolean(document.querySelector('.assistant-sidebar')), rail: document.querySelector('.serenity-studio')?.classList.contains('left-collapsed') } })()`) as { width: number; main: number; right: boolean; rail: boolean }
-    if (narrow.width <= 1020) {
-      assert.ok(narrow.main > 250 && narrow.right && narrow.rail, `The compact workspace should keep navigation, main, and AI usable: ${JSON.stringify(narrow)}`)
-      await writeFile(join(process.env.SERENITY_SMOKE_SCREENSHOT_DIR, 'serenity-compact.png'), await captureScreenshot(pageUrl))
-    }
-  }
+
   // Accessibility gate: no serious or critical axe-core violations on the main views, in either theme.
-  await evaluate(pageUrl, `${await readFile(require.resolve('axe-core/axe.min.js'), 'utf8')};true`)
-  const accessibility: string[] = []
-  // Restore the full navigation so every main view can be reached.
-  await writeFile(join(workspace, '.serenity', 'workbench.yaml'), YAML.stringify({ homePage: 'research', navigation: [
-    { group: 'Workspace', commands: ['view.home', 'view.knowledge', 'view.review'] }, { group: 'Organize', commands: ['view.documents', 'view.calendar', 'view.tasks'] },
-    { group: 'More', commands: ['view.activity', 'view.settings'] }] }))
-  await evaluate(pageUrl, `(async () => { for (let i = 0; i < 60 && ![...document.querySelectorAll('.navigation button')].some((item) => item.textContent?.includes('Knowledge')); i++) await new Promise((resolve) => setTimeout(resolve, 100)) })()`)
-  const nav = (name: string) => `[...document.querySelectorAll('.navigation button')].find((item) => item.textContent?.includes('${name}'))?.click()`
+  await app.evaluate(`${await readFile(require.resolve('axe-core/axe.min.js'), 'utf8')};true`)
   const views: [string, string][] = [
-    ['Home', nav('Home')], ['Review', nav('Review')], ['Documents', nav('Documents')], ['Settings', nav('Settings')], ['Activity', nav('Activity')],
-    ['Tasks', nav('Tasks')], ['Calendar', nav('Calendar')], ['Knowledge', `${nav('Knowledge')}; ${nav('Knowledge')}`],
-    ['Graph', `[...document.querySelectorAll('.library-mode button')].find((item) => item.textContent?.includes('Graph'))?.click()`],
-    ['Entity profile', `[...document.querySelectorAll('.library-mode button')].find((item) => item.textContent?.includes('Tiles'))?.click(); await new Promise((resolve) => setTimeout(resolve, 200)); document.querySelector('.knowledge-tiles button')?.click()`],
-    ['Timeline', `[...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === 'Timeline')?.click()`],
-    ['Connections', `[...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === 'Connections')?.click()`],
-    ['Split panes', `[...document.querySelectorAll('.presentation-switcher button')].find((item) => item.textContent === 'Profile')?.click(); document.querySelector('.topbar-icon[aria-label="Split right"]')?.click()`]
+    ['Home', `click($('.ribbon-btn[aria-label="Home"]'))`], ['Knowledge', `click(byText('.ribbon-btn', 'Knowledge'))`],
+    ['Graph', `click(byText('.library-mode button', 'Graph'))`], ['Review', `click($('.ribbon-btn[aria-label^="Review"]'))`],
+    ['Documents', `click(byText('.ribbon-btn', 'Documents'))`], ['Calendar', `click(byText('.ribbon-btn', 'Calendar'))`],
+    ['Tasks', `click(byText('.ribbon-btn', 'Tasks'))`], ['Activity', `click(byText('.ribbon-btn', 'Activity'))`],
+    ['Entity', `click(byText('.tree-row', 'Sam Rivera'))`], ['Timeline', `click(byText('.presentation-switcher button', 'Timeline'))`],
+    ['New tab', `click($('.pane.focused .new-tab') ?? $('.new-tab'))`], ['Settings', `click($('.ribbon-btn[aria-label="Settings"]'))`],
+    ['Chat', `click($('.dialog-close')); click(byText('.mode-switch button', 'Chat'))`]
   ]
+  const accessibility: string[] = []
   for (const theme of ['dark', 'light']) {
+    await run(`if ($('.dialog-close')) click($('.dialog-close')); if ($('.mode-switch button[aria-label="Workspace"]')) click($('.mode-switch button[aria-label="Workspace"]')); await sleep(150)`)
     for (const [view, setup] of views) {
-      const found = await evaluate(pageUrl, `(async () => {
-        document.documentElement.setAttribute('data-theme', '${theme}');
-        ${setup};
-        await new Promise((resolve) => setTimeout(resolve, 400))
-        // Views fade in; measuring contrast mid-fade would see partly transparent text.
-        await Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined)))
-        const result = await axe.run(document, { resultTypes: ['violations'] })
-        return result.violations.filter((item) => item.impact === 'serious' || item.impact === 'critical')
-          .map((item) => item.id + ' (' + item.nodes.length + ') at ' + item.nodes[0].target.join(' '))
-      })()`) as string[]
+      const found = await run<string[]>(`document.documentElement.setAttribute('data-theme', '${theme}'); ${setup}; await sleep(400);
+        await Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined)));
+        const result = await axe.run(document, { resultTypes: ['violations'] });
+        return result.violations.filter((item) => item.impact === 'serious' || item.impact === 'critical').map((item) => item.id + ' (' + item.nodes.length + ') at ' + item.nodes[0].target.join(' '))`)
       accessibility.push(...found.map((item) => `${theme} ${view}: ${item}`))
     }
-    await evaluate(pageUrl, `(async () => { for (let i = 0; i < 6 && document.querySelectorAll('.editor-group').length > 1; i++) { document.querySelector('.group-actions button[aria-label^="Close pane"]')?.click(); await new Promise((resolve) => setTimeout(resolve, 80)) } })()`)
   }
   assert.deepEqual(accessibility, [], 'Main views should have no serious or critical accessibility violations')
+
   // Crash the renderer on purpose: the window should reload itself with a working bridge and the same workspace.
-  await new Promise<void>((resolve) => {
-    const socket = new WebSocket(pageUrl)
-    socket.addEventListener('open', () => { socket.send(JSON.stringify({ id: 9, method: 'Page.crash' })); setTimeout(() => { socket.close(); resolve() }, 300) })
-    socket.addEventListener('error', () => resolve())
-  })
+  await app.send('Page.crash').catch(() => undefined)
   let recovered: unknown = null
   for (let attempt = 0; attempt < 60 && !recovered; attempt++) {
     await delay(250)
-    try {
-      const pages = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json() as { type: string; webSocketDebuggerUrl: string }[]
-      const page = pages.find((item) => item.type === 'page')
-      if (page) recovered = await evaluate(page.webSocketDebuggerUrl, `window.serenity?.refresh().then((snapshot) => snapshot?.path) ?? null`)
-    } catch { /* Still reloading. */ }
+    recovered = await app.evaluate('window.serenity?.refresh().then((snapshot) => snapshot?.path) ?? null', 3000).catch(() => null)
   }
   assert.equal(recovered, workspace, 'A crashed window should reload into the same workspace')
-  console.log('Electron workspace, entity, claim, PDF/DOCX search, reversible merges/tasks/calendar, and preload IPC passed.')
+  console.log('Desktop smoke passed: workspace files, live-preview editing, panes, search (PDF/DOCX), tasks, calendar, review, settings, chat, accessibility, and crash recovery.')
 } finally {
-  child.kill()
-  // A window left with unsaved edits asks before closing; do not let that keep Electron running after the test.
-  for (let i = 0; i < 30 && child.exitCode === null && child.signalCode === null; i++) await delay(100)
-  if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
+  await app.close()
   await rm(workspace, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
-  if (profile) await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 })
 }

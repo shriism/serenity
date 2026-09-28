@@ -4,7 +4,6 @@ import { ReviewPanel } from './review-panel'
 import { DocumentsPanel } from './documents-panel'
 import { DocumentPreview } from './document-preview'
 import { ActivityPanel } from './activity-panel'
-import { SettingsPanel } from './settings-panel'
 import { WorkspacePageView } from './workspace-page'
 import { KnowledgeView } from './knowledge-view'
 import { EntityEditor } from './entity-editor'
@@ -13,36 +12,32 @@ import { SearchView } from './search-view'
 import { EntityConnections } from './entity-connections'
 import { DocumentKnowledgeView } from './document-knowledge'
 import { PageConnections } from './page-connections'
-import { PresentationSwitcher, presentationFor } from './presentations'
-import type { CommandContribution } from './commands'
+import { presentationFor } from './presentations'
 import { resourceUri } from '../../shared/resources'
 import type { ActivityItem } from '../../shared/activity'
 import { ViewRegistry } from './view-registry'
+import type { EditorContext } from './markdown-editor'
 
 export interface BuiltinViewContext {
   workspace: WorkspaceSnapshot
+  /** The page shown, for page tabs. */
   page?: WorkspacePage
-  commands: CommandContribution[]
-  shortcuts: { id: string; title: string; keys?: string }[]
+  entityId?: string
   activeDocument?: string
+  /** How the shown resource is presented, if not its default view. */
+  presentation?: string
+  editor: EditorContext
   focusedEventId: string | null
   focusedTaskId: string | null
   focusVersion: number
   activity: ActivityItem[]
-  entityId?: string
-  creatingEntity: boolean
-  /** How the shown resource is presented, if not its default view. */
-  presentation?: string
-  onPresentationChange(id: string): void
   taskPresentation: 'list' | 'board'
   onTaskPresentationChange(presentation: 'list' | 'board'): void
   calendarPresentation: 'month' | 'agenda'
   onCalendarPresentationChange(presentation: 'month' | 'agenda'): void
   onUpdate(snapshot: WorkspaceSnapshot): void
   onError(message: string): void
-  onDirtyChange(dirty: boolean): void
   onOpenResource(uri: string, side?: boolean): void
-  onCommand(id: string): void
   onResolve(id: string, accept: boolean): void
   onAttach(id: string, entityId: string): void
   onOpenSource(name: string): void
@@ -51,7 +46,6 @@ export interface BuiltinViewContext {
   onAnalyze(name: string): void
   onOpenEntity(id: string): void
   onNewEntity(): void
-  onEntityCreated(id: string): void
   onDiscuss(question: string): void
   /** A new conversation that may read only the given entities and documents. */
   onAsk(prompt: string, scope: Pick<ReadScope, 'entityIds' | 'documentNames'>): void
@@ -60,34 +54,21 @@ export interface BuiltinViewContext {
 }
 
 export const builtinViews = new ViewRegistry<BuiltinViewContext>()
-const entityEditor = (context: BuiltinViewContext) => <EntityEditor key={context.entityId ?? 'new'} workspace={context.workspace} entityId={context.entityId ?? null}
-  onUpdate={context.onUpdate} onError={context.onError} onDirtyChange={context.onDirtyChange} onOpenEntity={context.onOpenEntity} onNewEntity={context.onNewEntity}
-  onCreated={context.onEntityCreated} onDiscuss={context.onDiscuss} onOpenSource={context.onOpenSource} onOpenResource={(uri, side) => context.onOpenResource(uri, side)}/>
 builtinViews.register({ id: 'knowledge', render: (context) => {
-  if (!context.entityId) return context.creatingEntity ? entityEditor(context) :
-    <KnowledgeView workspace={context.workspace} onOpenEntity={context.onOpenEntity} onNewEntity={context.onNewEntity}
-      onOpenInPane={(id, side) => context.onOpenResource(resourceUri({ kind: 'entity', id }), side)}/>
+  if (!context.entityId) return <KnowledgeView workspace={context.workspace} onOpenEntity={context.onOpenEntity} onNewEntity={context.onNewEntity}
+    onOpenInPane={(id, side) => context.onOpenResource(resourceUri({ kind: 'entity', id }), side)}/>
   const entityId = context.entityId
-  const presentation = presentationFor('entity', context.presentation)!
-  return <div className="presented-resource">
-    <PresentationSwitcher kind="entity" active={presentation} onChange={context.onPresentationChange}/>
-    {presentation === 'timeline' ? <EntityTimeline workspace={context.workspace} entityId={entityId} onOpenResource={context.onOpenResource} onOpenSource={context.onOpenSource}/> :
-      presentation === 'connections' ? <EntityConnections workspace={context.workspace} entityId={entityId}
-        onOpenEntity={(id, side) => context.onOpenResource(resourceUri({ kind: 'entity', id }), side)} onOpenResource={(uri, side) => context.onOpenResource(uri, side)}/> : entityEditor(context)}
-  </div>
+  const presentation = presentationFor('entity', context.presentation)
+  if (presentation === 'timeline') return <EntityTimeline workspace={context.workspace} entityId={entityId} onOpenResource={context.onOpenResource} onOpenSource={context.onOpenSource}/>
+  if (presentation === 'connections') return <EntityConnections workspace={context.workspace} entityId={entityId}
+    onOpenEntity={(id, side) => context.onOpenResource(resourceUri({ kind: 'entity', id }), side)} onOpenResource={(uri, side) => context.onOpenResource(uri, side)}/>
+  return <EntityEditor key={entityId} workspace={context.workspace} entityId={entityId} context={context.editor} onUpdate={context.onUpdate} onError={context.onError}
+    onOpenEntity={context.onOpenEntity} onDiscuss={context.onDiscuss} onOpenSource={context.onOpenSource}/>
 } })
 builtinViews.register({ id: 'home', render: (context) => {
-  if (!context.page) return <section className="page"><h1>Home page unavailable</h1><p>Check the configured page in this workspace. Serenity will not replace a page it cannot read.</p></section>
-  const page = context.page
-  const editor = <WorkspacePageView key={page.id} page={page} workspace={context.workspace}
-    commands={context.commands} onUpdate={context.onUpdate} onError={context.onError} onDirtyChange={context.onDirtyChange}
-    onOpen={context.onOpenResource} onCommand={context.onCommand}/>
-  if (page.id === context.workspace.workbench.homePage) return editor
-  const presentation = presentationFor('page', context.presentation)!
-  return <div className="presented-resource">
-    <PresentationSwitcher kind="page" active={presentation} onChange={context.onPresentationChange}/>
-    {presentation === 'links' ? <PageConnections page={page} workspace={context.workspace} onOpen={context.onOpenResource}/> : editor}
-  </div>
+  if (!context.page) return null
+  if (presentationFor('page', context.presentation) === 'links') return <PageConnections page={context.page} workspace={context.workspace} onOpen={context.onOpenResource}/>
+  return <WorkspacePageView key={context.page.id} page={context.page} workspace={context.workspace} context={context.editor} onUpdate={context.onUpdate} onError={context.onError}/>
 } })
 builtinViews.register({ id: 'calendar', module: 'calendar', render: ({ workspace, onUpdate, onError, focusedEventId, focusVersion, calendarPresentation, onCalendarPresentationChange, onOpenResource }) =>
   <CalendarModule workspace={workspace} onUpdate={onUpdate} onError={onError} focusEventId={focusedEventId} focusVersion={focusVersion}
@@ -98,14 +79,13 @@ builtinViews.register({ id: 'tasks', module: 'tasks', render: ({ workspace, onUp
 builtinViews.register({ id: 'review', render: ({ workspace, onResolve, onAttach, onOpenSource, onOpenResource, onUpdate, onError }) =>
   <ReviewPanel workspace={workspace} onResolve={onResolve} onAttach={onAttach} onOpenSource={onOpenSource} onOpenResource={(uri, side) => onOpenResource(uri, side)}
     onUpdate={onUpdate} onError={onError}/> })
-builtinViews.register({ id: 'documents', render: ({ workspace, activeDocument, onImport, onOpenDocument, onOpenSource, onError, onAnalyze, onResolve, onAttach, presentation, onPresentationChange, onOpenResource, onAsk }) =>
-  activeDocument ? <div className="presented-resource">
-    <PresentationSwitcher kind="document" active={presentationFor('document', presentation)!} onChange={onPresentationChange}/>
-    {presentationFor('document', presentation) === 'knowledge' ? <DocumentKnowledgeView name={activeDocument} workspace={workspace} onOpenResource={(uri, side) => onOpenResource(uri, side)} onAsk={onAsk}/> :
-      <DocumentPreview name={activeDocument} workspace={workspace} onOpen={onOpenSource} onError={onError} onResolve={onResolve} onAttach={onAttach} onOpenSource={onOpenSource}/>}
-  </div> :
-    <DocumentsPanel workspace={workspace} onImport={onImport} onOpen={onOpenDocument} onAnalyze={onAnalyze}/> })
+builtinViews.register({ id: 'documents', render: ({ workspace, activeDocument, onImport, onOpenDocument, onOpenSource, onError, onAnalyze, onResolve, onAttach, presentation, onOpenResource, onAsk }) =>
+  activeDocument ? presentationFor('document', presentation) === 'knowledge'
+    ? <DocumentKnowledgeView name={activeDocument} workspace={workspace} onOpenResource={(uri, side) => onOpenResource(uri, side)} onAsk={onAsk}/>
+    : <DocumentPreview name={activeDocument} workspace={workspace} onOpen={onOpenSource} onError={onError} onResolve={onResolve} onAttach={onAttach} onOpenSource={onOpenSource}/>
+    : <DocumentsPanel workspace={workspace} onImport={onImport} onOpen={onOpenDocument} onAnalyze={onAnalyze}/> })
 builtinViews.register({ id: 'search', render: ({ workspace, searchQuery, onOpenResource, onAsk }) =>
   <SearchView workspace={workspace} initialQuery={searchQuery} onOpenResource={(uri, side) => onOpenResource(uri, side)} onAsk={onAsk}/> })
 builtinViews.register({ id: 'activity', render: ({ workspace, activity, onOpenResource }) => <ActivityPanel workspace={workspace} activity={activity} onOpenResource={(uri, side) => onOpenResource(uri, side)}/> })
-builtinViews.register({ id: 'settings', render: ({ workspace, shortcuts, onUpdate, onError }) => <SettingsPanel workspace={workspace} shortcuts={shortcuts} onUpdate={onUpdate} onError={onError}/> })
+// Settings is a dialog, but stays a registered view so its command and availability keep working.
+builtinViews.register({ id: 'settings', render: () => null })

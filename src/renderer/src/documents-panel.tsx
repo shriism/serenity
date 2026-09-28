@@ -1,3 +1,4 @@
+import { FileText, FileUp } from 'lucide-react'
 import type { WorkspaceSnapshot } from '../../shared/types'
 
 interface Props {
@@ -8,16 +9,15 @@ interface Props {
 }
 
 export function DocumentsPanel({ workspace, onImport, onAnalyze, onOpen }: Props) {
-  return <section className="page">
-    <span className="eyebrow">SOURCES</span><h1>Documents</h1>
-    <p>Imported files are copied into your workspace. Serenity can search and analyze text, PDF, and DOCX content.</p>
-    <button className="primary" onClick={onImport}>Import documents +</button>
+  return <section className="page wide">
+    <header className="view-header"><div><h1>Documents</h1><p className="view-subtitle">Imported files are copied into this workspace. Text, Markdown, PDF, and Word documents can be searched and analyzed.</p></div>
+      <div className="view-actions"><button className="primary" onClick={onImport}><FileUp size={15}/> Import…</button></div></header>
+    {workspace.documents.length === 0 && <div className="empty-state"><FileText size={22}/><h2>No documents yet</h2><p>Import files to read them here, search their text, and ask the assistant to analyze them.</p></div>}
     <div className="document-list">
       {workspace.documents.map((item) => <div key={item.name} className="document-row">
-        <span>▤</span><strong>{item.name}</strong>
-        <small>{Math.round(item.size / 1024)} KB · {item.extractable ? 'Text format supported' : 'No text extraction for this format'}</small>
-        <button className="text-button" onClick={() => onOpen(item.name)}>{item.extractable ? 'Read' : 'Open'} ↗</button>
-        {item.extractable && <button className="text-button" onClick={() => onAnalyze(item.name)}>Analyze ↗</button>}
+        <FileText size={16} aria-hidden="true"/><button className="document-name" onClick={() => onOpen(item.name)} title={item.extractable ? `Read ${item.name}` : `Open ${item.name} in its app`}>{item.name}</button>
+        <small>{item.size < 1024 * 1024 ? `${Math.max(1, Math.round(item.size / 1024))} KB` : `${(item.size / 1024 / 1024).toFixed(1)} MB`}{item.extractable ? '' : ' · opens in its app'}</small>
+        {item.extractable && <button className="secondary" onClick={() => onAnalyze(item.name)}>Analyze</button>}
       </div>)}
     </div>
   </section>

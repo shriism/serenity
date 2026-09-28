@@ -1,35 +1,67 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { ArrowRight, Columns2, Rows2, FolderOpen, Maximize2, Minimize2, MoreHorizontal, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Search, Sparkles, X } from 'lucide-react'
-import type { SearchResult, WorkspacePage, WorkspaceSnapshot } from '../../shared/types'
-import { ConversationPanel } from './conversation-panel'
-import { ConversationList } from './conversation-list'
+import { AlertTriangle, ChevronDown, FolderOpen, LayoutPanelLeft, Maximize2, MessageSquare, MessageSquarePlus, MoveRight, PanelLeft, PanelRight, RotateCw, X } from 'lucide-react'
+import type { Conversation, SearchResult, WorkspaceSnapshot } from '../../shared/types'
 import { useAssistant } from './use-assistant'
 import { ErrorBoundary } from './error-boundary'
 import { workspaceActivity } from '../../shared/activity'
 import { scopeFromResults } from '../../shared/result-scope'
 import { documentAnalysisPrompt } from '../../shared/analysis-prompt'
-import { AppNavigation } from './navigation'
 import { builtinViews, type BuiltinViewContext } from './builtin-views'
 import { CommandPalette } from './command-palette'
-import { ThemeControl, useTheme } from './theme'
+import { useTheme } from './theme'
 import type { View } from './views'
-import { WorkspaceTabs } from './workspace-tabs'
-import { routeResource, tabKey, tabPath, tabTitle, type TabRef } from './resource-routing'
-import { presentationFor, presentations } from './presentations'
-import { activeTabOf, closeGroup, emptyGroup, enterView, moveTab, presentTab, presentView, findGroup, focusedGroup, initialWorkbench, nextGroupId, orderedGroups, pruneWorkbench, removeTab, restoreWorkbench, showTab, showView, shownUri, splitWorkbench, updateGroup, workbenchSession, type EditorGroup, type Workbench } from './workbench-groups'
+import { isResourceTab, routeResource, tabKey, tabPath, tabTitle, tabViewOf, viewTab, type TabRef } from './resource-routing'
+import { PresentationSwitcher, presentationFor, presentations } from './presentations'
+import { activeTabOf, closeGroup, emptyGroup, findGroup, focusedGroup, homeWorkbench, initialWorkbench, moveTab, nextGroupId, orderedGroups, presentTab, presentView,
+  pruneWorkbench, removeTab, restoreWorkbench, showTab, showView, shownUri, splitWorkbench, updateGroup, workbenchSession, type EditorGroup, type Workbench } from './workbench-groups'
 import { layoutGeometry, maxEditorGroups, neighborGroup, resizeSplit, type PaneDirection, type SplitDirection } from '../../shared/layout'
 import { PaneDivider, dropZoneAt, percentRect, tabDragType, type DropZone } from './pane-layout'
-import { CommandRegistry, type CommandContribution, type CommandHost } from './commands'
+import { CommandRegistry, type CommandHost } from './commands'
 import { eventKeybinding, formatKeybinding, resolveKeymap, type KeymapResult } from '../../shared/keybindings'
 import { parseResourceUri, resourceUri } from '../../shared/resources'
-import './style.css'
-import './studio.css'
+import { Explorer } from './explorer'
+import { PaneHeader } from './pane-header'
+import { MenuButton } from './menu'
+import { Dialog } from './dialog'
+import { SettingsDialog } from './settings-panel'
+import { NewEntityDialog, NewTabScreen, Ribbon, Welcome } from './shell-parts'
+import { Composer, ContextChips, ConversationList, ConversationSettings, ConversationView, conversationMenu, type ActiveContext, type AssistantState } from './assistant'
+import type { EditorContext } from './markdown-editor'
+import './app.css'
 
-const serenityIcon = new URL('../../../assets/icon.svg', import.meta.url).href
-function storedPanel(key: string, fallback: boolean): boolean {
-  try { const stored = localStorage.getItem(key); return stored === null ? fallback : stored === 'true' }
-  catch { return fallback }
+type Mode = 'workspace' | 'chat'
+const platform = navigator.platform.includes('Mac') ? 'mac' : navigator.platform.includes('Win') ? 'windows' : 'linux'
+
+function stored<T extends string | number | boolean>(key: string, fallback: T): T {
+  try {
+    const value = localStorage.getItem(key)
+    if (value === null) return fallback
+    return (typeof fallback === 'boolean' ? value === 'true' : typeof fallback === 'number' ? Number(value) || fallback : value) as T
+  } catch { return fallback }
+}
+function useStored<T extends string | number | boolean>(key: string, fallback: T): [T, (value: T | ((current: T) => T)) => void] {
+  const [value, setValue] = useState<T>(() => stored(key, fallback))
+  useEffect(() => { try { localStorage.setItem(key, String(value)) } catch { /* Still works for this session. */ } }, [key, value])
+  return [value, setValue]
+}
+
+/** A handle on a sidebar's inner edge that resizes it. */
+function SidebarResizer({ side, width, min, max, onResize }: { side: 'left' | 'right'; width: number; min: number; max: number; onResize(width: number): void }) {
+  const start = useRef<{ x: number; width: number } | null>(null)
+  return <div className={`sidebar-resizer ${side}`} role="separator" aria-orientation="vertical" aria-label={`Resize ${side} sidebar`} tabIndex={0}
+    aria-valuemin={min} aria-valuemax={max} aria-valuenow={width}
+    onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); start.current = { x: event.clientX, width } }}
+    onPointerMove={(event) => { if (!start.current) return; const delta = (event.clientX - start.current.x) * (side === 'left' ? 1 : -1); onResize(Math.min(max, Math.max(min, start.current.width + delta))) }}
+    onPointerUp={() => { start.current = null }}
+    onKeyDown={(event) => { const step = event.shiftKey ? 40 : 12; if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); const grow = (event.key === 'ArrowRight') === (side === 'left'); onResize(Math.min(max, Math.max(min, width + (grow ? step : -step)))) } }}/>
+}
+
+/** Where a resource lives, in words: e.g. Knowledge › person › Alex. */
+function breadcrumb(snapshot: WorkspaceSnapshot, tab: TabRef): string[] {
+  const title = tabTitle(snapshot, tab)
+  if (tab.kind === 'entity') return ['Knowledge', snapshot.entities.find((entity) => entity.id === tab.id)?.type || 'Untyped', title]
+  return [tab.kind === 'page' ? 'Pages' : 'Documents', title]
 }
 
 function App() {
@@ -44,45 +76,50 @@ function App() {
     setWorkspaceState((current) => !next || !current || next.path !== current.path || next.generation >= current.generation ? next : current)
   }, [])
   const [workbench, setWorkbench] = useState<Workbench>(initialWorkbench)
-  // Groups whose page or entity editor has unsaved edits. Each editor owns its draft; the shell only guards leaving it.
-  const [dirtyGroups, setDirtyGroups] = useState<Record<string, boolean>>({})
-  const [error, setError] = useState('')
-  const [leftOpen, setLeftOpen] = useState(() => storedPanel('serenity.left-open', false))
-  const [rightOpen, setRightOpen] = useState(() => storedPanel('serenity.right-open', true))
-  const [aiExpanded, setAIExpanded] = useState(false)
+  const [errors, setErrors] = useState<{ id: number; text: string }[]>([])
+  const [mode, setMode] = useStored<Mode>('serenity.mode', 'workspace')
+  const [leftOpen, setLeftOpen] = useStored<boolean>('serenity.left-open', true)
+  const [rightOpen, setRightOpen] = useStored<boolean>('serenity.right-open', true)
+  const [leftWidth, setLeftWidth] = useStored<number>('serenity.left-width', 260)
+  const [rightWidth, setRightWidth] = useStored<number>('serenity.right-width', 360)
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth)
   const [sessionReadyPath, setSessionReadyPath] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[] | null>(null)
   const [searching, setSearching] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [newEntityOpen, setNewEntityOpen] = useState(false)
+  const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false)
+  const [issuesOpen, setIssuesOpen] = useState(false)
   const [focusedEventId, setFocusedEventId] = useState<string | null>(null)
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null)
   const [focusVersion, setFocusVersion] = useState(0)
-  const [theme, setTheme] = useTheme()
+  const [theme, setTheme, resolvedTheme] = useTheme()
   const searchSequence = useRef(0)
-  const commandContext = useRef<{ host: CommandHost; registry: CommandRegistry | null; keymap: KeymapResult; escape(): void } | null>(null)
-  const dirtyHandlers = useRef(new Map<string, (dirty: boolean) => void>())
+  const commandContext = useRef<{ host: CommandHost; registry: CommandRegistry | null; keymap: KeymapResult; escape(): boolean } | null>(null)
   const paneArea = useRef<HTMLDivElement>(null)
   const [paneAreaSize, setPaneAreaSize] = useState({ width: 0, height: 0 })
   const [dropTarget, setDropTarget] = useState<{ group: string; zone: DropZone } | null>(null)
   // A query carried from the search palette into a pane's Search view.
   const [searchSeeds, setSearchSeeds] = useState<Record<string, string>>({})
   const focused = focusedGroup(workbench)
-  const view = focused.view
-  const activeTabRef = activeTabOf(focused)
-  const activePageId = view === 'home' && activeTabRef?.kind === 'page' ? activeTabRef.id : null
   const viewAvailable = (target: View): boolean => Boolean(workspace && builtinViews.available(target, { workspace }))
-  const anyDirty = Object.values(dirtyGroups).some(Boolean)
-  useEffect(() => { try { localStorage.setItem('serenity.left-open', String(leftOpen)) } catch { /* Still works for this session. */ } }, [leftOpen])
-  useEffect(() => { try { localStorage.setItem('serenity.right-open', String(rightOpen)) } catch { /* Still works for this session. */ } }, [rightOpen])
-  useEffect(() => {
-    const narrow = window.matchMedia('(max-width: 1020px)')
-    const onChange = (): void => { if (window.innerWidth <= 1020) setLeftOpen(false) }
-    onChange()
-    narrow.addEventListener('change', onChange)
-    window.addEventListener('resize', onChange)
-    return () => { narrow.removeEventListener('change', onChange); window.removeEventListener('resize', onChange) }
+  // Narrow windows keep the sidebars from squeezing the panes: they float over them instead.
+  const narrow = windowWidth < 1000
+  const setError = useCallback((text: string) => {
+    if (!text) return
+    setErrors((current) => current.some((item) => item.text === text) ? current : [...current.slice(-2), { id: Date.now() + Math.random(), text }])
   }, [])
+  const clearErrors = useCallback(() => setErrors([]), [])
+
+  useEffect(() => { window.serenity.setWindowTheme(resolvedTheme) }, [resolvedTheme])
+  useEffect(() => {
+    const resize = (): void => setWindowWidth(window.innerWidth)
+    window.addEventListener('resize', resize)
+    return () => window.removeEventListener('resize', resize)
+  }, [])
+  useEffect(() => { if (narrow) { setLeftOpen(false); setRightOpen(false) } }, [narrow])
 
   const closePalette = useCallback(() => {
     searchSequence.current++
@@ -92,32 +129,26 @@ function App() {
   }, [])
 
   const refresh = useCallback(async () => {
-    try {
-      const next = await window.serenity.refresh()
-      setWorkspace(next)
-      setError('')
-    } catch (cause) {
-      setError(String(cause))
-    }
+    try { setWorkspace(await window.serenity.refresh()) }
+    catch (cause) { setError(String(cause)) }
   }, [])
 
-  const assistant = useAssistant({ workspace, setWorkspace, refresh, setError,
-    reveal: (returnToSidebar) => { setRightOpen(true); if (returnToSidebar) setAIExpanded(false) },
+  const assistant = useAssistant({ workspace, setWorkspace, refresh, setError: (message) => { if (message) setError(message) },
+    reveal: () => { if (mode === 'workspace') setRightOpen(true) },
     contextRefs: () => {
-      const home = workspace?.workbench.homePage ?? 'home'
-      const shownRef = (group: EditorGroup): string | undefined => {
-        const ref = parseResourceUri(shownUri(group, home) ?? '')
+      const refOf = (group: EditorGroup): string | undefined => {
+        const ref = parseResourceUri(shownUri(group) ?? '')
         return ref ? `${ref.kind}:${ref.id}` : undefined
       }
       const groups = orderedGroups(workbench)
-      return { activeRef: shownRef(focused), visibleRefs: stacked ? [] : groups.filter((group) => group.id !== focused.id).flatMap((group) => shownRef(group) ?? []),
-        openRefs: [...new Set(groups.flatMap((group) => group.tabs.map(tabKey)))] }
+      if (mode === 'chat') return { visibleRefs: [], openRefs: [] }
+      return { activeRef: refOf(focused), visibleRefs: stacked ? [] : groups.filter((group) => group.id !== focused.id).flatMap((group) => refOf(group) ?? []),
+        openRefs: [...new Set(groups.flatMap((group) => group.tabs.filter(isResourceTab).map(tabKey)))] }
     } })
-  const { conversationId, readScope, restoreConversation, startConversation, selectConversation } = assistant
+  const { conversationId, readScope, restoreConversation, selectConversation } = assistant
 
   useEffect(() => window.serenity.onWorkspaceChange(() => { void refresh() }), [refresh])
   useEffect(() => { void window.serenity.refresh().then(setWorkspace).catch((cause) => setError(String(cause))) }, [])
-  useEffect(() => window.serenity.setEditorDirty(anyDirty), [anyDirty])
   useEffect(() => window.serenity.onIndexError((message) => setError(`Background AI: ${message}`)), [])
   useEffect(() => {
     if (!workspace) return
@@ -125,32 +156,31 @@ function App() {
     setSessionReadyPath(null)
     void window.serenity.loadSession().then((session) => {
       if (!current) return
-      if (!session) { restoreConversation(workspace.conversations.at(-1)); setSessionReadyPath(workspace.path); return }
+      if (!session) { restoreConversation(workspace.conversations.at(-1)); setWorkbench(homeWorkbench(workspace)); setSessionReadyPath(workspace.path); return }
       const lastConversation = workspace.conversations.find((item) => session.assistantUri === resourceUri({ kind: 'conversation', id: item.id })) ?? workspace.conversations.at(-1)
       restoreConversation(lastConversation)
       setWorkbench(restoreWorkbench(session, workspace, (id) => builtinViews.available(id, { workspace })))
-      setDirtyGroups({})
       setSessionReadyPath(workspace.path)
     }).catch((error) => { if (current) setError(`Workspace session: ${String(error)}`) })
     return () => { current = false }
   }, [workspace?.path])
   useEffect(() => {
     if (!workspace || sessionReadyPath !== workspace.path) return
-    const session = workbenchSession(workbench, workspace.workbench.homePage, conversationId ? resourceUri({ kind: 'conversation', id: conversationId }) : undefined)
+    const session = workbenchSession(workbench, conversationId ? resourceUri({ kind: 'conversation', id: conversationId }) : undefined)
     const timer = window.setTimeout(() => { void window.serenity.saveSession(session).catch((error) => setError(`Workspace session: ${String(error)}`)) }, 180)
     return () => window.clearTimeout(timer)
-  }, [workspace?.path, workspace?.workbench.homePage, sessionReadyPath, workbench, conversationId])
+  }, [workspace?.path, sessionReadyPath, workbench, conversationId])
   useEffect(() => {
     // An effect from an earlier render can run after a newer snapshot has arrived and a tab was opened from it;
     // pruning with the older snapshot would close that tab as if its resource were gone.
     if (workspace) setWorkbench((current) => isNewest(workspace) ? pruneWorkbench(current, workspace, (id) => builtinViews.available(id, { workspace })) : current)
   }, [workspace])
   useEffect(() => {
-    const mac = navigator.platform.includes('Mac')
+    const mac = platform === 'mac'
     const onShortcut = (event: globalThis.KeyboardEvent): void => {
       const current = commandContext.current
       if (!current) return
-      if (event.key === 'Escape') { current.escape(); return }
+      if (event.key === 'Escape') { if (current.escape()) event.preventDefault(); return }
       const binding = eventKeybinding(event, mac)
       const id = binding ? current.keymap.bindings.get(binding) : undefined
       const command = id ? current.registry?.get(id) : undefined
@@ -170,7 +200,7 @@ function App() {
     const observer = new ResizeObserver(([entry]) => setPaneAreaSize({ width: entry.contentRect.width, height: entry.contentRect.height }))
     observer.observe(element)
     return () => observer.disconnect()
-  }, [workspace !== null])
+  }, [workspace !== null, mode])
 
   async function chooseWorkspace() {
     try {
@@ -179,33 +209,13 @@ function App() {
       setWorkspace(next)
       setSessionReadyPath(null)
       setWorkbench(initialWorkbench)
-      setDirtyGroups({})
-      setError('')
-      setAIExpanded(false)
+      clearErrors()
       restoreConversation(undefined)
       closePalette()
+      setSettingsOpen(false)
       setFocusedEventId(null)
       setFocusedTaskId(null)
-    } catch (cause) {
-      setError(String(cause))
-    }
-  }
-
-  /** A stable per-group callback, so editors' dirty-tracking effects do not re-run on every render. */
-  function dirtyHandler(groupId: string): (dirty: boolean) => void {
-    let handler = dirtyHandlers.current.get(groupId)
-    if (!handler) {
-      handler = (dirty) => setDirtyGroups((current) => Boolean(current[groupId]) === dirty ? current : { ...current, [groupId]: dirty })
-      dirtyHandlers.current.set(groupId, handler)
-    }
-    return handler
-  }
-
-  function confirmLeave(groupId: string): boolean {
-    if (!dirtyGroups[groupId]) return true
-    if (!window.confirm('Discard your unsaved changes?')) return false
-    setDirtyGroups((current) => ({ ...current, [groupId]: false }))
-    return true
+    } catch (cause) { setError(String(cause)) }
   }
 
   /** A group that `sideGroup` may have just created is not in this render's state yet; treat it as empty. */
@@ -216,6 +226,8 @@ function App() {
   /** Changes what a group shows and focuses it. */
   function show(groupId: string, update: (group: EditorGroup) => EditorGroup): void {
     setWorkbench((current) => findGroup(current, groupId) ? { ...updateGroup(current, groupId, update), focused: groupId } : current)
+    if (mode === 'chat') setMode('workspace')
+    if (narrow) setLeftOpen(false)
   }
 
   function focusGroup(groupId: string): void {
@@ -233,20 +245,24 @@ function App() {
     return planned.focused
   }
 
-  function openEntity(id: string, groupId: string = workbench.focused): boolean {
-    const tab: TabRef = { kind: 'entity', id }
-    const group = groupState(groupId)
-    if (group.view === 'knowledge' && group.activeTab === tabKey(tab)) { focusGroup(groupId); return true }
-    if (!workspace?.entities.some((item) => item.id === id) || !confirmLeave(groupId)) return false
-    setError('')
+  function openTab(tab: TabRef, groupId: string = workbench.focused): boolean {
     show(groupId, (current) => showTab(current, tab))
     return true
   }
 
-  function newEntity(groupId: string = workbench.focused) {
-    if (!confirmLeave(groupId)) return
-    setError('')
-    show(groupId, (current) => ({ ...showView(current, 'knowledge'), creatingEntity: true }))
+  function openEntity(id: string, groupId: string = workbench.focused): boolean {
+    if (!workspace?.entities.some((item) => item.id === id)) return false
+    return openTab({ kind: 'entity', id }, groupId)
+  }
+
+  async function createEntity(title: string, type: string): Promise<boolean> {
+    try {
+      const next = await window.serenity.saveEntity({ id: '', title, type, body: '' })
+      const created = next.entities.find((entity) => !workspace?.entities.some((existing) => existing.id === entity.id))
+      setWorkspace(next)
+      if (created) openTab({ kind: 'entity', id: created.id })
+      return true
+    } catch (cause) { setError(String(cause)); return false }
   }
 
   async function searchText(value: string) {
@@ -256,7 +272,6 @@ function App() {
     try {
       const matches = await window.serenity.search(value)
       if (request === searchSequence.current) setResults(matches)
-      setError('')
     } catch (cause) { setError(String(cause)) }
   }
 
@@ -277,46 +292,24 @@ function App() {
       return Boolean(conversation)
     }
     const groupId = options.side ? sideGroup(options.group) : options.group ?? workbench.focused
-    switch (target.action) {
-      case 'tab': return openTabRef(target.tab, groupId)
-      case 'home': return navigate('home', groupId)
-      case 'focus': return focusRecord(target.kind, target.id, groupId)
-      case 'view': return navigate(target.view, groupId)
-    }
-  }
-
-  function openTabRef(tab: TabRef, groupId: string): boolean {
-    if (tab.kind === 'document') return openDocumentTab(tab.id, groupId)
-    if (tab.kind === 'page') return openPageTab(tab.id, groupId)
-    return openEntity(tab.id, groupId)
-  }
-
-  function openPageTab(id: string, groupId: string): boolean {
-    const tab: TabRef = { kind: 'page', id }
-    const group = groupState(groupId)
-    if (!(group.view === 'home' && group.activeTab === tabKey(tab)) && !confirmLeave(groupId)) return false
-    show(groupId, (current) => showTab(current, tab))
-    return true
-  }
-
-  function focusRecord(kind: 'task' | 'event', id: string, groupId: string): boolean {
-    if (!confirmLeave(groupId)) return false
-    if (kind === 'task') setFocusedTaskId(id)
-    else setFocusedEventId(id)
+    if (target.action === 'tab') return openTab(target.tab, groupId)
+    if (target.kind === 'task') setFocusedTaskId(target.id)
+    else setFocusedEventId(target.id)
     setFocusVersion((version) => version + 1)
-    show(groupId, (current) => showView(current, kind === 'task' ? 'tasks' : 'calendar'))
-    return true
+    return openTab(viewTab(target.view), groupId)
   }
 
   function navigate(destination: View, groupId: string = workbench.focused): boolean {
-    const group = groupState(groupId)
-    if (!viewAvailable(destination)) return false
-    if ((group.view !== destination || group.activeTab || group.creatingEntity) && !confirmLeave(groupId)) return false
+    if (destination === 'settings') { setSettingsOpen(true); return true }
+    if (!workspace || !viewAvailable(destination)) return false
+    if (destination === 'home') {
+      const home = workspace.workbench.homePage
+      return workspace.pages.some((page) => page.id === home) ? openTab({ kind: 'page', id: home }, groupId) : false
+    }
     if (destination === 'calendar') setFocusedEventId(null)
     if (destination === 'tasks') setFocusedTaskId(null)
-    show(groupId, (current) => enterView(current, destination))
-    if (leftOpen) setLeftOpen(false)
     if (destination === 'activity') void refresh()
+    show(groupId, (current) => showView(current, destination))
     return true
   }
 
@@ -325,15 +318,13 @@ function App() {
   }
 
   async function createPage(groupId: string = workbench.focused): Promise<void> {
-    if (!confirmLeave(groupId)) return
     try {
       const before = new Set(workspace?.pages.map((page) => page.id) ?? [])
       const next = await window.serenity.createPage()
       const created = next.pages.find((page) => !before.has(page.id))
       if (!created) throw new Error('New page was not found in this workspace')
       setWorkspace(next)
-      show(groupId, (current) => showTab(current, { kind: 'page', id: created.id }))
-      setError('')
+      openTab({ kind: 'page', id: created.id }, groupId)
     } catch (error) { setError(String(error)) }
   }
 
@@ -342,13 +333,10 @@ function App() {
     setSearching(true)
     const request = ++searchSequence.current
     try {
-      const [lexical, semantic] = await Promise.all([
-        window.serenity.search(query), window.serenity.semanticSearch(query, assistant.provider)
-      ])
+      const [lexical, semantic] = await Promise.all([window.serenity.search(query), window.serenity.semanticSearch(query, assistant.provider)])
       if (request === searchSequence.current) setResults([...semantic, ...lexical.filter((entry) => !semantic.some((match) =>
         match.kind === entry.kind && match.id === entry.id && match.title === entry.title))])
       await refresh()
-      setError('')
     } catch (cause) { setError(String(cause)) }
     finally { setSearching(false) }
   }
@@ -360,20 +348,16 @@ function App() {
       const [indexed, lexical] = await Promise.all([window.serenity.searchSemanticIndex(query), window.serenity.search(query)])
       if (request === searchSequence.current) setResults([...indexed, ...lexical.filter((entry) => !indexed.some((match) =>
         match.kind === entry.kind && match.id === entry.id && match.title === entry.title))])
-      setError('')
     } catch (cause) { setError(String(cause)) }
   }
 
   async function importDocuments() {
-    try {
-      const next = await window.serenity.importDocuments()
-      if (next) setWorkspace(next)
-      setError('')
-    } catch (cause) { setError(String(cause)) }
+    try { const next = await window.serenity.importDocuments(); if (next) setWorkspace(next) }
+    catch (cause) { setError(String(cause)) }
   }
 
   async function openDocument(name: string) {
-    try { await window.serenity.openDocument(name); setError('') }
+    try { await window.serenity.openDocument(name) }
     catch (cause) { setError(String(cause)) }
   }
 
@@ -381,27 +365,14 @@ function App() {
     const item = workspace?.documents.find((document) => document.name === name)
     if (!item) return false
     if (!item.extractable) { void openDocument(name); return true }
-    const tab: TabRef = { kind: 'document', id: name }
-    const group = groupState(groupId)
-    if (!(group.view === 'documents' && group.activeTab === tabKey(tab)) && !confirmLeave(groupId)) return false
-    show(groupId, (current) => showTab(current, tab))
-    return true
+    return openTab({ kind: 'document', id: name }, groupId)
   }
 
-  function activateTab(key: string, groupId: string) {
-    const tab = groupState(groupId).tabs.find((item) => tabKey(item) === key)
-    if (tab) openTabRef(tab, groupId)
-  }
-
-  function closeTab(key: string, groupId: string): boolean {
-    if (groupState(groupId).activeTab === key && !confirmLeave(groupId)) return false
+  function closeTab(key: string, groupId: string): void {
     setWorkbench((current) => updateGroup(current, groupId, (group) => removeTab(group, key)))
-    return true
   }
 
   function changePresentation(groupId: string, tab: TabRef, presentation: string): void {
-    // Leaving the default presentation replaces its editor, so unsaved edits there need the usual confirmation.
-    if (!confirmLeave(groupId)) return
     const fallback = presentationFor(tab.kind, undefined)
     setWorkbench((current) => updateGroup(current, groupId, (group) => presentTab(group, tabKey(tab), presentation === fallback ? undefined : presentation)))
   }
@@ -416,10 +387,9 @@ function App() {
   }
 
   function closeEditorGroup(groupId: string = workbench.focused): void {
-    if (workbench.groups.length < 2 || !confirmLeave(groupId)) return
+    if (workbench.groups.length < 2) return
     const remainingFocus = workbench.focused === groupId ? nextGroupId(workbench, groupId) : workbench.focused
     setWorkbench((current) => closeGroup(current, groupId))
-    setDirtyGroups(({ [groupId]: _closed, ...rest }) => rest)
     requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-group="${remainingFocus}"]`)?.focus())
   }
 
@@ -432,21 +402,20 @@ function App() {
   const focusNextGroup = (step = 1): void => focusPaneElement(nextGroupId(workbench, workbench.focused, step))
   const focusPane = (direction: PaneDirection): void => focusPaneElement(neighborGroup(geometry.groups, workbench.focused, direction))
 
-  function moveTabToOtherGroup(): void {
-    const tab = activeTabOf(focused)
-    if (!tab || !confirmLeave(focused.id)) return
-    const target = sideGroup(focused.id)
-    if (target === focused.id) return
-    setWorkbench((current) => moveTab(current, focused.id, tabKey(tab), target))
+  function moveTabToOtherGroup(groupId: string = focused.id): void {
+    const group = groupState(groupId)
+    const tab = activeTabOf(group)
+    if (!tab) return
+    const target = sideGroup(groupId)
+    if (target === groupId) return
+    setWorkbench((current) => moveTab(current, groupId, tabKey(tab), target))
   }
 
   /** A tab dropped on a pane: into it at the center, or into a new pane split off toward the nearest edge. */
   function dropTab(from: string, key: string, to: string, zone: DropZone, before?: string): void {
     const source = findGroup(workbench, from)
     if (!source?.tabs.some((tab) => tabKey(tab) === key)) return
-    if (zone === 'center' && from === to) { if (before) setWorkbench((current) => moveTab(current, from, key, to, before)); return }
-    // The moved tab's editor opens again in its new pane, so its unsaved edits need the usual confirmation.
-    if (source.activeTab === key && !confirmLeave(from)) return
+    if (zone === 'center' && from === to) { setWorkbench((current) => moveTab(current, from, key, to, before)); return }
     if (zone === 'center') { setWorkbench((current) => moveTab(current, from, key, to, before)); return }
     const direction: SplitDirection = zone === 'left' || zone === 'right' ? 'row' : 'column'
     setWorkbench((current) => {
@@ -456,20 +425,26 @@ function App() {
   }
 
   async function resolveProposal(id: string, accept: boolean) {
-    try { setWorkspace(await window.serenity.resolveProposal(id, accept)); setError('') }
+    try { setWorkspace(await window.serenity.resolveProposal(id, accept)) }
     catch (cause) { setError(String(cause)) }
   }
 
   async function attachProposal(id: string, entityId: string) {
-    try { setWorkspace(await window.serenity.attachEntityProposal(id, entityId)); setError('') }
+    try { setWorkspace(await window.serenity.attachEntityProposal(id, entityId)) }
     catch (cause) { setError(String(cause)) }
+  }
+
+  /** Starts a new conversation where the person is: beside their work, or in Chat mode. */
+  function startConversation(prompt = '', scope?: Parameters<typeof assistant.startConversation>[1]): void {
+    assistant.startConversation(prompt, scope)
+    if (mode === 'workspace') setRightOpen(true)
+    requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(mode === 'chat' ? '.chat-main .composer textarea' : '.assistant-panel .composer textarea')?.focus())
   }
 
   const commandRegistry = useMemo(() => workspace ? new CommandRegistry(workspace) : null, [workspace])
   const commands = useMemo(() => commandRegistry?.list() ?? [], [commandRegistry])
-  const menuCommands = ['entity.create', 'page.create', 'workspace.refresh'].flatMap((id) => commandRegistry?.get(id) ?? [])
   const keymap = useMemo(() => resolveKeymap(commands, workspace?.workbench.keybindings, commandRegistry?.knownIds()), [commands, workspace, commandRegistry])
-  const mac = navigator.platform.includes('Mac')
+  const mac = platform === 'mac'
   const shortcut = (id: string): string | undefined => { const binding = keymap.byCommand.get(id); return binding && formatKeybinding(binding, mac) }
   const ariaShortcut = (id: string): string | undefined => keymap.byCommand.get(id)?.replace('Mod', mac ? 'Meta' : 'Control').replace('Ctrl', 'Control')
   const withShortcut = (label: string, id: string): string => { const keys = shortcut(id); return keys ? `${label} (${keys})` : label }
@@ -477,17 +452,17 @@ function App() {
     .map((command) => ({ id: command.id, title: command.title, keys: keymap.byCommand.has(command.id) ? formatKeybinding(keymap.byCommand.get(command.id)!, mac) : undefined })), [commands, keymap, mac])
   const commandHost: CommandHost = {
     navigate: (destination) => navigate(destination),
-    openResource: (uri) => { const opened = openResource(uri); if (opened && leftOpen) setLeftOpen(false); return opened },
-    newEntity: () => newEntity(),
+    openResource: (uri) => openResource(uri),
+    newEntity: () => setNewEntityOpen(true),
     createPage: () => { void createPage() },
-    importDocuments: () => { if (navigate('documents')) void importDocuments() },
+    importDocuments: () => { void importDocuments() },
     chooseWorkspace: () => { void chooseWorkspace() },
     openWorkspaceFolder: () => { void window.serenity.openWorkspaceFolder().catch((cause) => setError(String(cause))) },
     newConversation: () => startConversation(),
     toggleSearch: () => { if (paletteOpen) closePalette(); else setPaletteOpen(true) },
     toggleNavigation: () => setLeftOpen((open) => !open),
-    toggleAssistant: () => { setRightOpen((open) => !open); setAIExpanded(false) },
-    toggleAssistantExpansion: () => { setRightOpen(true); setAIExpanded((expanded) => !expanded) },
+    toggleAssistant: () => { if (mode === 'chat') setMode('workspace'); else setRightOpen((open) => !open) },
+    toggleAssistantExpansion: () => setMode((current) => current === 'chat' ? 'workspace' : 'chat'),
     setAppearance: (preference) => setTheme(preference),
     cyclePresentation: () => {
       const tab = activeTabOf(focused)
@@ -500,60 +475,66 @@ function App() {
     closeEditorGroup: () => closeEditorGroup(),
     focusNextGroup: (step) => focusNextGroup(step),
     focusPane,
-    moveTabToOtherGroup,
+    moveTabToOtherGroup: () => moveTabToOtherGroup(),
     refresh: () => { void refresh() }
   }
-  commandContext.current = { host: commandHost, registry: commandRegistry, keymap, escape: () => { if (paletteOpen) closePalette(); else if (leftOpen) setLeftOpen(false) } }
+  commandContext.current = { host: commandHost, registry: commandRegistry, keymap, escape: () => {
+    if (paletteOpen) { closePalette(); return true }
+    if (narrow && (leftOpen || rightOpen)) { setLeftOpen(false); setRightOpen(false); return true }
+    return false
+  } }
 
   const pending = workspace?.proposals.filter((proposal) => proposal.status === 'pending') ?? []
   // The feed spans every record; rebuild it when the workspace changes, not on each keystroke elsewhere in the shell.
   const activity = useMemo(() => workspace ? workspaceActivity(workspace) : [], [workspace])
-  const title: Record<View, string> = { home: 'Home', knowledge: 'Knowledge', review: 'Review', documents: 'Documents', calendar: 'Calendar', tasks: 'Tasks', activity: 'Activity', settings: 'Settings', search: 'Search' }
   const multipleGroups = workbench.groups.length > 1
   const canSplit = workbench.groups.length < maxEditorGroups
   const geometry = useMemo(() => layoutGeometry(workbench.root), [workbench.root])
-  // When any pane would be too small to use, show one pane at a time with a switcher. Hidden panes stay mounted so
-  // their editors keep unsaved work.
+  // When any pane would be too small to use, show one pane at a time with a switcher. Hidden panes stay mounted.
   const stacked = multipleGroups && paneAreaSize.width > 0 && [...geometry.groups.values()].some((rect) =>
-    rect.width * paneAreaSize.width < 220 || rect.height * paneAreaSize.height < 160)
-  const pageFor = (group: EditorGroup): WorkspacePage | undefined => {
+    rect.width * paneAreaSize.width < 260 || rect.height * paneAreaSize.height < 180)
+  const pageFor = (group: EditorGroup) => {
     const tab = activeTabOf(group)
-    return workspace && group.view === 'home' ? workspace.pages.find((item) => item.id === (tab?.kind === 'page' ? tab.id : workspace.workbench.homePage)) : undefined
+    return workspace && tab?.kind === 'page' ? workspace.pages.find((item) => item.id === tab.id) : undefined
   }
   const groupTitle = (group: EditorGroup): string => {
     const tab = activeTabOf(group)
-    return !workspace ? 'Welcome' : group.view === 'home' ? pageFor(group)?.title ?? 'Home' : tab ? tabTitle(workspace, tab) : title[group.view]
+    return !workspace ? 'Serenity' : tab ? tabTitle(workspace, tab) : 'New tab'
   }
-  const currentTab = activeTabRef
-  const currentPage = pageFor(focused)
-  const activeFile = currentTab && currentTab.kind !== 'page' && workspace ? {
-    name: tabTitle(workspace, currentTab),
-    path: tabPath(workspace, currentTab),
-    kind: currentTab.kind,
-    allowed: readScope.mode === 'workspace' || (currentTab.kind === 'entity' ? readScope.entityIds.includes(currentTab.id) : readScope.documentNames.includes(currentTab.id))
-  } : currentPage ? { name: currentPage.title, path: currentPage.path, kind: 'page' as const, allowed: readScope.mode === 'workspace' } : undefined
-  const openFileCount = new Set(workbench.groups.flatMap((group) => group.tabs.map(tabKey))).size
-  const visiblePaneCount = stacked || !workspace ? 0 : workbench.groups.filter((group) => group.id !== focused.id && shownUri(group, workspace.workbench.homePage)).length
+  const focusedTab = activeTabOf(focused)
+  const activeFile: ActiveContext | undefined = focusedTab && isResourceTab(focusedTab) && workspace ? {
+    name: tabTitle(workspace, focusedTab), path: tabPath(workspace, focusedTab), kind: focusedTab.kind,
+    allowed: readScope.mode === 'workspace' || (focusedTab.kind === 'entity' ? readScope.entityIds.includes(focusedTab.id) : focusedTab.kind === 'document' && readScope.documentNames.includes(focusedTab.id))
+  } : undefined
+  const openFileCount = new Set(workbench.groups.flatMap((group) => group.tabs.filter(isResourceTab).map(tabKey))).size
+  const visiblePaneCount = stacked || !workspace ? 0 : workbench.groups.filter((group) => group.id !== focused.id && shownUri(group)).length
+  const issues = [...(workspace?.errors.map((item) => `Could not read ${item}`) ?? []), ...keymap.problems.map((item) => `.serenity/workbench.yaml: ${item}`)]
+  const workspaceName = workspace?.path.split(/[\\/]/).filter(Boolean).at(-1) ?? ''
+  const editorContext = useMemo<EditorContext | null>(() => workspace ? {
+    workspace, open: (uri, side) => { openResourceRef.current(uri, { side }) }, command: (id) => runCommandRef.current(id)
+  } : null, [workspace])
+  const openResourceRef = useRef(openResource)
+  openResourceRef.current = openResource
+  const runCommandRef = useRef(runCommand)
+  runCommandRef.current = runCommand
 
   function viewContext(group: EditorGroup, snapshot: WorkspaceSnapshot): BuiltinViewContext {
     const tab = activeTabOf(group)
-    return { workspace: snapshot, page: pageFor(group), commands, shortcuts,
-      activeDocument: tab?.kind === 'document' ? tab.id : undefined, focusedEventId, focusedTaskId, focusVersion, activity,
-      onUpdate: setWorkspace, onError: setError, onDirtyChange: dirtyHandler(group.id),
-      onOpenResource: (uri, side) => { openResource(uri, { group: group.id, side }) }, onCommand: runCommand,
-      onResolve: (id, accept) => { void resolveProposal(id, accept) }, onAttach: (id, entityId) => { void attachProposal(id, entityId) },
-      onOpenSource: (name) => { void openDocument(name) }, onImport: () => { void importDocuments() }, onOpenDocument: (name) => { openDocumentTab(name, group.id) },
-      onAnalyze: (name) => { openDocumentTab(name, group.id); startConversation(documentAnalysisPrompt(name)) },
-      entityId: tab?.kind === 'entity' ? tab.id : undefined, creatingEntity: group.creatingEntity,
+    return { workspace: snapshot, page: pageFor(group), editor: editorContext!,
+      activeDocument: tab?.kind === 'document' ? tab.id : undefined, entityId: tab?.kind === 'entity' ? tab.id : undefined,
       presentation: tab ? group.presentations[tabKey(tab)] : undefined,
-      onPresentationChange: (id) => { if (tab) changePresentation(group.id, tab, id) },
+      focusedEventId, focusedTaskId, focusVersion, activity,
+      onUpdate: setWorkspace, onError: (message) => { if (message) setError(message) },
+      onOpenResource: (uri, side) => { openResource(uri, { group: group.id, side }) },
+      onResolve: (id, accept) => { void resolveProposal(id, accept) }, onAttach: (id, entityId) => { void attachProposal(id, entityId) },
+      onOpenSource: (name) => { openDocumentTab(name, group.id) }, onImport: () => { void importDocuments() }, onOpenDocument: (name) => { openDocumentTab(name, group.id) },
+      onAnalyze: (name) => { openDocumentTab(name, group.id); startConversation(documentAnalysisPrompt(name)) },
       taskPresentation: group.viewPresentations.tasks === 'board' ? 'board' : 'list',
       onTaskPresentationChange: (presentation) => setWorkbench((current) => updateGroup(current, group.id, (item) => presentView(item, 'tasks', presentation))),
       calendarPresentation: group.viewPresentations.calendar === 'agenda' ? 'agenda' : 'month',
       onCalendarPresentationChange: (presentation) => setWorkbench((current) => updateGroup(current, group.id, (item) => presentView(item, 'calendar', presentation))),
-      onOpenEntity: (id) => { openEntity(id, group.id) }, onNewEntity: () => newEntity(group.id), onDiscuss: startConversation,
-      onAsk: (prompt, scope) => startConversation(prompt, scope), searchQuery: searchSeeds[group.id] ?? '',
-      onEntityCreated: (id) => setWorkbench((current) => updateGroup(current, group.id, (item) => showTab(item, { kind: 'entity', id })))
+      onOpenEntity: (id) => { openEntity(id, group.id) }, onNewEntity: () => setNewEntityOpen(true), onDiscuss: (question) => startConversation(question),
+      onAsk: (prompt, scope) => startConversation(prompt, scope), searchQuery: searchSeeds[group.id] ?? ''
     }
   }
 
@@ -565,14 +546,37 @@ function App() {
     } catch { return null }
   }
 
+  const assistantToggle = <button type="button" className="icon-btn" onClick={() => runCommand('assistant.toggle')} aria-pressed={rightOpen} aria-keyshortcuts={ariaShortcut('assistant.toggle')}
+    aria-label={rightOpen ? 'Hide assistant' : 'Show assistant'} title={withShortcut(rightOpen ? 'Hide assistant' : 'Show assistant', 'assistant.toggle')}><PanelRight size={16}/></button>
+
+  function newTabActions(groupId: string) {
+    return [
+      { id: 'page', label: 'New page', keys: shortcut('page.create'), run: () => { void createPage(groupId) } },
+      { id: 'entity', label: 'New entity', keys: shortcut('entity.create'), run: () => setNewEntityOpen(true) },
+      { id: 'search', label: 'Go to or search…', keys: shortcut('workspace.search'), run: () => setPaletteOpen(true) },
+      ...(workspace?.pages.some((page) => page.id === workspace.workbench.homePage) ? [{ id: 'home', label: 'Open Home', run: () => { navigate('home', groupId) } }] : []),
+      { id: 'ask', label: 'Ask Serenity', keys: shortcut('assistant.toggle'), run: () => startConversation() },
+      ...(multipleGroups ? [{ id: 'close', label: 'Close pane', run: () => closeEditorGroup(groupId) }] : [])
+    ]
+  }
+
   function renderGroup(group: EditorGroup, snapshot: WorkspaceSnapshot, position: number): ReactNode {
     const isFocused = group.id === workbench.focused
     const rect = geometry.groups.get(group.id)
     const hidden = stacked && !isFocused
     const zone = dropTarget?.group === group.id ? dropTarget.zone : null
+    const edge = stacked || !rect ? { top: true, left: true, right: true } :
+      { top: rect.y < 0.001, left: rect.x < 0.001, right: rect.x + rect.width > 0.999 }
+    const tab = activeTabOf(group)
+    const options = tab ? presentations[tab.kind] : undefined
+    const presentation = tab ? presentationFor(tab.kind, group.presentations[tabKey(tab)]) : undefined
+    const view = tab ? tabViewOf(tab) : null
+    const body = !tab ? <NewTabScreen actions={newTabActions(group.id)}/> :
+      builtinViews.render(view!, viewContext(group, snapshot)) ?? <div className="empty-state"><h2>Not available</h2><p>This module is turned off in this workspace.</p></div>
     return <section key={group.id} data-group={group.id} tabIndex={-1} hidden={hidden}
-      className={`editor-group ${isFocused ? 'focused' : ''}`} style={stacked || !rect ? undefined : percentRect(rect)}
-      aria-label={multipleGroups ? `${groupTitle(group)} · pane ${position}` : undefined} aria-current={multipleGroups && isFocused ? 'true' : undefined}
+      className={`pane ${isFocused && multipleGroups ? 'focused' : ''} ${edge.top ? 'edge-top' : ''} ${edge.left ? 'edge-left' : ''} ${edge.right ? 'edge-right' : ''}`}
+      style={stacked || !rect ? undefined : percentRect(rect)}
+      aria-label={multipleGroups ? `${groupTitle(group)} · pane ${position}` : groupTitle(group)} aria-current={multipleGroups && isFocused ? 'true' : undefined}
       onMouseDownCapture={() => focusGroup(group.id)} onFocusCapture={() => focusGroup(group.id)}
       onDragOver={(event) => {
         if (!event.dataTransfer.types.includes(tabDragType)) return
@@ -588,22 +592,23 @@ function App() {
         event.preventDefault()
         dropTab(dragged.group, dragged.key, group.id, dropZoneAt(event.currentTarget.getBoundingClientRect(), event.clientX, event.clientY))
       }}>
-      {(group.tabs.length > 0 || multipleGroups) && <div className="group-bar">
-        <WorkspaceTabs group={group.id} tabs={group.tabs.map((tab) => ({ key: tabKey(tab), kind: tab.kind, title: tabTitle(snapshot, tab) }))} active={group.activeTab}
-          onSelect={(key) => activateTab(key, group.id)} onClose={(key) => closeTab(key, group.id)}
-          onDropTab={(dragged, before) => { setDropTarget(null); dropTab(dragged.group, dragged.key, group.id, 'center', before) }}/>
-        <div className="group-actions">
-          {!group.tabs.length && <span className="group-title">{groupTitle(group)}</span>}
-          {canSplit && <button onClick={() => splitPane('row', group.id)} aria-label={`Split pane ${position} right`} title={withShortcut('Split right', 'layout.split')}><Columns2 size={14}/></button>}
-          {canSplit && <button onClick={() => splitPane('column', group.id)} aria-label={`Split pane ${position} down`} title={withShortcut('Split down', 'layout.split-down')}><Rows2 size={14}/></button>}
-          {multipleGroups && <button onClick={() => closeEditorGroup(group.id)} aria-label={`Close pane ${position}`} title="Close pane (files stay in your workspace)"><X size={14}/></button>}
-        </div>
+      <PaneHeader group={group.id} position={multipleGroups ? position : undefined} active={group.activeTab}
+        tabs={group.tabs.map((item) => ({ key: tabKey(item), tab: item, title: tabTitle(snapshot, item) }))}
+        splittable={canSplit} closable={multipleGroups}
+        onSelect={(key) => setWorkbench((current) => updateGroup({ ...current, focused: group.id }, group.id, (item) => { const selected = item.tabs.find((entry) => tabKey(entry) === key); return selected ? showTab(item, selected) : item }))}
+        onClose={(key) => closeTab(key, group.id)} onNewTab={() => setWorkbench((current) => ({ ...updateGroup(current, group.id, (item) => showView(item, 'home')), focused: group.id }))}
+        onDropTab={(dragged, before) => { setDropTarget(null); dropTab(dragged.group, dragged.key, group.id, 'center', before) }}
+        onSplit={(direction) => splitPane(direction, group.id)} onClosePane={() => closeEditorGroup(group.id)}
+        menu={[...(tab && multipleGroups ? [{ id: 'move', label: 'Move tab to next pane', icon: <MoveRight size={14}/>, run: () => moveTabToOtherGroup(group.id) }] : []),
+          ...(tab ? [{ id: 'close-tab', label: 'Close tab', icon: <X size={14}/>, run: () => closeTab(tabKey(tab), group.id) }] : [])]}
+        trailing={edge.top && edge.right && !rightOpen && mode === 'workspace' ? assistantToggle : undefined}/>
+      {tab && isResourceTab(tab) && <div className="view-bar">
+        <nav className="view-path" aria-label="Location" title={tabPath(snapshot, tab)}>{breadcrumb(snapshot, tab).map((crumb, index, all) =>
+          <span key={index} className={index === all.length - 1 ? 'current' : ''}>{crumb}</span>)}</nav>
+        {options && options.length > 1 && presentation && <PresentationSwitcher kind={tab.kind} active={presentation} onChange={(id) => changePresentation(group.id, tab, id)}/>}
       </div>}
-      {group.view === 'review' && snapshot.proposals.some((item) => item.status === 'pending' && item.reviewReason) && <div className="notice warning" role="status">Some proposals involve similar entities. Verify the identity before accepting them.</div>}
-      <div className="workspace-body" key={`${group.view}:${group.activeTab ?? ''}:${group.creatingEntity}`}>
-        <ErrorBoundary label={groupTitle(group)}>
-          {builtinViews.render(group.view, viewContext(group, snapshot)) ?? <section className="page"><h1>View unavailable</h1><p>This module is not available in this workspace.</p></section>}
-        </ErrorBoundary>
+      <div className="pane-body" key={group.activeTab ?? 'empty'}>
+        <ErrorBoundary label={groupTitle(group)}>{body}</ErrorBoundary>
       </div>
       {zone && <div className={`pane-drop-overlay zone-${zone}`} aria-hidden="true"/>}
     </section>
@@ -615,7 +620,7 @@ function App() {
       {stacked && <nav className="pane-switcher" aria-label="Panes">{ordered.map((group, index) =>
         <button key={group.id} className={group.id === workbench.focused ? 'active' : ''} aria-current={group.id === workbench.focused ? 'true' : undefined}
           onClick={() => focusGroup(group.id)}>{index + 1}. {groupTitle(group)}</button>)}</nav>}
-      <div className={`editor-groups ${multipleGroups ? 'split' : ''} ${stacked ? 'stacked' : ''}`} ref={paneArea}>
+      <div className={`panes ${multipleGroups ? 'split' : ''} ${stacked ? 'stacked' : ''}`} ref={paneArea}>
         {ordered.map((group, index) => renderGroup(group, snapshot, index + 1))}
         {!stacked && geometry.dividers.map((divider) => <PaneDivider key={`${divider.path.join('.')}:${divider.index}`} divider={divider} area={paneArea}
           onResize={resizePanes} onReset={(path) => resizePanes(path, divider.sizes.map(() => 1))}/>)}
@@ -624,64 +629,104 @@ function App() {
   }
 
   const askScope = workspace && results?.length ? scopeFromResults(results, workspace) : null
+  const assistantState = assistant as unknown as AssistantState
+  const newChat = (): void => startConversation()
+  const chatIntro = (heading: string) => <div className="chat-intro"><h1>{heading}</h1>
+    <p>Ask about anything in this workspace. Answers cite the records they used, and suggested changes wait for your review.</p></div>
+  const activeView = focusedTab ? tabViewOf(focusedTab) : null
+  const showLeft = leftOpen && Boolean(workspace)
+  const showRight = workspace && mode === 'workspace' && rightOpen
 
-  return <div className={`app serenity-studio ${leftOpen ? 'dock-open' : 'left-collapsed'} ${rightOpen ? '' : 'right-collapsed'} ${aiExpanded && rightOpen ? 'ai-expanded' : ''}`}>
-    <aside className="sidebar" aria-label="Workspace sidebar">
-      <div className="sidebar-inner">
-      <div className="brand"><img className="brand-icon" src={serenityIcon} alt=""/><div><strong>Serenity</strong></div></div>
-      <button className="left-rail-toggle" onClick={() => workspace ? runCommand('navigation.toggle') : setLeftOpen((open) => !open)} aria-label={leftOpen ? 'Collapse navigation' : 'Expand navigation'} aria-keyshortcuts={ariaShortcut('navigation.toggle')} title={withShortcut(`${leftOpen ? 'Collapse' : 'Expand'} navigation`, 'navigation.toggle')}>{leftOpen ? <PanelLeftClose size={17}/> : <PanelLeftOpen size={19}/>}</button>
-      <div className="workspace-control">
-        <button className="workspace-button" onClick={() => workspace ? runCommand('workspace.choose') : void chooseWorkspace()} title={workspace?.path ?? 'Choose a workspace'}>
-          <span className="workspace-avatar">{workspace ? workspace.path.split(/[\\/]/).filter(Boolean).at(-1)?.slice(0, 1).toUpperCase() : '+'}</span>
-          <span className="workspace-info"><strong>{workspace ? workspace.path.split(/[\\/]/).filter(Boolean).at(-1) : 'Choose a folder'}</strong><small>{workspace ? 'Local workspace' : 'Start here'}</small></span>
-          <span className="workspace-chevron">⌄</span>
-        </button>
-        {workspace && <small className="workspace-path" title={workspace.path}>{workspace.path}</small>}
-      </div>
-      {workspace && <div className="sidebar-scroller">
-        <AppNavigation view={view} activePageId={activePageId} pendingCount={pending.length} commands={commands} navigation={workspace.workbench.navigation} onCommand={runCommand}/>
-      </div>}
-      <div className="sidebar-footer" inert={!leftOpen}>
-        {workspace && <button className="footer-folder" onClick={() => runCommand('workspace.open-folder')}><FolderOpen size={16}/> Open workspace folder</button>}
-        <ThemeControl preference={theme} onChange={setTheme}/>
-      </div>
-      </div>
-    </aside>
-    <div className="workbench">
-    <main className="main" id="workspace-main">
-      <header className="topbar">
-        <div className="breadcrumbs"><strong>{groupTitle(focused)}</strong></div>
-        {workspace && <div className="topbar-actions">
-          <button className="topbar-search" onClick={() => runCommand('workspace.search')} title={withShortcut('Search workspace', 'workspace.search')} aria-label="Search workspace"><Search size={18}/></button>
-          {canSplit && !multipleGroups && <button className="topbar-icon" onClick={() => runCommand('layout.split')} title={withShortcut('Split right', 'layout.split')} aria-label="Split right" aria-keyshortcuts={ariaShortcut('layout.split')}><Columns2 size={18}/></button>}
-          {!rightOpen && <button className="topbar-icon show-ai" onClick={() => runCommand('assistant.toggle')} title={withShortcut('Show AI assistant', 'assistant.toggle')} aria-label="Show AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')}><PanelRightOpen size={18}/></button>}
-          <details className="topbar-more"><summary aria-label="Workspace actions" title="Workspace actions"><MoreHorizontal size={19}/></summary><div className="topbar-menu">{menuCommands.map(({ id, title, icon: Icon }) =>
-            <button key={id} onClick={(event) => { event.currentTarget.closest('details')?.removeAttribute('open'); runCommand(id) }}><Icon size={15}/>{title}</button>)}</div></details>
+  return <div className={`app mode-${mode} ${showLeft ? 'left-open' : 'left-closed'} ${showRight ? 'right-open' : 'right-closed'} ${narrow ? 'narrow' : ''} ${workspace ? '' : 'no-workspace'}`}
+    data-platform={platform} style={{ '--left-width': `${leftWidth}px`, '--right-width': `${rightWidth}px` } as CSSProperties}>
+    <header className="titlebar-start">
+      {workspace && <>
+        <button type="button" className="icon-btn" onClick={() => runCommand('navigation.toggle')} aria-pressed={leftOpen} aria-keyshortcuts={ariaShortcut('navigation.toggle')}
+          aria-label={leftOpen ? 'Hide sidebar' : 'Show sidebar'} title={withShortcut(leftOpen ? 'Hide sidebar' : 'Show sidebar', 'navigation.toggle')}><PanelLeft size={16}/></button>
+        <div className="mode-switch" role="radiogroup" aria-label="Mode">
+          <button type="button" role="radio" aria-checked={mode === 'workspace'} className={mode === 'workspace' ? 'active' : ''} onClick={() => setMode('workspace')} title="Workspace" aria-label="Workspace"><LayoutPanelLeft size={15}/></button>
+          <button type="button" role="radio" aria-checked={mode === 'chat'} className={mode === 'chat' ? 'active' : ''} onClick={() => setMode('chat')} title={withShortcut('Chat', 'assistant.expand')} aria-label="Chat"><MessageSquare size={15}/></button>
+        </div>
+      </>}
+    </header>
+    {workspace && mode === 'workspace' && <Ribbon commands={commands} navigation={workspace.workbench.navigation} activeView={activeView} pendingCount={pending.length} shortcutFor={shortcut} onCommand={runCommand}/>}
+    {workspace && <aside className="left-sidebar" aria-label={mode === 'chat' ? 'Chats' : 'Workspace'} inert={!showLeft}>
+      {mode === 'workspace' ? <Explorer workspace={workspace} activeUri={shownUri(focused)} onOpen={(uri, side) => { openResource(uri, { side }) }}
+        onNewPage={() => void createPage()} onNewEntity={() => setNewEntityOpen(true)} onImport={() => void importDocuments()}/> :
+        <div className="chat-sidebar">
+          <button type="button" className="sidebar-action" onClick={newChat}><MessageSquarePlus size={15}/> New chat</button>
+          <ConversationList workspace={workspace} activeId={conversationId} busy={assistant.busy} onSelect={(item: Conversation) => selectConversation(item)}/>
         </div>}
-      </header>
-      {error && <div className="notice error" role="alert">{error}</div>}
-      {workspace?.errors.map((item) => <div key={item} className="notice warning" role="alert">Could not read {item}</div>)}
-      {keymap.problems.map((item) => <div key={item} className="notice warning" role="alert">.serenity/workbench.yaml: {item}</div>)}
-      {!workspace ? <div className="workspace-body"><section className="welcome-screen"><div className="welcome-visual"><img src={serenityIcon} alt=""/><span className="visual-orbit orbit-one"/><span className="visual-orbit orbit-two"/><span className="visual-dot dot-one"/><span className="visual-dot dot-two"/><span className="visual-dot dot-three"/></div><div className="welcome-copy"><span className="eyebrow">A SPACE FOR EVERYTHING THAT MATTERS</span><h1>Your world,<br/><em>more connected.</em></h1><p>A private workspace for your knowledge, relationships, plans, and the ideas in between. Choose a folder on your device to begin.</p><button className="primary welcome-action" onClick={() => void chooseWorkspace()}><FolderOpen size={18}/> Choose a workspace <ArrowRight size={17}/></button><small>Your files stay in a folder you control.</small></div></section></div>
-        : renderPanes(workspace)}
+      <div className="sidebar-footer">
+        <MenuButton label="Workspace" className="workspace-switcher" align="start" header={<span className="menu-path">{workspace.path}</span>} items={[
+          { id: 'reveal', label: platform === 'mac' ? 'Reveal in Finder' : 'Open folder', icon: <FolderOpen size={14}/>, run: () => runCommand('workspace.open-folder') },
+          { id: 'choose', label: 'Open another workspace…', icon: <FolderOpen size={14}/>, run: () => runCommand('workspace.choose') },
+          { id: 'refresh', label: 'Reload files', icon: <RotateCw size={14}/>, run: () => runCommand('workspace.refresh') }
+        ]}><span className="workspace-avatar" aria-hidden="true">{workspaceName.slice(0, 1).toUpperCase()}</span><span className="workspace-name">{workspaceName}</span><ChevronDown size={13}/></MenuButton>
+        {issues.length > 0 && <button type="button" className="icon-btn warning" onClick={() => setIssuesOpen(true)} aria-label={`${issues.length} workspace ${issues.length === 1 ? 'issue' : 'issues'}`}
+          title={`${issues.length} workspace ${issues.length === 1 ? 'issue' : 'issues'}`}><AlertTriangle size={15}/></button>}
+      </div>
+      {!narrow && <SidebarResizer side="left" width={leftWidth} min={200} max={440} onResize={setLeftWidth}/>}
+    </aside>}
+    <main className="main" id="workspace-main">
+      {!workspace ? <Welcome onChoose={() => void chooseWorkspace()}/> : mode === 'chat' ? <section className="chat-main" aria-label="Chat">
+        <header className="chat-header">
+          <MenuButton label="Conversation" className="chat-title" items={conversationMenu(workspace, assistantState, newChat)}>
+            <span>{assistant.conversation?.title ?? 'New chat'}</span><ChevronDown size={13}/></MenuButton>
+        </header>
+        <ErrorBoundary label="The conversation">
+          <div className={`chat-body ${assistant.conversation || assistant.busy ? '' : 'empty'}`}>
+            <div className="chat-scroll">
+              <ConversationView assistant={assistantState} intro={chatIntro('What’s on your mind?')} onOpenResource={(uri, side) => { openResource(uri, { side }) }}/>
+            </div>
+            <div className="chat-composer"><Composer assistant={assistantState} onOpenSettings={() => setConversationSettingsOpen(true)} autoFocus/></div>
+          </div>
+        </ErrorBoundary>
+      </section> : renderPanes(workspace)}
     </main>
-    {workspace && (rightOpen ? <aside className="assistant-sidebar" aria-label="AI assistant">
-      <div className="assistant-toolbar"><div><Sparkles size={18}/><span>Assistant</span><small>WITH YOUR WORKSPACE</small></div><div className="assistant-toolbar-actions">
-        <button onClick={() => runCommand('assistant.expand')} aria-label={aiExpanded ? 'Return AI to sidebar' : 'Expand AI over workspace'} title={aiExpanded ? 'Return AI to sidebar' : 'Expand AI over workspace'}>{aiExpanded ? <Minimize2 size={17}/> : <Maximize2 size={17}/>}</button>
-        <button onClick={() => runCommand('assistant.toggle')} aria-label="Collapse AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')} title={withShortcut('Collapse AI sidebar', 'assistant.toggle')}><PanelRightClose size={17}/></button>
-      </div></div>
+    {showRight && <aside className="right-sidebar assistant-panel" aria-label="Assistant">
+      {!narrow && <SidebarResizer side="right" width={rightWidth} min={300} max={640} onResize={setRightWidth}/>}
+      <header className="assistant-header">
+        <MenuButton label="Conversation" className="chat-title small" items={conversationMenu(workspace, assistantState, newChat)}>
+          <span>{assistant.conversation?.title ?? 'New chat'}</span><ChevronDown size={13}/></MenuButton>
+        <div className="assistant-actions">
+          <button type="button" className="icon-btn" onClick={newChat} aria-label="New chat" title={withShortcut('New chat', 'assistant.new')}><MessageSquarePlus size={16}/></button>
+          <button type="button" className="icon-btn" onClick={() => setMode('chat')} aria-label="Open in Chat mode" title={withShortcut('Open in Chat mode', 'assistant.expand')}><Maximize2 size={15}/></button>
+          {assistantToggle}
+        </div>
+      </header>
       <ErrorBoundary label="The assistant">
-      <ConversationList workspace={workspace} conversationId={conversationId} autonomy={assistant.autonomy} permissions={assistant.permissions} readScope={readScope} busy={assistant.busy}
-        onNew={() => runCommand('assistant.new')} onSelect={selectConversation} onPermissionsChange={assistant.setPermissions} onReadScopeChange={assistant.setReadScope} onSaveSettings={() => void assistant.saveWorkflowSettings()} />
-      {readScope.mode === 'selected' && <div className="ai-scope-note" role="status">Selected knowledge only · review allowed files in Workflow settings</div>}
-      <ConversationPanel conversation={assistant.conversation} provider={assistant.provider} onProviderChange={assistant.setProvider} autonomy={assistant.autonomy} onAutonomyChange={assistant.setAutonomy}
-        retained={assistant.retained} onRetentionChange={assistant.setRetained} message={assistant.message} onMessageChange={assistant.setMessage} busy={assistant.busy}
-        onSend={(event) => void assistant.sendMessage(event)} onCancel={() => void assistant.cancelMessage()} onDelete={() => void assistant.deleteConversation()} activeFile={activeFile} openFileCount={openFileCount} visiblePaneCount={visiblePaneCount} onOpenResource={(uri, side) => { openResource(uri, { side }) }} />
+        <div className="assistant-scroll">
+          <ConversationView assistant={assistantState} onOpenResource={(uri, side) => { openResource(uri, { side }) }}
+            intro={<div className="chat-intro compact"><h2>{activeFile ? `Ask about ${activeFile.name}` : 'Ask about your workspace'}</h2>
+              <p>{activeFile?.allowed ? 'What’s open in your panes can inform the answer.' : 'Answers cite their sources, and suggested changes wait for your review.'}</p></div>}/>
+        </div>
+        <div className="assistant-composer"><Composer assistant={assistantState} onOpenSettings={() => setConversationSettingsOpen(true)}
+          context={<ContextChips active={activeFile} visiblePanes={visiblePaneCount} openFiles={openFileCount}/>}/></div>
       </ErrorBoundary>
-    </aside> : <aside className="assistant-rail" aria-label="AI assistant collapsed"><button onClick={() => runCommand('assistant.toggle')} title={withShortcut('Expand AI sidebar', 'assistant.toggle')} aria-label="Expand AI sidebar" aria-keyshortcuts={ariaShortcut('assistant.toggle')}><PanelRightOpen size={20}/></button><span>AI</span></aside>)}
-    </div>
-    <CommandPalette open={paletteOpen && Boolean(workspace)} query={query} results={results} searching={searching} provider={assistant.provider} savedIndexEnabled={Boolean(workspace?.modules.semanticIndex)} commands={commands.filter((command) => !command.hideInPalette)} shortcutFor={shortcut} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult} onAISearch={() => void searchSemantically()} onSavedSearch={() => void searchSavedConcepts()} onKeepInPane={() => { const kept = query; setSearchSeeds((seeds) => ({ ...seeds, [workbench.focused]: kept })); closePalette(); navigate('search') }} onAskAboutResults={askScope && (askScope.entityIds.length || askScope.documentNames.length) ? () => { closePalette(); startConversation(`About “${query.trim()}”: `, askScope) } : undefined} onCommand={runCommand} />
+    </aside>}
+    {narrow && (showLeft || showRight) && <div className="scrim" onClick={() => { setLeftOpen(false); setRightOpen(false) }} aria-hidden="true"/>}
+    {errors.length > 0 && <div className="toasts" role="alert">{errors.map((item) => <div key={item.id} className="toast">
+      <AlertTriangle size={14}/><span>{item.text}</span>
+      <button type="button" className="icon-btn" onClick={() => setErrors((current) => current.filter((entry) => entry.id !== item.id))} aria-label="Dismiss"><X size={14}/></button>
+    </div>)}</div>}
+    {workspace && <CommandPalette open={paletteOpen} query={query} results={results} searching={searching} provider={assistant.provider} savedIndexEnabled={Boolean(workspace.modules.semanticIndex)}
+      commands={commands.filter((command) => !command.hideInPalette)} shortcutFor={shortcut} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult}
+      onAISearch={() => void searchSemantically()} onSavedSearch={() => void searchSavedConcepts()}
+      onKeepInPane={() => { const kept = query; setSearchSeeds((seeds) => ({ ...seeds, [workbench.focused]: kept })); closePalette(); navigate('search') }}
+      onAskAboutResults={askScope && (askScope.entityIds.length || askScope.documentNames.length) ? () => { closePalette(); startConversation(`About “${query.trim()}”: `, askScope) } : undefined}
+      onCommand={runCommand}/>}
+    {workspace && settingsOpen && <SettingsDialog workspace={workspace} shortcuts={shortcuts} theme={theme} onThemeChange={setTheme} onClose={() => setSettingsOpen(false)}
+      onChooseWorkspace={() => { setSettingsOpen(false); void chooseWorkspace() }} onOpenFolder={() => runCommand('workspace.open-folder')}
+      onUpdate={setWorkspace} onError={(message) => { if (message) setError(message) }}/>}
+    {workspace && newEntityOpen && <NewEntityDialog workspace={workspace} onCreate={createEntity} onOpen={(id) => { openEntity(id) }} onClose={() => setNewEntityOpen(false)}/>}
+    {workspace && conversationSettingsOpen && <ConversationSettings workspace={workspace} assistant={assistantState} onClose={() => setConversationSettingsOpen(false)}/>}
+    {issuesOpen && <Dialog title="Workspace issues" onClose={() => setIssuesOpen(false)} className="settings-small">
+      <p className="hint">Serenity keeps these files as they are. Fix them in another editor and the workspace updates.</p>
+      <ul className="issue-list">{issues.map((item) => <li key={item}>{item}</li>)}</ul>
+    </Dialog>}
   </div>
 }
+
 
 createRoot(document.getElementById('root')!).render(<ErrorBoundary label="Serenity" fullScreen><App /></ErrorBoundary>)

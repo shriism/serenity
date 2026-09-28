@@ -26,8 +26,7 @@ export function ActivityPanel({ workspace, activity, onOpenResource }: {
   }
   const now = new Date()
   return <section className="page activity-page">
-    <span className="eyebrow">WORKSPACE HISTORY</span><h1>Activity</h1>
-    <p>Follow knowledge changes and inspect which records provider requests used. Prompt contents are not duplicated in the activity log.</p>
+    <header className="view-header"><div><h1>Activity</h1><p className="view-subtitle">Changes to this workspace, and which records each AI request used.</p></div></header>
     {requests.length > 0 && <div className="provider-activity">
       <h2>AI provider requests</h2>
       {requests.slice(0, requestLimit).map((entry) => {

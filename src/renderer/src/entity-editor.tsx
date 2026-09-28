@@ -1,53 +1,26 @@
-import { memo, useEffect, useId, useMemo, useState, type FormEvent } from 'react'
-import { Plus } from 'lucide-react'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { useEffect, useId, useMemo, useState, type FormEvent } from 'react'
+import { MessageCircle, Plus } from 'lucide-react'
 import type { Claim, Entity, WorkspaceSnapshot } from '../../shared/types'
-import { identityCandidates } from '../../shared/identity'
 import { ClaimCard } from './claim-card'
 import { sourceDocument } from '../../shared/provenance'
-import { filterEntities } from '../../shared/library'
-import { linkWikilinks, resolveWikilink, wikilinkMentions } from '../../shared/wikilinks'
+import { wikilinkMentions } from '../../shared/wikilinks'
 import { resourceUri } from '../../shared/resources'
-import { markdownUrlTransform, workspaceLink } from './markdown-links'
-import { WikilinkTextarea } from './wikilink-textarea'
+import { MarkdownEditor, type EditorContext } from './markdown-editor'
+import { useAutosave } from './use-autosave'
+import { ConflictBar } from './workspace-page'
 
 export interface EntityEditorProps {
   workspace: WorkspaceSnapshot
-  /** The entity to edit, or null to draft a new one. */
-  entityId: string | null
+  entityId: string
+  context: EditorContext
   onUpdate(snapshot: WorkspaceSnapshot): void
   onError(message: string): void
-  onDirtyChange(dirty: boolean): void
   onOpenEntity(id: string): void
-  onNewEntity(): void
-  /** A new entity was saved and should replace this draft. */
-  onCreated(id: string): void
   onDiscuss(question: string): void
   onOpenSource(name: string): void
-  /** Opens a linked resource from the narrative; `side` opens it in the next pane. */
-  onOpenResource(uri: string, side: boolean): void
 }
 
-const blank: Entity = { id: '', title: '', type: '', body: '' }
-
-/** The entity list beside the editor. Memoized so typing in a large workspace does not redraw every entry. */
-const EntityLibrary = memo(function EntityLibrary({ entities, selected, onOpenEntity, onNewEntity }: {
-  entities: Entity[]
-  selected: string | null
-  onOpenEntity(id: string): void
-  onNewEntity(): void
-}) {
-  const [query, setQuery] = useState('')
-  const shown = useMemo(() => filterEntities(entities, query, null), [entities, query])
-  return <aside className="knowledge-list-panel"><div className="list-heading"><span className="eyebrow">LIBRARY <span className="count">{entities.length}</span></span><button className="icon-button" onClick={onNewEntity} aria-label="New entity" title="New entity"><Plus size={15}/></button></div>
-    {entities.length > 8 && <input className="library-list-filter" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Filter" aria-label="Filter the library"/>}
-    <nav className="entity-list" aria-label="Entities">{shown.slice(0, 300).map((entity) => <button key={entity.id} className={`entity-link ${selected === entity.id ? 'active' : ''}`} aria-current={selected === entity.id ? 'page' : undefined} onClick={() => onOpenEntity(entity.id)}><span className="entity-icon">{entity.title.slice(0, 1).toUpperCase()}</span><span><strong>{entity.title}</strong><small>{entity.type}</small></span></button>)}
-      {shown.length > 300 && <small className="library-more">{shown.length - 300} more; filter to find them</small>}</nav>
-  </aside>
-})
-
-function claimSummary(allClaims: Claim[], selected: string | null) {
+function claimSummary(allClaims: Claim[], selected: string) {
   const claims = allClaims.filter((item) => item.subject === selected)
   const incoming = allClaims.filter((item) => item.value === selected && item.subject !== selected && item.status === 'confirmed')
   const activeClaims = claims.filter((item) => item.status !== 'retracted')
@@ -57,114 +30,155 @@ function claimSummary(allClaims: Claim[], selected: string | null) {
 }
 const emptyClaim = { key: '', value: '', source: 'Me' }
 
-/** Edits one entity's narrative and its sourced claims. Each open editor owns its own draft. */
+/** One entity: its name and type, its notes in live preview, and its sourced facts. Edits are saved as you go. */
 export function EntityEditor(props: EntityEditorProps) {
-  const { workspace, entityId: selected, onUpdate, onError, onDirtyChange } = props
-  const saved = selected ? workspace.entities.find((entity) => entity.id === selected) : undefined
-  const [draft, setDraft] = useState<Entity>(() => saved ? { ...saved } : { ...blank })
-  const [dirty, setDirty] = useState(false)
-  const [bodyMode, setBodyMode] = useState<'edit' | 'preview'>(selected ? 'preview' : 'edit')
+  const { workspace, entityId: selected, onUpdate, onError } = props
+  const stored = workspace.entities.find((entity) => entity.id === selected)!
+  const saved = useMemo(() => ({ title: stored.title, type: stored.type, body: stored.body }), [stored.title, stored.type, stored.body])
+  const { draft, setDraft, state, flush, resolve } = useAutosave({
+    saved, revision: stored.revision, onUpdate, onError,
+    revisionOf: (snapshot) => snapshot.entities.find((entity) => entity.id === selected)?.revision,
+    save: (next, base) => window.serenity.saveEntity({ ...stored, title: next.title.trim() || stored.title, type: next.type.trim() || stored.type, body: next.body, revision: base } as Entity)
+  })
+  const [title, setTitle] = useState(draft.title)
+  const [type, setType] = useState(draft.type)
+  useEffect(() => setTitle(draft.title), [draft.title])
+  useEffect(() => setType(draft.type), [draft.type])
+  const [adding, setAdding] = useState(false)
   const [claim, setClaim] = useState(emptyClaim)
   const [claimTarget, setClaimTarget] = useState('')
   const [mergeTarget, setMergeTarget] = useState('')
   const id = useId()
-  useEffect(() => { if (!dirty && saved) setDraft({ ...saved }) }, [saved, dirty])
-  useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange])
-  useEffect(() => () => onDirtyChange(false), [onDirtyChange])
 
   async function run(action: () => Promise<WorkspaceSnapshot>): Promise<WorkspaceSnapshot | null> {
     try { const next = await action(); onUpdate(next); onError(''); return next }
     catch (cause) { onError(String(cause)); return null }
   }
 
-  function change(entity: Entity): void { setDraft(entity); setDirty(true) }
-
-  async function save(event: FormEvent): Promise<void> {
-    event.preventDefault()
-    // Links written by title would break on a rename, so find them before the old title stops resolving.
-    const previousTitle = saved?.title.trim()
-    const renamed = Boolean(draft.id && previousTitle && previousTitle !== draft.title.trim())
-    const mentions = renamed ? wikilinkMentions(workspace, resourceUri({ kind: 'entity', id: draft.id })) : []
-    const next = await run(() => window.serenity.saveEntity(draft))
-    if (!next) return
-    setDirty(false)
-    if (mentions.length && window.confirm(`${mentions.length} ${mentions.length === 1 ? 'note links' : 'notes link'} to [[${previousTitle}]]. Update ${mentions.length === 1 ? 'it' : 'them'} to [[${draft.title.trim()}]]?`)) {
-      try { onUpdate((await window.serenity.renameWikilinks(previousTitle!, draft.title.trim(), mentions.map((mention) => mention.uri))).snapshot) }
+  async function commitTitle(): Promise<void> {
+    const next = title.trim()
+    if (!next) { setTitle(draft.title); return }
+    if (next === draft.title) return
+    // Links written by name would break on a rename, so find them before the old name stops resolving.
+    const previous = draft.title
+    const mentions = wikilinkMentions(workspace, resourceUri({ kind: 'entity', id: selected }))
+    setDraft({ ...draft, title: next })
+    await flush()
+    if (mentions.length && window.confirm(`${mentions.length} ${mentions.length === 1 ? 'note links' : 'notes link'} to [[${previous}]]. Update ${mentions.length === 1 ? 'it' : 'them'} to [[${next}]]?`)) {
+      try { onUpdate((await window.serenity.renameWikilinks(previous, next, mentions.map((mention) => mention.uri))).snapshot) }
       catch (cause) { onError(`Links were not updated: ${String(cause)}`) }
     }
-    if (!draft.id) {
-      const created = next.entities.find((entity) => !workspace.entities.some((existing) => existing.id === entity.id))
-      if (created) props.onCreated(created.id)
-    }
+  }
+
+  function commitType(): void {
+    const next = type.trim()
+    if (!next) { setType(draft.type); return }
+    if (next !== draft.type) { setDraft({ ...draft, type: next }); void flush() }
   }
 
   async function addClaim(event: FormEvent): Promise<void> {
     event.preventDefault()
-    if (!selected) return
     if (await run(() => window.serenity.addClaim({ ...claim, value: claimTarget || claim.value, subject: selected }))) {
       setClaim(emptyClaim)
       setClaimTarget('')
+      setAdding(false)
     }
   }
 
   function retract(claimId: string): void {
-    const reason = window.prompt('Why is this claim no longer current? The original assertion will remain in history.')
+    const reason = window.prompt('Why is this no longer current? The original stays in the history.')
     if (reason?.trim()) void run(() => window.serenity.retractClaim(claimId, reason))
   }
 
   function markCurrent(claimId: string): void {
-    const reason = window.prompt('Why should this be the current answer? Previous claims will remain visible.')
+    const reason = window.prompt('Why is this the current answer? Earlier claims stay visible.')
     if (reason?.trim()) void run(() => window.serenity.setCurrentClaim(claimId, reason))
   }
 
   function clearCurrent(key: string): void {
-    if (selected && window.confirm('Clear the current designation? Conflicting claims will again need clarification.')) void run(() => window.serenity.clearCurrentClaim(selected, key))
+    if (window.confirm('Clear the current answer? Conflicting claims will need clarifying again.')) void run(() => window.serenity.clearCurrentClaim(selected, key))
   }
 
   async function merge(): Promise<void> {
-    if (!selected || !mergeTarget) return
-    if (dirty) { onError('Save or discard your edits before merging.'); return }
+    if (!mergeTarget) return
+    await flush()
     const target = workspace.entities.find((entity) => entity.id === mergeTarget)
-    if (!window.confirm(`Archive ${draft.title} and link its claims to ${target?.title}? The archived file and merge record remain in the workspace.`)) return
+    if (!window.confirm(`Archive ${draft.title} and link its claims to ${target?.title}? The archived file and merge record stay in the workspace.`)) return
     if (await run(() => window.serenity.mergeEntities(selected, mergeTarget))) props.onOpenEntity(mergeTarget)
   }
 
   function undoMerge(source: string): void {
-    const reason = window.prompt('Why are you restoring this archived entity? The merge history will remain visible.')
+    const reason = window.prompt('Why restore this archived entity? The merge history stays visible.')
     if (reason?.trim()) void run(() => window.serenity.unmergeEntities(source, reason))
   }
 
   const { claims, incoming, activeClaims, conflicts, resolvedKeys } = useMemo(() => claimSummary(workspace.claims, selected), [workspace.claims, selected])
-  const candidates = useMemo(() => !draft.id ? identityCandidates(draft.title, draft.type, workspace.entities).slice(0, 4) : [], [draft.id, draft.title, draft.type, workspace.entities])
-  const linkedBody = useMemo(() => linkWikilinks(draft.body, (target) => resolveWikilink(workspace, target)), [draft.body, workspace.pages, workspace.entities, workspace.documents])
   const others = useMemo(() => workspace.entities.filter((entity) => entity.id !== selected), [workspace.entities, selected])
+  const types = useMemo(() => [...new Set(workspace.entities.map((entity) => entity.type).filter(Boolean))].sort(), [workspace.entities])
+  const titleOf = (entityId: string): string => workspace.entities.find((entity) => entity.id === entityId)?.title ?? entityId
 
-  return <div className="content">
-    <EntityLibrary entities={workspace.entities} selected={selected} onOpenEntity={props.onOpenEntity} onNewEntity={props.onNewEntity}/>
-    <section className="editor"><form onSubmit={(event) => void save(event)}>
-      <label className={draft.id ? 'sr-only' : 'field-label'} htmlFor={`${id}-title`}>Name</label>
-      <input id={`${id}-title`} className="title-input" placeholder="What is it called?" value={draft.title} required onChange={(event) => change({ ...draft, title: event.target.value })}/>
-      <label className={draft.id ? 'sr-only' : 'field-label'} htmlFor={`${id}-type`}>Type · your own words</label>
-      <input id={`${id}-type`} className="entity-type-input" placeholder="Person, project, concept..." value={draft.type} required onChange={(event) => change({ ...draft, type: event.target.value })}/>
-      {candidates.length > 0 && <div className="candidate-box"><strong>Could this already exist?</strong><p>Review these matches before creating a new entity. Similar names do not prove they are the same.</p>{candidates.map(({ entity }) => <button type="button" key={entity.id} onClick={() => props.onOpenEntity(entity.id)}>{entity.title} · {entity.type} ↗</button>)}</div>}
-      <label className="sr-only" htmlFor={`${id}-body`}>Context · Markdown</label>
-      <div className="body-tabs"><button type="button" className={bodyMode === 'preview' ? 'active' : ''} onClick={() => setBodyMode('preview')}>Read</button><button type="button" className={bodyMode === 'edit' ? 'active' : ''} onClick={() => setBodyMode('edit')}>Edit</button></div>
-      {bodyMode === 'edit' ? <WikilinkTextarea id={`${id}-body`} placeholder="Tell the story in your own words... Type [[ to link a page or entity." value={draft.body} workspace={workspace} onValueChange={(body) => change({ ...draft, body })}/> :
-        <div className="markdown-preview">{draft.body.trim() ? <ReactMarkdown remarkPlugins={[remarkGfm]} urlTransform={markdownUrlTransform} components={{
-          a: ({ children, href }) => workspaceLink(href, children, props.onOpenResource) ?? <span className="preview-link" title={href}>{children}</span>,
-          img: ({ alt }) => <span className="preview-image">[Image: {alt || 'no description'}]</span>
-        }}>{linkedBody}</ReactMarkdown> : <p className="hint">Nothing written yet. Switch to Edit Markdown to add context.</p>}</div>}
-      <div className="form-actions"><span>{dirty ? 'Unsaved changes' : draft.id ? 'Saved' : 'Ready to create'}</span>{(dirty || !draft.id) && <button className="primary" type="submit">{draft.id ? 'Save changes' : 'Create entity'}</button>}</div>
-    </form></section>
-    <section className="details"><details className="knowledge-details" open={conflicts.length > 0 ? true : undefined}><summary><span>Facts & sources</span><small>{claims.length} {claims.length === 1 ? 'claim' : 'claims'}{conflicts.length ? ` · ${conflicts.length} to clarify` : ''}</small></summary><div className="knowledge-details-body">
-      {resolvedKeys.map((key) => { const choice = activeClaims.find((item) => item.key === key && item.isCurrent)!; const decision = [...workspace.resolutions].reverse().find((item) => item.subject === selected && item.key === key && item.currentClaimId === choice.id); return <div className="current-banner" key={key}><strong>Current {key}: {workspace.entities.find((entity) => entity.id === choice.value)?.title ?? choice.value}</strong><small>{decision?.reason ?? 'Selected by the user'} · earlier claims remain below.</small><button onClick={() => clearCurrent(key)}>Undo designation</button></div> })}
-      {conflicts.map((key) => { const possible = activeClaims.filter((item) => item.key === key); const humanClaims = possible.filter((item) => item.origin === 'human'); const likely = humanClaims.length === 1 ? humanClaims[0] : null; return <div className="conflict" key={key}><strong>Conflicting {key}</strong><small>{likely ? `A direct statement suggests ${workspace.entities.find((entity) => entity.id === likely.value)?.title ?? likely.value}. This is not resolved.` : 'No clear answer from the available sources. Please clarify.'}</small><button onClick={() => props.onDiscuss(`I have conflicting information about ${draft.title}'s ${key}. What do the sources say, and what should I clarify?`)}>Discuss this ↗</button></div> })}
-      {claims.map((item) => <ClaimCard key={item.id} claim={item} target={workspace.entities.find((entity) => entity.id === item.value)} mergedFrom={workspace.merges.find((merge) => merge.id === item.mergedFrom)} conflicting={conflicts.includes(item.key)} previousAlternative={resolvedKeys.includes(item.key)} sourceDocument={sourceDocument(item.source, workspace.documents) ?? undefined} onOpenSource={props.onOpenSource} onSelectTarget={(entity) => props.onOpenEntity(entity.id)} onMarkCurrent={markCurrent} onRetract={retract} />)}
-      {claims.length === 0 && <p className="hint">No claims recorded yet.</p>}
-      {incoming.length > 0 && <div className="incoming"><h3>Connected from elsewhere</h3>{incoming.map((link) => { const source = workspace.entities.find((entity) => entity.id === link.subject); return source && <button key={link.id} onClick={() => props.onOpenEntity(source.id)}>{source.title} · {link.key} ↗</button> })}</div>}
-      {selected && <form className="claim-form" onSubmit={(event) => void addClaim(event)}><h3>Add a claim</h3><label htmlFor={`${id}-claim-key`}>About or relationship</label><input id={`${id}-claim-key`} placeholder="e.g. birthday, friend of" required value={claim.key} onChange={(event) => setClaim({ ...claim, key: event.target.value })}/><label htmlFor={`${id}-claim-value`}>Value</label><input id={`${id}-claim-value`} placeholder="e.g. September 7" required={!claimTarget} value={claim.value} onChange={(event) => setClaim({ ...claim, value: event.target.value })} disabled={Boolean(claimTarget)}/><label htmlFor={`${id}-claim-target`}>Or link another entity</label><select id={`${id}-claim-target`} value={claimTarget} onChange={(event) => setClaimTarget(event.target.value)}><option value="">No entity linked</option>{others.map((entity) => <option key={entity.id} value={entity.id}>{entity.title}</option>)}</select><label htmlFor={`${id}-claim-source`}>Source</label><input id={`${id}-claim-source`} required value={claim.source} onChange={(event) => setClaim({ ...claim, source: event.target.value })}/><button type="submit" className="secondary">Add claim +</button></form>}
-      {selected && others.length > 0 && <div className="merge-form"><h3>Same as another entity?</h3><p>Archive this entity and resolve its links to the selected entity. Its original file and history remain available.</p><select aria-label="Merge into" value={mergeTarget} onChange={(event) => setMergeTarget(event.target.value)}><option value="">Choose the surviving entity</option>{others.map((entity) => <option key={entity.id} value={entity.id}>{entity.title}</option>)}</select><button className="secondary" disabled={!mergeTarget} onClick={() => void merge()}>Merge into selected entity</button></div>}
-      {selected && workspace.merges.filter((item) => item.target === selected).map((item) => <div className="merge-form" key={item.id}><h3>Archived as {draft.title}</h3><p>{item.title} was merged here. Its original file and links can be restored without deleting the merge history.</p><button className="secondary" onClick={() => undoMerge(item.id)}>Restore {item.title}</button></div>)}
-    </div></details></section>
-  </div>
+  return <article className="document-view entity-document" aria-label={draft.title}>
+    <ConflictBar state={state} what="entity" onResolve={resolve}/>
+    <input className="inline-title" value={title} aria-label="Name" spellCheck={false}
+      onChange={(event) => setTitle(event.target.value)} onBlur={() => void commitTitle()}
+      onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur() } else if (event.key === 'Escape') { setTitle(draft.title); event.currentTarget.blur() } }}/>
+    <div className="properties">
+      <label className="property" htmlFor={`${id}-type`}><span className="property-key">Type</span>
+        <input id={`${id}-type`} className="property-value" value={type} list={`${id}-types`} onChange={(event) => setType(event.target.value)} onBlur={commitType}
+          onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur() } }}/></label>
+      <datalist id={`${id}-types`}>{types.map((item) => <option key={item} value={item}/>)}</datalist>
+      {stored.source && <div className="property"><span className="property-key">Source</span><span className="property-value static">{stored.source}</span></div>}
+    </div>
+    <MarkdownEditor value={draft.body} onChange={(body) => setDraft({ ...draft, body })} onBlur={() => void flush()} context={props.context}
+      label={`Notes about ${draft.title}`} placeholder="Write what you know in your own words. Type [[ to link a page, entity, or document."/>
+
+    <section className="facts" aria-labelledby={`${id}-facts`}>
+      <header className="section-header"><h2 id={`${id}-facts`}>Facts</h2><span className="count">{claims.length}</span>
+        <button type="button" className="icon-btn" onClick={() => setAdding((value) => !value)} aria-label="Add a fact" title="Add a fact" aria-expanded={adding}><Plus size={15}/></button></header>
+      {resolvedKeys.map((key) => {
+        const choice = activeClaims.find((item) => item.key === key && item.isCurrent)!
+        const decision = [...workspace.resolutions].reverse().find((item) => item.subject === selected && item.key === key && item.currentClaimId === choice.id)
+        return <div className="callout" key={key}><span><strong>Current {key}: {titleOf(choice.value)}</strong> · {decision?.reason ?? 'chosen by you'}. Earlier claims stay below.</span>
+          <button className="text-button" onClick={() => clearCurrent(key)}>Undo</button></div>
+      })}
+      {conflicts.map((key) => {
+        const possible = activeClaims.filter((item) => item.key === key)
+        const human = possible.filter((item) => item.origin === 'human')
+        const likely = human.length === 1 ? human[0] : null
+        return <div className="callout warning" key={key}><span><strong>Conflicting {key}.</strong> {likely ? `Your own statement suggests ${titleOf(likely.value)}; this isn’t resolved yet.` : 'The sources disagree. Mark one as current, or ask.'}</span>
+          <button className="text-button" onClick={() => props.onDiscuss(`I have conflicting information about ${draft.title}'s ${key}. What do the sources say, and what should I clarify?`)}><MessageCircle size={13}/> Discuss</button></div>
+      })}
+      {adding && <form className="fact-form" onSubmit={(event) => void addClaim(event)}>
+        <input aria-label="Fact" placeholder="Fact, e.g. birthday or works with" required value={claim.key} onChange={(event) => setClaim({ ...claim, key: event.target.value })} autoFocus/>
+        <input aria-label="Value" placeholder="Value" required={!claimTarget} disabled={Boolean(claimTarget)} value={claim.value} onChange={(event) => setClaim({ ...claim, value: event.target.value })}/>
+        <select aria-label="Or link another entity" value={claimTarget} onChange={(event) => setClaimTarget(event.target.value)}>
+          <option value="">or link an entity…</option>{others.map((entity) => <option key={entity.id} value={entity.id}>{entity.title}</option>)}
+        </select>
+        <input aria-label="Source" placeholder="Source" required value={claim.source} onChange={(event) => setClaim({ ...claim, source: event.target.value })}/>
+        <div className="form-buttons"><button type="button" className="secondary" onClick={() => setAdding(false)}>Cancel</button><button type="submit" className="primary">Add fact</button></div>
+      </form>}
+      {claims.map((item) => <ClaimCard key={item.id} claim={item} target={workspace.entities.find((entity) => entity.id === item.value)} mergedFrom={workspace.merges.find((merge) => merge.id === item.mergedFrom)}
+        conflicting={conflicts.includes(item.key)} previousAlternative={resolvedKeys.includes(item.key) && !item.isCurrent} sourceDocument={sourceDocument(item.source, workspace.documents) ?? undefined}
+        onOpenSource={props.onOpenSource} onSelectTarget={(entity) => props.onOpenEntity(entity.id)} onMarkCurrent={markCurrent} onRetract={retract}/>)}
+      {claims.length === 0 && !adding && <p className="hint">No facts yet. Add one with its source, such as a birthday or who {draft.title} works with.</p>}
+    </section>
+
+    {incoming.length > 0 && <section className="facts" aria-label="Linked from other entities">
+      <header className="section-header"><h2>Linked from</h2><span className="count">{incoming.length}</span></header>
+      {incoming.map((link) => <div className="fact" key={link.id}><span className="fact-key">{link.key}</span>
+        <div className="fact-value"><button className="text-button link" onClick={() => props.onOpenEntity(link.subject)}>{titleOf(link.subject)}</button></div></div>)}
+    </section>}
+
+    {workspace.merges.filter((item) => item.target === selected).map((item) => <div className="callout" key={item.id}>
+      <span><strong>{item.title}</strong> was merged into this entity. Its file and links can be restored without losing the merge history.</span>
+      <button className="secondary" onClick={() => undoMerge(item.id)}>Restore {item.title}</button></div>)}
+
+    {others.length > 0 && <details className="quiet-details">
+      <summary>Same as another entity?</summary>
+      <p className="hint">Archive this entity and point its facts and links at the one you choose. Its file and history stay in the workspace, and the merge can be undone.</p>
+      <div className="inline-form"><select aria-label="Merge into" value={mergeTarget} onChange={(event) => setMergeTarget(event.target.value)}>
+        <option value="">Choose the entity to keep</option>{others.map((entity) => <option key={entity.id} value={entity.id}>{entity.title}</option>)}</select>
+        <button className="secondary" disabled={!mergeTarget} onClick={() => void merge()}>Merge</button></div>
+    </details>}
+  </article>
 }

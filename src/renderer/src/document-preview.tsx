@@ -49,8 +49,8 @@ export function DocumentPreview({ name, workspace, onOpen, onError, ...actions }
     return () => { current = false }
   }, [name])
   return <section className="document-preview page">
-    <header className="document-preview-header"><div><span className="eyebrow">WORKSPACE / DOCUMENTS</span><h1>{name}</h1><p>Stored in documents/{name}</p></div>
-      <button className="secondary" onClick={() => onOpen(name)}><ExternalLink size={15}/> Open in default app</button></header>
+    <header className="view-header"><div><h1>{name}</h1></div>
+      <div className="view-actions"><button className="secondary" onClick={() => onOpen(name)}><ExternalLink size={14}/> Open in default app</button></div></header>
     <div className={suggestions.length ? 'document-with-suggestions' : undefined}>
       {loading ? <p className="hint">Reading document…</p> : content === null ? <div className="document-empty"><FileText size={26}/><p>Preview unavailable for this format.</p><button onClick={() => onOpen(name)}>Open in default app</button></div> :
         <div>{outline.length > 0 && <details className="document-outline"><summary>Outline · {outline.length} sections</summary>

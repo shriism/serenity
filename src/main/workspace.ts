@@ -10,12 +10,18 @@ import { modules, type ModuleId } from '../shared/modules'
 import { defaultHome } from '../shared/default-home'
 import { defaultWorkbench } from '../shared/default-workbench'
 import { normalizeKeybinding } from '../shared/keybindings'
-import { isWorkbenchView, parseLayout } from '../shared/layout'
+import { isWorkbenchView, parseLayout, parseViewTabUri, tabViews, viewTabUri } from '../shared/layout'
 import { rankSearchResults } from '../shared/search-rank'
 import { renameWikilinks } from '../shared/wikilinks'
 import { distinctRepresentatives } from '../shared/identity'
 import { validateReadScope, validateWorkflowPermissions } from '../shared/workflow'
 import { canExtractText, extractDocument } from './documents'
+
+/** Extra YAML fields as searchable words; records without any add nothing. */
+const metadataText = (metadata: Record<string, unknown> | undefined): string => metadata && Object.keys(metadata).length ? JSON.stringify(metadata) : ''
+
+/** A tab a session may restore: a workspace resource or a view such as Calendar. */
+const isTabUri = (uri: string): boolean => parseResourceUri(uri) !== null || parseViewTabUri(uri) !== null
 
 const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/
 
@@ -674,13 +680,14 @@ export class Workspace {
 
   private async validatedSession(value: unknown): Promise<WorkbenchSession> {
     if (!record(value) || typeof value.view !== 'string' || !isWorkbenchView(value.view) ||
-      !Array.isArray(value.openUris) || value.openUris.length > 30 || value.openUris.some((uri: unknown) => typeof uri !== 'string' || !parseResourceUri(uri)) ||
-      (value.activeUri !== undefined && (typeof value.activeUri !== 'string' || !parseResourceUri(value.activeUri))) ||
+      !Array.isArray(value.openUris) || value.openUris.length > 30 || value.openUris.some((uri: unknown) => typeof uri !== 'string' || !isTabUri(uri)) ||
+      (value.activeUri !== undefined && (typeof value.activeUri !== 'string' || !isTabUri(value.activeUri))) ||
       (value.assistantUri !== undefined && (typeof value.assistantUri !== 'string' || parseResourceUri(value.assistantUri)?.kind !== 'conversation'))) throw new Error('Invalid workspace session')
-    const available = new Set(workspaceResources(await this.snapshot()).map((item) => item.uri))
+    // View tabs are always kept; the renderer drops those whose module is off.
+    const available = new Set([...workspaceResources(await this.snapshot()).map((item) => item.uri), ...tabViews.map(viewTabUri)])
     const openUris = (uris: string[]): string[] => [...new Set(uris.filter((uri) => available.has(uri)))]
     const activeUri = (uri: unknown): string | undefined => typeof uri === 'string' && available.has(uri) ? uri : undefined
-    const layout = value.layout === undefined ? null : parseLayout(value.layout, isWorkbenchView, (uri) => parseResourceUri(uri) !== null)
+    const layout = value.layout === undefined ? null : parseLayout(value.layout, isWorkbenchView, isTabUri)
     return { view: value.view, openUris: openUris(value.openUris as string[]), activeUri: activeUri(value.activeUri),
       ...(typeof value.assistantUri === 'string' && available.has(value.assistantUri) ? { assistantUri: value.assistantUri } : {}),
       ...(layout ? { layout: { ...layout, groups: layout.groups.map((group) => {
@@ -927,17 +934,17 @@ export class Workspace {
     try {
       this.index.exec('DELETE FROM records')
       for (const page of snapshot.pages) insert.run(page.id, 'page', page.title, 'Workspace page', page.body)
-      for (const entity of snapshot.entities) insert.run(entity.id, 'entity', entity.title, entity.type, `${entity.body} ${JSON.stringify(entity.metadata ?? {})}`)
+      for (const entity of snapshot.entities) insert.run(entity.id, 'entity', entity.title, entity.type, `${entity.body} ${metadataText(entity.metadata)}`)
       for (const claim of snapshot.claims.filter((item) => item.status !== 'retracted')) {
         const targetName = titles.get(claim.value) ?? claim.value
         const context = claim.isCurrent ? 'Current' : claim.isCurrent === false ? 'Historical alternative' : 'Sourced claim'
-        insert.run(claim.subject, 'claim', `${claim.key}: ${targetName}`, `${context} · ${claim.source}`, `${targetName} ${claim.value} ${JSON.stringify(claim.metadata ?? {})}`)
+        insert.run(claim.subject, 'claim', `${claim.key}: ${targetName}`, `${context} · ${claim.source}`, `${targetName} ${claim.value} ${metadataText(claim.metadata)}`)
       }
       if (snapshot.modules.tasks) {
-        for (const task of snapshot.tasks) insert.run(task.id, 'task', task.title, task.due ?? 'Undated task', `${task.notes} ${JSON.stringify(task.metadata ?? {})} ${task.relatedEntityIds.map((id) => snapshot.entities.find((entity) => entity.id === id)?.title ?? id).join(' ')}`)
+        for (const task of snapshot.tasks) insert.run(task.id, 'task', task.title, task.due ?? 'Undated task', `${task.notes} ${metadataText(task.metadata)} ${task.relatedEntityIds.map((id) => snapshot.entities.find((entity) => entity.id === id)?.title ?? id).join(' ')}`)
       }
       if (snapshot.modules.calendar) {
-        for (const event of snapshot.events) insert.run(event.id, 'event', event.title, event.start, `${event.notes} ${JSON.stringify(event.metadata ?? {})} ${event.relatedEntityIds.map((id) => snapshot.entities.find((entity) => entity.id === id)?.title ?? id).join(' ')}`)
+        for (const event of snapshot.events) insert.run(event.id, 'event', event.title, event.start, `${event.notes} ${metadataText(event.metadata)} ${event.relatedEntityIds.map((id) => snapshot.entities.find((entity) => entity.id === id)?.title ?? id).join(' ')}`)
       }
       for (const document of snapshot.documents) {
         let text = ''

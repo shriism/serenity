@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { Workspace } from '../src/main/workspace'
 import { dragDivider, isWorkbenchView, layoutGeometry, maxEditorGroups, parseLayout, removeFromLayout, splitLayout } from '../src/shared/layout'
 import { parseResourceUri, resourceUri } from '../src/shared/resources'
-import { activeTabOf, closeGroup, emptyGroup, enterView, findGroup, focusedGroup, initialWorkbench, moveTab, presentTab, presentView, removeTab, nextGroupId, orderedGroups, pruneWorkbench, restoreWorkbench, showTab, showView, splitWorkbench, updateGroup, workbenchSession } from '../src/renderer/src/workbench-groups'
+import { activeTabOf, closeGroup, emptyGroup, findGroup, homeWorkbench, focusedGroup, initialWorkbench, moveTab, presentTab, presentView, removeTab, nextGroupId, orderedGroups, pruneWorkbench, restoreWorkbench, showTab, showView, splitWorkbench, updateGroup, workbenchSession } from '../src/renderer/src/workbench-groups'
 
 const parse = (value: unknown) => parseLayout(value, isWorkbenchView, (uri) => parseResourceUri(uri) !== null)
 
@@ -49,14 +49,14 @@ test('editor groups split, focus, close, and serialize as independent places', (
   assert.equal(nextGroupId(split), 'main')
   const reviewing = updateGroup(split, 'group-2', (group) => showView(group, 'review'))
   assert.deepEqual(orderedGroups(reviewing).map((group) => group.view), ['knowledge', 'review'])
-  const session = workbenchSession(reviewing, 'home')
+  const session = workbenchSession(reviewing)
   assert.equal(session.view, 'review', 'legacy fields mirror the focused group')
-  assert.deepEqual(session.layout?.groups.map((group) => group.activeUri), [resourceUri(alex), undefined])
+  assert.deepEqual(session.layout?.groups.map((group) => group.activeUri), [resourceUri(alex), 'serenity:view/review'], 'views are saved as tabs')
   const closed = closeGroup(reviewing, 'group-2')
   assert.equal(closed.groups.length, 1)
   assert.equal(closed.focused, 'main')
   assert.equal(closeGroup(closed, 'main'), closed, 'the last group stays open')
-  assert.equal(workbenchSession(closed, 'home').layout, undefined)
+  assert.equal(workbenchSession(closed).layout?.groups.length, 1)
 })
 
 test('a two-group session restores through the main process and drops unavailable resources', async () => {
@@ -95,7 +95,7 @@ test('a module presentation survives a single-pane workspace session', async () 
     await workspace.initialize()
     const board = updateGroup(initialWorkbench, 'main', (group) => presentView(showView(group, 'tasks'), 'tasks', 'board'))
     assert.equal(focusedGroup(splitWorkbench(board)!).viewPresentations.tasks, 'board', 'a second pane keeps the shown module presentation')
-    const saved = workbenchSession(board, 'home')
+    const saved = workbenchSession(board)
     assert.equal(saved.layout?.groups[0].viewPresentations?.tasks, 'board')
     await workspace.saveSession(saved)
     const loaded = (await workspace.loadSession())!
@@ -106,17 +106,37 @@ test('a module presentation survives a single-pane workspace session', async () 
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
-test('returning to Knowledge resumes the last entity; choosing Knowledge again shows the library', () => {
+test('every place is a tab: closing the shown tab shows its neighbor, and an empty pane is a new tab', () => {
   const alex = { kind: 'entity' as const, id: 'alex' }
-  let group = showTab(emptyGroup('main'), alex)
-  group = enterView(group, 'review')
-  assert.equal(activeTabOf(group), undefined)
-  group = enterView(group, 'knowledge')
-  assert.deepEqual(activeTabOf(group), alex)
-  group = enterView(group, 'knowledge')
-  assert.equal(activeTabOf(group), undefined, 'the library')
-  assert.equal(activeTabOf(enterView(enterView(group, 'review'), 'knowledge')), undefined, 'leaving from the library returns to it')
-  assert.equal(enterView(removeTab(showTab(group, alex), 'entity:alex'), 'knowledge').activeTab, null, 'a closed tab is not resumed')
+  let group = showView(showTab(emptyGroup('main'), alex), 'calendar')
+  assert.deepEqual(group.tabs.map((tab) => tab.kind), ['entity', 'view'])
+  assert.equal(group.view, 'calendar')
+  assert.equal(showView(group, 'calendar').tabs.length, 2, 'a view already open is shown, not duplicated')
+  group = removeTab(group, 'view:calendar')
+  assert.deepEqual(activeTabOf(group), alex, 'closing the shown tab shows the one beside it')
+  assert.equal(group.view, 'knowledge')
+  group = removeTab(group, 'entity:alex')
+  assert.equal(group.activeTab, null)
+  assert.equal(group.view, 'home', 'an empty pane shows the New tab screen')
+  const middle = showTab(showTab(showTab(emptyGroup('main'), { kind: 'page', id: 'a' }), { kind: 'page', id: 'c' }), { kind: 'page', id: 'a' })
+  assert.deepEqual(showTab(middle, { kind: 'page', id: 'b' }).tabs.map((tab) => tab.id), ['a', 'b', 'c'], 'a new tab opens beside the current one')
+})
+
+test('sessions saved before views were tabs restore the view they showed', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-legacy-session-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const snapshot = await workspace.snapshot()
+    const calendar = restoreWorkbench({ view: 'calendar', openUris: [] }, snapshot, () => true)
+    assert.deepEqual(activeTabOf(calendar.groups[0]), { kind: 'view', id: 'calendar' })
+    const home = restoreWorkbench({ view: 'home', openUris: [] }, snapshot, () => true)
+    assert.deepEqual(activeTabOf(home.groups[0]), { kind: 'page', id: 'home' }, 'an empty Home meant the Home page')
+    assert.deepEqual(activeTabOf(homeWorkbench(snapshot).groups[0]), { kind: 'page', id: 'home' }, 'a new workspace opens on Home')
+    const off = restoreWorkbench({ view: 'tasks', openUris: ['serenity:view/tasks'] }, snapshot, (view) => view !== 'tasks')
+    assert.equal(off.groups[0].tabs.length, 0, 'a disabled module’s tab is not restored')
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
 test('split sizes stay valid through resizing, adding, removing, and restoring', async () => {

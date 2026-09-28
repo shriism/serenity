@@ -7,6 +7,7 @@ const api: SerenityAPI = {
   openExternal: (url) => ipcRenderer.invoke('link:open-external', url),
   appInfo: () => ipcRenderer.invoke('app:info'),
   setEditorDirty: (dirty) => ipcRenderer.send('editor:dirty', dirty),
+  setWindowTheme: (theme) => ipcRenderer.send('window:theme', theme),
   refresh: () => ipcRenderer.invoke('workspace:refresh'),
   saveEntity: (entity) => ipcRenderer.invoke('entity:save', entity),
   savePage: (page) => ipcRenderer.invoke('page:save', page),

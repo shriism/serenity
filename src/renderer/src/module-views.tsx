@@ -103,19 +103,18 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
     } catch (cause) { onError(String(cause)) }
   }
 
-  return <section className="page module-page">
-    <span className="eyebrow">SERENITY CALENDAR</span><h1>Calendar</h1>
-    <p>Events live in this workspace and can connect to anything in your knowledge.</p>
-    <div className="task-view-toggle" role="group" aria-label="Calendar view">
+  return <section className="page wide module-page">
+    <header className="view-header"><div><h1>Calendar</h1></div><div className="view-actions">
+    <div className="segmented task-view-toggle" role="group" aria-label="Calendar view">
       <button type="button" aria-pressed={calendarPresentation === 'month'} className={calendarPresentation === 'month' ? 'active' : ''} onClick={() => onCalendarPresentationChange?.('month')}>Month</button>
       <button type="button" aria-pressed={calendarPresentation === 'agenda'} className={calendarPresentation === 'agenda' ? 'active' : ''} onClick={() => onCalendarPresentationChange?.('agenda')}>Agenda</button>
-    </div>
+    </div></div></header>
     <div className="calendar-layout">
       <div>
         <div className="calendar-toolbar">
-          <button aria-label="Previous month" onClick={() => changeMonth(-1)}>←</button>
+          <button className="icon-btn" aria-label="Previous month" onClick={() => changeMonth(-1)}>‹</button>
           <h2>{new Date(year, number - 1).toLocaleString(undefined, { month: 'long', year: 'numeric' })}</h2>
-          <button aria-label="Next month" onClick={() => changeMonth(1)}>→</button>
+          <button className="icon-btn" aria-label="Next month" onClick={() => changeMonth(1)}>›</button>
         </div>
         {calendarPresentation === 'agenda' ? <div className="calendar-agenda">
           {agenda.length === 0 && <p className="hint">No events or open tasks due this month.</p>}
@@ -209,13 +208,12 @@ export function TasksModule({ workspace, onUpdate, onError, focusTaskId, focusVe
     catch (cause) { onError(String(cause)) }
   }
 
-  return <section className="page module-page">
-    <span className="eyebrow">SERENITY TASKS</span><h1>Tasks</h1>
-    <p>Plan what matters and connect it to your people, projects, or any other entities.</p>
-    <div className="task-view-toggle" role="group" aria-label="Task view">
+  return <section className="page wide module-page">
+    <header className="view-header"><div><h1>Tasks</h1><p className="view-subtitle">{workspace.tasks.filter((item) => !item.completed).length} open</p></div><div className="view-actions">
+    <div className="segmented task-view-toggle" role="group" aria-label="Task view">
       <button type="button" aria-pressed={presentation === 'list'} className={presentation === 'list' ? 'active' : ''} onClick={() => onTaskPresentationChange?.('list')}>List</button>
       <button type="button" aria-pressed={presentation === 'board'} className={presentation === 'board' ? 'active' : ''} onClick={() => onTaskPresentationChange?.('board')}>Board</button>
-    </div>
+    </div></div></header>
     <div className={`tasks-layout ${presentation === 'board' ? 'board-layout' : ''}`}>
       <div>
         {presentation === 'board' ? <div className="task-board">

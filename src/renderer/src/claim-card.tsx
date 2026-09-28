@@ -1,6 +1,6 @@
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
+import { MoreHorizontal } from 'lucide-react'
 import type { Claim, Entity, MergeRecord } from '../../shared/types'
+import { MenuButton } from './menu'
 
 interface Props {
   claim: Claim
@@ -16,25 +16,28 @@ interface Props {
   onOpenSource(name: string): void
 }
 
+const origins = { human: 'you said', 'ai-statement': 'AI extraction', 'ai-inference': 'AI inference' }
+
+/** One sourced fact about an entity, with where it came from and what can be done with it. */
 export function ClaimCard({ claim, target, mergedFrom, conflicting, previousAlternative,
   onSelectTarget, onMarkCurrent, onRetract, sourceDocument, onOpenSource }: Props) {
-  return <div className={`claim ${claim.status === 'retracted' ? 'retracted' : ''}`}>
-    <span className="eyebrow">{claim.key} {claim.isCurrent ? '· CURRENT' : conflicting ? '· CONFLICT' : previousAlternative ? '· PREVIOUS ALTERNATIVE' : ''}</span>
-    {target ? <button className="claim-link" onClick={() => onSelectTarget(target)}>{target.title} ↗</button> :
-      claim.key === 'context' ? <details className="claim-context"><summary>Read attached context</summary>
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{
-          a: ({ children }) => <span className="preview-link">{children}</span>,
-          img: ({ alt }) => <span>[Image: {alt || 'no description'}]</span>
-        }}>{claim.value}</ReactMarkdown>
-      </details> : <strong>{claim.value}</strong>}
-    <small>From {claim.source} · {claim.origin === 'human' ? 'direct statement' : claim.origin === 'ai-inference' ? 'AI inference' : 'AI extraction'} · {claim.status}
-      {claim.confidence !== undefined ? ` · AI estimate ${Math.round(claim.confidence * 100)}%` : ''}
-      {mergedFrom ? ` · archived from ${mergedFrom.title}` : ''}{claim.retractionReason ? ` · ${claim.retractionReason}` : ''}
-    </small>
-    {sourceDocument && <button className="claim-link" onClick={() => onOpenSource(sourceDocument)}>Open source document ↗</button>}
-    {claim.status === 'confirmed' && <div className="claim-actions">
-      <button onClick={() => onMarkCurrent(claim.id)}>{claim.isCurrent ? 'Change reason / reaffirm' : 'Mark current'}</button>
-      <button onClick={() => onRetract(claim.id)}>Retract</button>
-    </div>}
+  const badge = claim.isCurrent ? 'Current' : conflicting ? 'Conflict' : previousAlternative ? 'Earlier answer' : claim.status === 'retracted' ? 'Retracted' : null
+  return <div className={`fact ${claim.status === 'retracted' ? 'retracted' : ''} ${conflicting ? 'conflicting' : ''}`}>
+    <span className="fact-key">{claim.key}</span>
+    <div className="fact-value">
+      {target ? <button className="text-button link" onClick={() => onSelectTarget(target)}>{target.title}</button> :
+        claim.key === 'context' ? <details className="fact-context"><summary>Attached context</summary><p>{claim.value}</p></details> : <span>{claim.value}</span>}
+      {badge && <span className={`badge ${badge === 'Conflict' ? 'warning' : badge === 'Current' ? 'accent' : ''}`}>{badge}</span>}
+      <small className="fact-meta">
+        {sourceDocument ? <button className="text-button" onClick={() => onOpenSource(sourceDocument)}>{claim.source}</button> : claim.source}
+        {' · '}{origins[(claim.origin ?? 'human') as keyof typeof origins] ?? claim.origin}
+        {claim.confidence !== undefined ? ` · ${Math.round(claim.confidence * 100)}% confident` : ''}
+        {mergedFrom ? ` · from ${mergedFrom.title}` : ''}{claim.retractionReason ? ` · ${claim.retractionReason}` : ''}
+      </small>
+    </div>
+    {claim.status === 'confirmed' && <MenuButton label={`Actions for ${claim.key}`} align="end" className="icon-btn fact-menu" items={[
+      { id: 'current', label: claim.isCurrent ? 'Reaffirm as current…' : 'Mark as current answer…', run: () => onMarkCurrent(claim.id) },
+      { id: 'retract', label: 'Retract…', danger: true, run: () => onRetract(claim.id) }
+    ]}><MoreHorizontal size={15}/></MenuButton>}
   </div>
 }

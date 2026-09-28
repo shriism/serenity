@@ -31,28 +31,31 @@ test('resources route to their default view and respect availability', async () 
     assert.deepEqual(route('claim', claim.id), route('entity', entity.id))
     assert.deepEqual(route('document', 'notes.md'), { action: 'tab', tab: { kind: 'document', id: 'notes.md' }, view: 'documents' })
     assert.deepEqual(route('document', 'photo.png'), { action: 'external', name: 'photo.png' })
-    assert.deepEqual(route('page', 'home'), { action: 'home' })
+    assert.deepEqual(route('page', 'home'), { action: 'tab', tab: { kind: 'page', id: 'home' }, view: 'home' }, 'Home is a page like any other')
     assert.deepEqual(route('page', 'research'), { action: 'tab', tab: { kind: 'page', id: 'research' }, view: 'home' })
     assert.deepEqual(route('task', task.id), { action: 'focus', kind: 'task', id: task.id, view: 'tasks' })
     assert.equal(route('entity', 'missing'), null)
+    assert.deepEqual(routeResource(snapshot, 'serenity:view/calendar', modulesOf(snapshot)), { action: 'tab', tab: { kind: 'view', id: 'calendar' }, view: 'calendar' }, 'views open as tabs')
+    assert.equal(routeResource(snapshot, 'serenity:view/settings', modulesOf(snapshot)), null, 'Settings is a dialog, not a tab')
     assert.equal(routeResource(snapshot, 'serenity:entity/../x', modulesOf(snapshot)), null)
     assert.equal(tabTitle(snapshot, { kind: 'page', id: 'research' }), 'Research')
 
     snapshot = await workspace.setModule('tasks', false)
     assert.equal(route('task', task.id), null)
+    assert.equal(routeResource(snapshot, 'serenity:view/tasks', modulesOf(snapshot)), null, 'a disabled module has no tab')
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
-test('restored tabs keep saved order and drop missing, duplicate, or non-tab resources', async () => {
+test('restored tabs keep saved order and drop missing, duplicate, or unknown entries', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-routing-'))
   try {
     const workspace = new Workspace(directory)
     await workspace.initialize()
     const snapshot = await workspace.saveEntity({ id: '', title: 'Alex', type: 'person', body: '' })
     const alex = resourceUri({ kind: 'entity', id: snapshot.entities[0].id })
-    const tabs = restoreTabs(snapshot, [alex, 'serenity:page/home', 'serenity:document/gone.pdf', alex, 'not a uri'], () => true)
-    assert.deepEqual(tabs, [{ kind: 'entity', id: snapshot.entities[0].id }])
+    const tabs = restoreTabs(snapshot, [alex, 'serenity:page/home', 'serenity:view/review', 'serenity:document/gone.pdf', alex, 'not a uri', 'serenity:view/shell'], () => true)
+    assert.deepEqual(tabs, [{ kind: 'entity', id: snapshot.entities[0].id }, { kind: 'page', id: 'home' }, { kind: 'view', id: 'review' }])
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

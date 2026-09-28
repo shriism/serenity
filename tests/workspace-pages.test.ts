@@ -16,7 +16,7 @@ test('authored pages remain inside the workspace and reject stale or unrelated e
     const page = (await workspace.snapshot()).pages.find((item) => item.id === 'home')!
     assert.equal(page.path, 'pages/Home.md')
     assert.match(page.text, /```serenity-query/)
-    const edited = page.text.replace('# Your world, in context', '# My own workspace')
+    const edited = page.text.replace('This page is yours.', '# My own workspace\n\nThis page is yours.')
     await workspace.savePage({ ...page, text: edited })
     assert.match(await readFile(join(directory, page.path), 'utf8'), /# My own workspace/)
     await assert.rejects(workspace.savePage({ ...page, text: '---\nid: home\ntitle: Home\nkind: page\n---\nOld edit' }), /changed on disk/)

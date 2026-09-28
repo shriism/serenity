@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { Monitor, Moon, Sun } from 'lucide-react'
 
 export type ThemePreference = 'system' | 'light' | 'dark'
 
@@ -10,26 +9,20 @@ function savedPreference(): ThemePreference {
   } catch { return 'dark' }
 }
 
-export function useTheme(): [ThemePreference, (theme: ThemePreference) => void] {
+/** The appearance preference, a setter, and the theme actually shown once "system" is resolved. */
+export function useTheme(): [ThemePreference, (theme: ThemePreference) => void, 'dark' | 'light'] {
   const [preference, setPreference] = useState<ThemePreference>(savedPreference)
+  const [systemDark, setSystemDark] = useState(() => window.matchMedia('(prefers-color-scheme: dark)').matches)
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)')
-    const update = (): void => {
-      document.documentElement.dataset.theme = preference === 'system' ? media.matches ? 'dark' : 'light' : preference
-    }
-    update()
+    const update = (): void => setSystemDark(media.matches)
     media.addEventListener('change', update)
-    try { localStorage.setItem('serenity.theme', preference) } catch { /* Theme still works for this window. */ }
     return () => media.removeEventListener('change', update)
-  }, [preference])
-  return [preference, setPreference]
-}
-
-export function ThemeControl({ preference, onChange }: { preference: ThemePreference; onChange(theme: ThemePreference): void }) {
-  const Icon = preference === 'dark' ? Moon : preference === 'light' ? Sun : Monitor
-  return <label className="theme-control"><Icon size={16}/><span>Appearance</span>
-    <select aria-label="Appearance" value={preference} onChange={(event) => onChange(event.target.value as ThemePreference)}>
-      <option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option>
-    </select>
-  </label>
+  }, [])
+  const resolved = preference === 'system' ? systemDark ? 'dark' : 'light' : preference
+  useEffect(() => {
+    document.documentElement.dataset.theme = resolved
+    try { localStorage.setItem('serenity.theme', preference) } catch { /* Theme still works for this window. */ }
+  }, [preference, resolved])
+  return [preference, setPreference, resolved]
 }

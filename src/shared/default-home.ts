@@ -3,8 +3,6 @@ id: home
 title: Home
 kind: page
 ---
-# Your world, in context
-
 This page is yours. Edit its words, reorder its sections, or write a different one. Live lists below come from files in this workspace, and writing a name in double brackets, like \`[[Home]]\`, links to that page, person, or document.
 
 ## Coming up

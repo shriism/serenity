@@ -314,7 +314,7 @@ input[type='checkbox'] { accent-color: var(--accent-strong); width: 14px; height
 .tab-strip { display: flex; align-items: flex-end; flex: 1; min-width: 0; height: 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; padding-left: 6px; }
 .tab-strip::-webkit-scrollbar { display: none; }
 .tab-strip-fill { flex: 1; align-self: stretch; }
-.tab { position: relative; display: flex; align-items: center; flex: 0 1 180px; min-width: 64px; height: 32px; margin-right: 1px; padding: 0 4px 0 10px; border-radius: 7px 7px 0 0; color: var(--text-muted); }
+.tab { position: relative; display: flex; align-items: center; flex: 0 1 180px; min-width: 104px; height: 32px; margin-right: 1px; padding: 0 4px 0 10px; border-radius: 7px 7px 0 0; color: var(--text-muted); }
 .tab:hover { background: var(--hover); color: var(--text-secondary); }
 .tab.active { background: var(--surface); color: var(--text); box-shadow: 0 0 0 1px var(--border); clip-path: inset(-1px -1px 0 -1px); }
 .tab:not(.active):not(:hover) + .tab:not(.active):not(:hover)::before { content: ''; position: absolute; left: -1px; top: 9px; height: 14px; width: 1px; background: var(--border); }
@@ -529,8 +529,9 @@ button.timeline-title:hover { color: var(--accent); }
 .connections-graph line.claim-edge { stroke: var(--accent); opacity: .7; }
 .center-node { fill: var(--accent-strong); }
 .center-label { fill: #fff; font-size: 12px; font-weight: 600; }
-.neighbor-node circle { fill: var(--surface-raised); stroke: var(--border-strong); }
-.neighbor-node:hover circle { stroke: var(--accent); }
+.neighbor-node circle { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.neighbor-node:hover circle { fill: var(--accent-strong); }
+.neighbor-node { cursor: pointer; }
 .neighbor-node text { fill: var(--text-secondary); font-size: 12px; }
 .connections-list, .page-links-list, .knowledge-from { list-style: none; margin: 0; padding: 0; }
 .connections-list > li, .page-links-list > li, .knowledge-from > li { padding: 10px 0; border-bottom: 1px solid var(--border); }
@@ -630,8 +631,11 @@ button.timeline-title:hover { color: var(--accent); }
 .module-page h2 { font-size: 13px; margin: 18px 0 8px; }
 .task-row { display: flex; align-items: center; gap: 10px; padding: 7px 6px; border-bottom: 1px solid var(--border); }
 .task-row:hover { background: var(--hover); }
-.task-row > button:first-child { width: 20px; height: 20px; padding: 0; border: 0; background: none; color: var(--text-muted); font-size: 16px; line-height: 1; }
-.task-row > button:first-child:hover { color: var(--accent); }
+.task-row > input[type='checkbox'] { width: 16px; height: 16px; flex: none; }
+.task-quick-add { flex-direction: row !important; flex-wrap: wrap; align-items: center; margin: 0 0 16px !important; }
+.task-quick-add input:first-child { flex: 1 1 220px; }
+.task-quick-add input[type='date'] { flex: 0 0 150px; }
+.tasks-layout.full { grid-template-columns: minmax(0, 1fr); }
 .task-row > div { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .task-row small { color: var(--text-muted); font-size: 12px; }
 .task-row .text-button { opacity: 0; font-size: 12px; }

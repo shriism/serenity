@@ -39,6 +39,21 @@ try {
   await shot('04-calendar')
   await run(`click(byText('.mode-switch button', 'Chat')); await sleep(300)`)
   await shot('05-chat')
+  const views: [string, string][] = [
+    ['13-knowledge', `click(byText('.ribbon-btn', 'Knowledge'))`], ['14-graph', `click(byText('.library-mode button', 'Graph'))`],
+    ['15-documents', `click(byText('.ribbon-btn', 'Documents'))`], ['16-document', `click(byText('.document-name', 'club-notes.md'))`],
+    ['17-tasks', `click(byText('.ribbon-btn', 'Tasks'))`], ['18-activity', `click(byText('.ribbon-btn', 'Activity'))`],
+    ['19-timeline', `click(byText('.tree-row', 'Alex Rivera')); await sleep(200); click(byText('.presentation-switcher button', 'Timeline'))`],
+    ['20-connections', `click(byText('.presentation-switcher button', 'Connections'))`],
+    ['21-new-entity', `click(byText('.sidebar-actions button', 'New entity'))`],
+    ['22-settings-modules', `click($('.dialog-close')); await sleep(100); click($('.ribbon-btn[aria-label="Settings"]')); await sleep(200); click(byText('.settings-nav button', 'Modules'))`],
+    ['23-settings-ai', `click(byText('.settings-nav button', 'AI providers'))`],
+    ['24-menu', `click($('.dialog-close')); await sleep(100); click($('[aria-label^="Pane actions"]'))`],
+    ['25-conversation-settings', `document.body.click(); await sleep(100); click($('.right-sidebar button[aria-label^="Read scope"]'))`]
+  ]
+  await run(`click(byText('.mode-switch button', 'Workspace')); await sleep(200)`)
+  for (const [name, script] of views) { await run(`${script}; await sleep(350)`); await shot(`dark-${name}`) }
+  await run(`if ($('.dialog-close')) click($('.dialog-close'))`)
   await run(`click(byText('.mode-switch button', 'Workspace')); await sleep(200); click($('.ribbon-btn[aria-label="Settings"]')); await sleep(300)`)
   await shot('06-settings')
   await run(`click(byText('.settings-dialog .segmented button', 'Light')); await sleep(200); click($('.dialog-close')); await sleep(200)`)

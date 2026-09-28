@@ -168,6 +168,7 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
 
 export function TasksModule({ workspace, onUpdate, onError, focusTaskId, focusVersion, taskPresentation = 'list', onTaskPresentationChange }: Props) {
   const [draft, setDraft] = useState<TaskItem>({ id: '', title: '', completed: false, notes: '', relatedEntityIds: [] })
+  const [quick, setQuick] = useState({ title: '', due: '' })
   const [busy, setBusy] = useState(false)
   const presentation = taskPresentation
   const titleInput = useRef<HTMLInputElement>(null)
@@ -197,6 +198,16 @@ export function TasksModule({ workspace, onUpdate, onError, focusTaskId, focusVe
     finally { setBusy(false) }
   }
 
+  /** Adds a task from the one-line field above the list; details can be added by editing it. */
+  async function quickAdd(event: FormEvent): Promise<void> {
+    event.preventDefault()
+    if (!quick.title.trim()) return
+    setBusy(true)
+    try { onUpdate(await window.serenity.saveTask({ id: '', title: quick.title.trim(), due: quick.due || undefined, completed: false, notes: '', relatedEntityIds: [] })); setQuick({ title: '', due: '' }) }
+    catch (cause) { onError(String(cause)) }
+    finally { setBusy(false) }
+  }
+
   async function archive(task: TaskItem): Promise<void> {
     if (!task.revision || !window.confirm(`Archive ${task.title}? You can restore it later.`)) return
     try { onUpdate(await window.serenity.archiveTask(task.id, task.revision)); if (draft.id === task.id) clearDraft() }
@@ -214,7 +225,12 @@ export function TasksModule({ workspace, onUpdate, onError, focusTaskId, focusVe
       <button type="button" aria-pressed={presentation === 'list'} className={presentation === 'list' ? 'active' : ''} onClick={() => onTaskPresentationChange?.('list')}>List</button>
       <button type="button" aria-pressed={presentation === 'board'} className={presentation === 'board' ? 'active' : ''} onClick={() => onTaskPresentationChange?.('board')}>Board</button>
     </div></div></header>
-    <div className={`tasks-layout ${presentation === 'board' ? 'board-layout' : ''}`}>
+    <form className="module-form task-quick-add" onSubmit={(event) => void quickAdd(event)}>
+      <input aria-label="New task" placeholder="Add a task…" value={quick.title} onChange={(event) => setQuick({ ...quick, title: event.target.value })}/>
+      <input type="date" aria-label="Due date" value={quick.due} onChange={(event) => setQuick({ ...quick, due: event.target.value })}/>
+      <button className="primary" type="submit" disabled={busy || !quick.title.trim()}>Add</button>
+    </form>
+    <div className={`tasks-layout ${draft.id ? '' : 'full'} ${presentation === 'board' ? 'board-layout' : ''}`}>
       <div>
         {presentation === 'board' ? <div className="task-board">
           {boardColumns.map((column) => <section key={column.id} className="task-board-column" aria-label={`${column.title}, ${board[column.id].length} tasks`}>
@@ -236,14 +252,14 @@ export function TasksModule({ workspace, onUpdate, onError, focusTaskId, focusVe
         {workspace.tasks.filter((item) => !item.completed).length === 0 && <p className="hint">No open tasks.</p>}
         {workspace.tasks.filter((item) => !item.completed).sort((a, b) => (a.due ?? '9999').localeCompare(b.due ?? '9999')).map((item) =>
           <div key={item.id} className="task-row">
-            <button title="Mark completed" onClick={() => void changeCompletion(item)}>☐</button>
+            <input type="checkbox" checked={false} aria-label={`Complete ${item.title}`} onChange={() => void changeCompletion(item)}/>
             <div><strong>{item.title}</strong><small>{item.due ? `Due ${item.due} · ` : ''}{item.relatedEntityIds.map((id) => workspace.entities.find((entity) => entity.id === id)?.title).filter(Boolean).join(', ')}</small></div>
             <button className="text-button" onClick={() => edit(item)}>Edit</button>
             <button className="text-button" onClick={() => void archive(item)}>Archive</button>
           </div>)}
-        <h2>Completed</h2>
+        {workspace.tasks.some((item) => item.completed) && <h2>Completed</h2>}
         {workspace.tasks.filter((item) => item.completed).map((item) => <div key={item.id} className="task-row complete">
-          <button title="Reopen task" onClick={() => void changeCompletion(item)}>☑</button><strong>{item.title}</strong>
+          <input type="checkbox" checked aria-label={`Reopen ${item.title}`} onChange={() => void changeCompletion(item)}/><strong>{item.title}</strong>
           <button className="text-button" onClick={() => edit(item)}>Edit</button>
           <button className="text-button" onClick={() => void archive(item)}>Archive</button>
         </div>)}
@@ -252,17 +268,16 @@ export function TasksModule({ workspace, onUpdate, onError, focusTaskId, focusVe
           {workspace.archivedTasks.map((item) => <div key={item.id}><span>{item.title}</span><button onClick={() => void window.serenity.restoreTask(item.id).then(onUpdate).catch((cause) => onError(String(cause)))}>Restore</button></div>)}
         </details>}
       </div>
-      <aside className="module-aside">
+      {draft.id && <aside className="module-aside">
         <form className="module-form" onSubmit={(event) => void save(event)}>
-          <h3>{draft.id ? 'Edit task' : 'Add task'}</h3>
+          <h3>Edit task</h3>
           <label>Title<input ref={titleInput} required value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })}/></label>
           <label>Due date<input type="date" value={draft.due ?? ''} onChange={(event) => setDraft({ ...draft, due: event.target.value || undefined })}/></label>
           <EntityLinks workspace={workspace} selected={draft.relatedEntityIds} onChange={(relatedEntityIds) => setDraft({ ...draft, relatedEntityIds })}/>
           <label>Notes<textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })}/></label>
-          <button className="primary" type="submit" disabled={busy}>Save task</button>
-          {draft.id && <button className="text-button" type="button" onClick={clearDraft}>Cancel editing</button>}
+          <div className="form-buttons"><button className="secondary" type="button" onClick={clearDraft}>Cancel</button><button className="primary" type="submit" disabled={busy}>Save</button></div>
         </form>
-      </aside>
+      </aside>}
     </div>
   </section>
 }

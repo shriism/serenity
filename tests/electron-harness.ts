@@ -38,21 +38,52 @@ export async function launch(workspace: string, options: { executable?: string; 
 
   let url = ''
   let sequence = 0
-  function send<T>(method: string, params: Record<string, unknown> = {}, timeout = 30000, target = url): Promise<T> {
+  type Pending = { resolve(value: unknown): void; reject(error: Error): void; timer: ReturnType<typeof setTimeout> }
+  type Connection = { socket: WebSocket; ready: Promise<void>; pending: Map<number, Pending> }
+  const connections = new Map<string, Connection>()
+  function connection(target: string): Connection {
+    const existing = connections.get(target)
+    if (existing) return existing
     const socket = new WebSocket(target)
+    const pending = new Map<number, Pending>()
+    const ready = new Promise<void>((resolve, reject) => {
+      socket.addEventListener('open', () => resolve(), { once: true })
+      socket.addEventListener('error', () => reject(new Error('Could not connect to the renderer')), { once: true })
+    })
+    const current = { socket, ready, pending }
+    connections.set(target, current)
+    socket.addEventListener('message', (event) => {
+      const message = JSON.parse(String(event.data)) as { id?: number; result?: unknown; error?: { message: string } }
+      const request = message.id === undefined ? undefined : pending.get(message.id)
+      if (!request) return
+      pending.delete(message.id!)
+      clearTimeout(request.timer)
+      if (message.error) request.reject(new Error(message.error.message))
+      else request.resolve(message.result)
+    })
+    socket.addEventListener('close', () => {
+      if (connections.get(target) === current) connections.delete(target)
+      for (const request of pending.values()) {
+        clearTimeout(request.timer)
+        request.reject(new Error('Renderer connection closed'))
+      }
+      pending.clear()
+    })
+    return current
+  }
+  async function send<T>(method: string, params: Record<string, unknown> = {}, timeout = 30000, target = url): Promise<T> {
+    // Emulation and input state belong to a CDP session. A new socket per command
+    // silently resets them on disconnect, especially in hidden Windows windows.
+    const current = connection(target)
+    await current.ready
     const id = ++sequence
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { socket.close(); reject(new Error(`${method} timed out. App logs: ${output.slice(-1500)}`)) }, timeout)
-      socket.addEventListener('open', () => socket.send(JSON.stringify({ id, method, params })))
-      socket.addEventListener('message', (event) => {
-        const message = JSON.parse(String(event.data)) as { id?: number; result?: T; error?: { message: string } }
-        if (message.id !== id) return
-        clearTimeout(timer)
-        socket.close()
-        if (message.error) reject(new Error(message.error.message))
-        else resolve(message.result as T)
-      })
-      socket.addEventListener('error', () => { clearTimeout(timer); reject(new Error('Could not connect to the renderer')) })
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        current.pending.delete(id)
+        reject(new Error(`${method} timed out. App logs: ${output.slice(-1500)}`))
+      }, timeout)
+      current.pending.set(id, { resolve: (value) => resolve(value as T), reject, timer })
+      current.socket.send(JSON.stringify({ id, method, params }))
     })
   }
   async function evaluate<T>(expression: string, timeout = 30000, target = url): Promise<T> {
@@ -79,11 +110,18 @@ export async function launch(workspace: string, options: { executable?: string; 
   // on CI. Emulate a foreground page without taking focus from the developer.
   await send('Emulation.setFocusEmulationEnabled', { enabled: true })
   if (options.width && options.height) await send('Emulation.setDeviceMetricsOverride', { width: options.width, height: options.height, deviceScaleFactor: 2, mobile: false })
+  const viewport = await evaluate<{ width: number; height: number; focused: boolean }>('({ width: innerWidth, height: innerHeight, focused: document.hasFocus() })')
+  if (!viewport.focused || (options.width && options.height && (viewport.width !== options.width || viewport.height !== options.height))) {
+    for (const current of connections.values()) current.socket.close()
+    child.kill('SIGKILL')
+    throw new Error(`Desktop input emulation did not persist: ${JSON.stringify(viewport)}`)
+  }
 
   return {
     child, logs: () => output, evaluate: (expression, timeout) => evaluate(expression, timeout), send: (method, params) => send(method, params),
     screenshot: async () => Buffer.from((await send<{ data: string }>('Page.captureScreenshot', { format: 'png' })).data, 'base64'),
     close: async () => {
+      for (const current of connections.values()) current.socket.close()
       if (child.exitCode === null) {
         child.kill('SIGTERM')
         await Promise.race([new Promise((resolve) => child.once('exit', resolve)), delay(3000)])

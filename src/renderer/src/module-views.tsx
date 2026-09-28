@@ -45,6 +45,8 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
   const [time, setTime] = useState('')
   const [endTime, setEndTime] = useState('')
   const [busy, setBusy] = useState(false)
+  // The day's form stays folded away until someone adds or edits an event.
+  const [adding, setAdding] = useState(false)
   useEffect(() => {
     const event = workspace.events.find((item) => item.id === focusEventId)
     if (!event) return
@@ -73,6 +75,7 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
     setDraft({ id: '', title: '', start: day, notes: '', relatedEntityIds: [] })
     setTime('')
     setEndTime('')
+    setAdding(false)
   }
 
   async function save(event: FormEvent): Promise<void> {
@@ -146,18 +149,21 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
           <strong>{item.title}</strong><small>{item.start.slice(11) || 'All day'} · {item.relatedEntityIds.map((id) => workspace.entities.find((entity) => entity.id === id)?.title).filter(Boolean).join(', ')}</small>
         </button>)}
         {workspace.events.every((item) => item.start.slice(0, 10) !== selectedDay) && <p className="hint">No events on this day.</p>}
-        <form className="module-form" onSubmit={(event) => void save(event)}>
-          <h3>{draft.id ? 'Edit event' : 'Add event'}</h3>
+        {!draft.id && !adding && <button className="secondary add-event" type="button" onClick={() => setAdding(true)}>+ Add event</button>}
+        {(draft.id || adding) && <form className="module-form" onSubmit={(event) => void save(event)}>
+          <h3>{draft.id ? 'Edit event' : 'New event'}</h3>
           <label>Title<input required value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })}/></label>
           <label>Date<input type="date" required value={draft.start.slice(0, 10)} onChange={(event) => setDraft({ ...draft, start: event.target.value })}/></label>
           <label>Start time (optional)<input type="time" value={time} onChange={(event) => setTime(event.target.value)}/></label>
           <label>End time (optional)<input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)}/></label>
           <EntityLinks workspace={workspace} selected={draft.relatedEntityIds} onChange={(relatedEntityIds) => setDraft({ ...draft, relatedEntityIds })}/>
           <label>Notes<textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })}/></label>
-          <button className="primary" type="submit" disabled={busy}>Save event</button>
-          {draft.id && <><button className="secondary" type="button" onClick={() => void archive()}>Archive event</button>
-            <button className="text-button" type="button" onClick={() => clearDraft(selectedDay)}>Cancel editing</button></>}
-        </form>
+          <div className="form-buttons">
+            {draft.id && <button className="secondary" type="button" onClick={() => void archive()}>Archive</button>}
+            <button className="secondary" type="button" onClick={() => clearDraft(selectedDay)}>Cancel</button>
+            <button className="primary" type="submit" disabled={busy}>Save</button>
+          </div>
+        </form>}
         {workspace.archivedEvents.length > 0 && <details className="archived-items"><summary>Archived events ({workspace.archivedEvents.length})</summary>
           {workspace.archivedEvents.map((item) => <div key={item.id}><span>{item.title}</span><button onClick={() => void restore(item)}>Restore</button></div>)}
         </details>}

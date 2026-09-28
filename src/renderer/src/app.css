@@ -601,6 +601,9 @@ button.timeline-title:hover { color: var(--accent); }
 .review-identity label { width: 100%; font-size: 12px; color: var(--text-muted); }
 .review-identity select { flex: 1 1 200px; }
 .review-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.review-matches { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+.review-identity .inline-form { width: 100%; }
+.add-event { align-self: flex-start; margin-top: 4px; }
 .duplicate-reasons { margin: 6px 0; padding-left: 18px; color: var(--text-secondary); font-size: 12.5px; }
 .preview-link { color: var(--accent); }
 

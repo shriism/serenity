@@ -164,7 +164,8 @@ try {
     return $$('.task-board-card').some((card) => card.textContent.includes('Buy Sam a gift'))`)
   assert.equal(board, true)
   await run(`click(byText('.ribbon-btn', 'Calendar')); await waitFor(() => $('.calendar-grid') || $('.calendar-agenda'));
-    setValue($('.module-form input'), 'Lunch with Sam'); await sleep(50); $('.module-form').requestSubmit();
+    click(byText('.module-aside button', '+ Add event')); await waitFor(() => $('.module-aside .module-form'));
+    setValue($('.module-aside .module-form input'), 'Lunch with Sam'); await sleep(50); $('.module-aside .module-form').requestSubmit();
     await waitFor(() => $$('.module-record').some((item) => item.textContent.includes('Lunch with Sam')))`)
   const agenda = await run(`click(byText('.task-view-toggle button', 'Agenda')); await waitFor(() => $('.calendar-agenda'));
     return $$('.calendar-agenda button').map((item) => item.textContent).join(' | ')`)
@@ -172,7 +173,7 @@ try {
 
   // Review: an AI-suggested entity can be created after review.
   const reviewed = await run(`click($('.ribbon-btn[aria-label^="Review"]')); await waitFor(() => $$('.review-card').length);
-    click(byText('.review-card button', 'Create separate entity')); return Boolean(await waitFor(() => $$('.tree-row').some((row) => row.textContent === 'Alex')))`)
+    click(byText('.review-card button', 'Create entity')); return Boolean(await waitFor(() => $$('.tree-row').some((row) => row.textContent === 'Alex')))`)
   assert.equal(reviewed, true)
 
   // Settings is a dialog: shortcuts, appearance, and module switches.

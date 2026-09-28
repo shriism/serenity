@@ -112,7 +112,7 @@ The Knowledge library filters by name and type and can be shown as **Tiles** or 
 
 ## Review and identity
 
-Review groups AI suggestions by their source. For an imported document, **Review beside document** opens it to the side, and the document's own view lists its suggestions next to its text, so each can be checked against the evidence before you accept it. When an AI-suggested entity resembles one you have, **Attach to selected entity** records the proposal as a sourced context claim without overwriting your narrative; **Create separate entity** keeps them apart.
+Review groups AI suggestions by their source. For an imported document, **Review beside document** opens it to the side, and the document's own view lists its suggestions next to its text, so each can be checked against the evidence before you accept it. For an AI-suggested entity, **Create entity** adds it, while **Add to existing…** records what was suggested as a sourced note on an entity you already have (likely matches are offered first) without overwriting your own notes.
 
 Review also lists **possible duplicates** among existing entities with the evidence for each (similar names, the same type, identical facts or relationships). Compare the two side by side, keep one with a reversible merge, or **Mark as distinct**. A distinct decision is a versioned YAML record under `identity-decisions/`: it removes the pair from suggestions and prevents merging them while active, and **Undo decision** brings the suggestion back. An undone merge also counts as a judgment that the two differ.
 

@@ -370,7 +370,7 @@ try {
       const found = await run<string[]>(`document.documentElement.setAttribute('data-theme', '${theme}'); ${setup}; await sleep(400);
         await Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined)));
         const result = await axe.run(document, { resultTypes: ['violations'] });
-        return result.violations.filter((item) => item.impact === 'serious' || item.impact === 'critical').map((item) => item.id + ' (' + item.nodes.length + ') at ' + item.nodes[0].target.join(' '))`)
+        return result.violations.filter((item) => item.impact === 'serious' || item.impact === 'critical').map((item) => item.id + ' (' + item.nodes.length + ') at ' + item.nodes[0].target.join(' ') + ': ' + (item.nodes[0].failureSummary ?? '').replace(/\\s+/g, ' ').slice(0, 280))`)
       accessibility.push(...found.map((item) => `${theme} ${view}: ${item}`))
     }
   }

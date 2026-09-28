@@ -79,9 +79,9 @@ mark { background: var(--accent-soft); color: inherit; border-radius: 2px; paddi
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 8px; border: 3px solid transparent; background-clip: content-box; }
 ::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
-/* Auto-hidden scrollbars: the thumb shows while its area scrolls or when pointed at, and takes no space otherwise. */
-[data-scrollbars='auto'] ::-webkit-scrollbar-thumb { background: transparent; }
-[data-scrollbars='auto'] .is-scrolling::-webkit-scrollbar-thumb, [data-scrollbars='auto'] ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar); background-clip: content-box; }
+/* Keep scrollable content and keyboard scrolling, without reserving a gutter in the reading view. */
+[data-scrollbars='auto'] * { scrollbar-width: none; }
+[data-scrollbars='auto'] ::-webkit-scrollbar { width: 0; height: 0; display: none; }
 input, textarea, [contenteditable], .markdown-editor, .page, .document-view, .messages, .toast, .menu-path, .context-inspector { user-select: text; }
 
 /* ---------- Controls ---------- */

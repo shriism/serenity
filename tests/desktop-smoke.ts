@@ -103,12 +103,17 @@ try {
   // Renaming a page through its inline title writes the frontmatter.
   await run(`const title = $('.inline-title'); title.focus(); setValue(title, 'My Home'); title.blur()`)
   await until('the title to save', async () => /title: My Home/.test(await readFile(join(workspace, 'pages', 'Home.md'), 'utf8')))
-  // Enter in the title continues into the page; Escape leaves editing.
-  const keys = await run<{ intoBody: boolean; left: boolean }>(`const title = $('.inline-title'); title.focus(); title.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    await sleep(50); const intoBody = document.activeElement?.classList.contains('cm-content') ?? false;
-    document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await sleep(50);
-    return { intoBody, left: !document.activeElement?.classList.contains('cm-content') }`)
-  assert.deepEqual(keys, { intoBody: true, left: true })
+  // A cancelled title edit is not saved. Real keyboard events move focus into the body and back to reading.
+  await run(`const title = $('.inline-title'); title.focus(); setValue(title, 'Discard this title')`)
+  await key('Escape')
+  assert.equal(await run(`return $('.inline-title').value`), 'My Home')
+  assert.match(await readFile(join(workspace, 'pages', 'Home.md'), 'utf8'), /title: My Home/)
+  await run(`$('.inline-title').focus()`)
+  await key('Enter')
+  assert.equal(await run(`return document.activeElement?.classList.contains('cm-content')`), true, 'Enter focuses the page body')
+  await key('Escape')
+  assert.equal(await run(`return document.activeElement?.classList.contains('cm-content')`), false, 'Escape leaves body editing')
+  assert.equal(await run(`return getComputedStyle($('.pane-body'), '::-webkit-scrollbar').width`), '0px', 'Reading has no scrollbar gutter')
 
   // The explorer lists the workspace; the ribbon opens views as tabs; the assistant has one toggle.
   const shell = await run<{ explorer: string[]; toggles: number; ribbon: string[] }>(`await showSidebar(); return { explorer: $$('.tree-row .tree-label').map((item) => item.textContent),
@@ -156,6 +161,9 @@ try {
   assert.match(await run<string>(`await sleep(100); return $('.tab.active')?.textContent ?? ''`), /My Home/, 'Mod+1 shows the first tab')
   await key('9', mod)
   assert.match(await run<string>(`await sleep(100); return $('.tab.active')?.textContent ?? ''`), /Sam Rivera/, 'Mod+9 shows the last tab')
+  const tabCount = await run<number>(`return $$('.tab').length`)
+  await key('w', mod)
+  assert.equal(await run<number>(`await sleep(100); return $$('.tab').length`), tabCount - 1, 'Mod+W closes the active tab')
 
   // Panes: split, open beside, move a tab, and close a pane without losing files.
   const panes = await run<{ split: number; moved: boolean; closed: number }>(`click($('[aria-label^="Pane actions"]')); await sleep(80); click(byText('.menu-item', 'Split right'));
@@ -215,17 +223,20 @@ try {
   assert.equal(reviewed, true)
 
   // Settings is a dialog: shortcuts, appearance, and module switches.
-  const settings = await run<{ rows: number; light: boolean; calendarHidden: boolean; calendarBack: boolean }>(`click($('.ribbon-btn[aria-label="Settings"]')); await waitFor(() => $('.settings-dialog'));
+  const settings = await run<{ rows: number; light: boolean; calendarHidden: boolean; calendarBack: boolean; scrollbarToggle: boolean }>(`click($('.ribbon-btn[aria-label="Settings"]')); await waitFor(() => $('.settings-dialog'));
     click(byText('.settings-nav button', 'Shortcuts')); await waitFor(() => $$('.settings-shortcuts tr').length); const rows = $$('.settings-shortcuts tbody tr').length;
+    click(byText('.settings-nav button', 'Editor')); await sleep(50); click($('.switch[aria-label="Hide scrollbars"]'));
+    const visible = Boolean(await waitFor(() => document.documentElement.dataset.scrollbars === 'always' && getComputedStyle($('.pane-body'), '::-webkit-scrollbar').width === '10px'));
+    click($('.switch[aria-label="Hide scrollbars"]')); const scrollbarToggle = visible && Boolean(await waitFor(() => document.documentElement.dataset.scrollbars === 'auto'));
     click(byText('.settings-nav button', 'General')); await sleep(50); click(byText('.settings-dialog .segmented button', 'Light')); await sleep(100);
     const light = document.documentElement.dataset.theme === 'light';
     click(byText('.settings-nav button', 'Modules')); await sleep(50); click($('.switch[aria-label="Calendar"]'));
     const calendarHidden = Boolean(await waitFor(() => !$$('.ribbon-btn').some((item) => item.getAttribute('aria-label') === 'Calendar')));
     click($('.switch[aria-label="Calendar"]')); const calendarBack = Boolean(await waitFor(() => $$('.ribbon-btn').some((item) => item.getAttribute('aria-label') === 'Calendar')));
     click(byText('.settings-nav button', 'General')); await sleep(50); click(byText('.settings-dialog .segmented button', 'Dark')); click($('.dialog-close'));
-    return { rows, light, calendarHidden, calendarBack }`)
+    return { rows, light, calendarHidden, calendarBack, scrollbarToggle }`)
   assert.ok(settings.rows > 10, 'Settings lists every command with its shortcut')
-  assert.deepEqual({ ...settings, rows: true }, { rows: true, light: true, calendarHidden: true, calendarBack: true })
+  assert.deepEqual({ ...settings, rows: true }, { rows: true, light: true, calendarHidden: true, calendarBack: true, scrollbarToggle: true })
 
   // Chat mode, and conversation settings for a read scope limited to chosen knowledge.
   const chat = await run<{ composer: boolean; scope: string; suggestions: string }>(`click(byText('.ribbon-mode button', 'Chat')); await waitFor(() => $('.chat-main .composer'));

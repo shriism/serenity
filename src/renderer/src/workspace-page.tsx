@@ -62,6 +62,7 @@ export function WorkspacePageView({ page, workspace, context, onUpdate, onError 
   const [title, setTitle] = useState(draft.title)
   useEffect(() => setTitle(draft.title), [draft.title])
   const body = useRef<EditorHandle | null>(null)
+  const cancelTitle = useRef(false)
 
   async function commitTitle(): Promise<void> {
     const next = title.trim()
@@ -81,11 +82,14 @@ export function WorkspacePageView({ page, workspace, context, onUpdate, onError 
     <SaveIndicator state={state}/>
     <ConflictBar state={state} what="page" onResolve={resolve}/>
     <input className="inline-title" value={title} aria-label="Page title" spellCheck={false}
-      onChange={(event) => setTitle(event.target.value)} onBlur={() => void commitTitle()}
+      onChange={(event) => setTitle(event.target.value)} onBlur={() => {
+        if (cancelTitle.current) { cancelTitle.current = false; return }
+        void commitTitle()
+      }}
       onKeyDown={(event) => {
         // Enter continues into the page, as in a document editor; Escape puts the title back.
         if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); body.current?.focusStart() }
-        else if (event.key === 'Escape') { setTitle(draft.title); event.currentTarget.blur() }
+        else if (event.key === 'Escape') { event.preventDefault(); cancelTitle.current = true; setTitle(draft.title); event.currentTarget.blur() }
       }}/>
     <MarkdownEditor handle={body} value={draft.body} onChange={(text) => setDraft({ ...draft, body: text })} onBlur={() => void flush()} context={context}
       label={`${draft.title} text`} placeholder="Start writing. Type [[ to link a page, entity, or document."/>

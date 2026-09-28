@@ -117,7 +117,7 @@ export function SettingsDialog({ workspace, shortcuts, theme, onThemeChange, onC
           <p className="hint">These apply on this device, in every workspace.</p>
           {([
             ['escapeLeavesEditing', 'Escape leaves editing', 'Press Esc to stop editing a page or note and read it without Markdown syntax.'],
-            ['autoHideScrollbars', 'Hide scrollbars until scrolling', 'Scrollbars appear while you scroll or point at them, instead of always.'],
+            ['autoHideScrollbars', 'Hide scrollbars', 'Keep pages and lists scrollable without a visible scrollbar or gutter.'],
             ['numberedTabShortcuts', 'Switch tabs with ⌘/Ctrl-1…9', '1–8 go to that tab in the focused pane and 9 to the last one. The shortcuts can also be changed under Shortcuts.']
           ] as [keyof Preferences, string, string][]).map(([key, title, detail]) => <div key={key} className="setting-row">
             <div><strong>{title}</strong><small>{detail}</small></div>

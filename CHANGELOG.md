@@ -2,6 +2,13 @@
 
 Serenity's notable changes, newest first. The workspace format stays readable Markdown and YAML; entries note anything that adds to it.
 
+## Unreleased
+
+- Escape leaves page, note, and text-document editing; Enter in a page title moves into its body, while Escape cancels a title change.
+- Scrollbars can be hidden without leaving a gutter, or shown again in Settings. The editor and tab-number shortcuts have their own switches.
+- Command shortcuts, including the tab shortcuts, can be changed or cleared per workspace in Settings.
+- Markdown and plain-text documents can be created and edited in place with autosave and revision checks.
+
 ## 2.0.0 (2026-09-28)
 
 A rebuilt interface that looks and behaves like a native desktop app. The workspace format is unchanged, and layouts saved by 1.x are restored.

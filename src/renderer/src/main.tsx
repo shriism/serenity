@@ -126,20 +126,9 @@ function App() {
 
   useEffect(() => { window.serenity.setWindowTheme(resolvedTheme) }, [resolvedTheme])
   const prefs = usePreferences()
-  // Auto-hiding scrollbars show while an area scrolls, then fade; the choice is a device preference.
+  // This device preference hides the scrollbar gutter while keeping content scrollable.
   useEffect(() => {
     document.documentElement.dataset.scrollbars = prefs.autoHideScrollbars ? 'auto' : 'always'
-    if (!prefs.autoHideScrollbars) return
-    const timers = new WeakMap<Element, number>()
-    const scrolled = (event: Event): void => {
-      const target = event.target instanceof Element ? event.target : document.scrollingElement
-      if (!target) return
-      target.classList.add('is-scrolling')
-      window.clearTimeout(timers.get(target))
-      timers.set(target, window.setTimeout(() => target.classList.remove('is-scrolling'), 900))
-    }
-    document.addEventListener('scroll', scrolled, true)
-    return () => document.removeEventListener('scroll', scrolled, true)
   }, [prefs.autoHideScrollbars])
   useEffect(() => {
     const resize = (): void => setWindowWidth(window.innerWidth)

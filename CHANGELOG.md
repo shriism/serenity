@@ -19,6 +19,7 @@ A rebuilt interface that looks and behaves like a native desktop app. The worksp
 - Calendar, Tasks, Review, Documents, Knowledge, Activity, and Search open as tabs like any file. An empty tab offers quick actions. Closing a tab shows the one beside it.
 - Settings is a dialog with sections, and new entities are named in a short dialog that points out possible duplicates.
 - An application menu lists every action with its shortcut. New tab (**⌘T**), Close tab (**⌘W**, which no longer closes the window), Next and Previous tab (**⌘⇧]** / **⌘⇧[**), Settings (**⌘,**), New page (**⌘N**), and Open another workspace (**⌘O**) are new. The menu no longer includes developer tools in release builds.
+- Files in the sidebar and tabs have right-click menus: open in the next pane, copy a `[[link]]`, close other tabs or tabs to the right, and move or split a tab.
 - The sidebars can be resized and float over the content in narrow windows. Pane content adapts to the pane's width.
 - Errors appear as dismissible notifications, and unreadable files are listed from the sidebar.
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Activity, CalendarDays, Columns2, FileText, Files, Inbox, ListTodo, MoreHorizontal, Network, NotebookText, Plus, Rows2, Search, SquareX, X, CircleDot } from 'lucide-react'
 import type { TabRef } from './resource-routing'
 import { tabDragType } from './pane-layout'
-import { MenuButton, type MenuItem } from './menu'
+import { MenuButton, useContextMenu, type MenuItem } from './menu'
 
 export interface PaneTab { key: string; tab: TabRef; title: string }
 
@@ -16,7 +16,7 @@ export function TabIcon({ tab, size = 14 }: { tab: TabRef; size?: number }) {
  * A pane's tab strip, with its own actions. The top row of panes sits in the window's title bar, so the empty part of
  * the strip moves the window there.
  */
-export function PaneHeader({ group, position, tabs, active, splittable, closable, trailing, onSelect, onClose, onNewTab, onDropTab, onSplit, onClosePane, menu }: {
+export function PaneHeader({ group, position, tabs, active, splittable, closable, trailing, onSelect, onClose, onNewTab, onDropTab, onSplit, onClosePane, menu, tabMenu }: {
   group: string
   /** 1-based pane number, used in accessible names when there are several. */
   position?: number
@@ -35,7 +35,10 @@ export function PaneHeader({ group, position, tabs, active, splittable, closable
   onClosePane(): void
   /** Further pane actions, such as moving the shown tab. */
   menu: MenuItem[]
+  /** Actions for a tab's right-click menu. */
+  tabMenu(key: string): MenuItem[]
 }) {
+  const contextMenu = useContextMenu()
   const [insertBefore, setInsertBefore] = useState<string | null>(null)
   const strip = useRef<HTMLDivElement>(null)
   // Keep the shown tab in view when a narrow pane scrolls its tab strip.
@@ -62,7 +65,8 @@ export function PaneHeader({ group, position, tabs, active, splittable, closable
         onDragOver={(event) => { if (!event.dataTransfer.types.includes(tabDragType)) return; event.preventDefault(); event.stopPropagation(); setInsertBefore(key) }}
         onDragLeave={() => setInsertBefore(null)}
         onDrop={(event) => { const dragged = read(event.dataTransfer); setInsertBefore(null); if (!dragged) return; event.preventDefault(); event.stopPropagation(); onDropTab(dragged, key) }}
-        onAuxClick={(event) => { if (event.button === 1) { event.preventDefault(); onClose(key) } }}>
+        onAuxClick={(event) => { if (event.button === 1) { event.preventDefault(); onClose(key) } }}
+        onContextMenu={(event) => contextMenu.open(event, `${title} tab`, tabMenu(key))}>
         <button type="button" className="tab-label" title={title} onClick={() => onSelect(key)} aria-current={active === key ? 'page' : undefined}>
           <TabIcon tab={tab}/><span>{title}</span>
         </button>
@@ -77,6 +81,7 @@ export function PaneHeader({ group, position, tabs, active, splittable, closable
       <button type="button" className="icon-btn new-tab" onClick={onNewTab} aria-label={`New tab${paneName}`} title="New tab"><Plus size={15}/></button>
       <div className="tab-strip-fill"/>
     </div>
+    {contextMenu.element}
     <div className="pane-actions">
       <MenuButton label={`Pane actions${paneName}`} title="Pane actions" items={items} align="end"><MoreHorizontal size={16}/></MenuButton>
       {trailing}

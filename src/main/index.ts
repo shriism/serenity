@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, shell, type MenuItemConstructorOptions } from 'electron'
 import { externalLink } from '../shared/external-links'
 import { fileURLToPath } from 'node:url'
 import { watchWorkspace } from './workspace-watcher'
@@ -286,6 +286,8 @@ process.on('unhandledRejection', (reason) => console.error('Unhandled rejection 
 
 app.whenReady().then(async () => {
   ipcMain.on('editor:dirty', (_event, dirty: unknown) => { editorDirty = dirty === true })
+  // Plain text only, and bounded; the renderer has no clipboard access of its own.
+  ipcMain.on('clipboard:write', (_event, text: unknown) => { if (typeof text === 'string' && text.length <= 10000) clipboard.writeText(text) })
   ipcMain.on('window:theme', (event, theme: unknown) => {
     if (theme !== 'dark' && theme !== 'light') return
     windowTheme = theme

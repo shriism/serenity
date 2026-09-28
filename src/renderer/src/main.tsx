@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { AlertTriangle, ChevronDown, FolderOpen, History, Maximize2, MessageSquarePlus, MoreHorizontal, MoveRight, PanelLeft, PanelRight, RotateCw, Settings2, Trash2, X } from 'lucide-react'
+import { AlertTriangle, ChevronDown, Columns2, FolderOpen, History, Maximize2, MessageSquarePlus, MoreHorizontal, MoveRight, PanelLeft, PanelRight, RotateCw, Settings2, Trash2, X } from 'lucide-react'
 import type { Conversation, SearchResult, WorkspaceSnapshot } from '../../shared/types'
 import { useAssistant } from './use-assistant'
 import { ErrorBoundary } from './error-boundary'
@@ -619,7 +619,19 @@ function App() {
         onSplit={(direction) => splitPane(direction, group.id)} onClosePane={() => closeEditorGroup(group.id)}
         menu={[...(tab && multipleGroups ? [{ id: 'move', label: 'Move tab to next pane', icon: <MoveRight size={14}/>, run: () => moveTabToOtherGroup(group.id) }] : []),
           ...(tab ? [{ id: 'close-tab', label: 'Close tab', icon: <X size={14}/>, run: () => closeTab(tabKey(tab), group.id) }] : [])]}
-        trailing={edge.top && edge.right && !rightOpen && mode === 'workspace' ? assistantToggle : undefined}/>
+        trailing={edge.top && edge.right && !rightOpen && mode === 'workspace' ? assistantToggle : undefined}
+        tabMenu={(key) => {
+          const index = group.tabs.findIndex((item) => tabKey(item) === key)
+          const closeAll = (keys: string[]) => setWorkbench((current) => updateGroup(current, group.id, (item) => keys.reduce(removeTab, item)))
+          return [
+            { id: 'close', label: 'Close tab', icon: <X size={14}/>, detail: shortcut('tab.close'), run: () => closeTab(key, group.id) },
+            { id: 'others', label: 'Close other tabs', disabled: group.tabs.length < 2, run: () => closeAll(group.tabs.map(tabKey).filter((item) => item !== key)) },
+            { id: 'right', label: 'Close tabs to the right', disabled: index === group.tabs.length - 1, run: () => closeAll(group.tabs.slice(index + 1).map(tabKey)) },
+            { id: 'split', label: 'Open in new pane to the right', icon: <Columns2 size={14}/>, separated: true, disabled: !canSplit,
+              run: () => dropTab(group.id, key, group.id, 'right') },
+            ...(multipleGroups ? [{ id: 'move', label: 'Move to next pane', icon: <MoveRight size={14}/>, run: () => { const target = nextGroupId(workbench, group.id); if (target) setWorkbench((current) => moveTab(current, group.id, key, target)) } }] : [])
+          ]
+        }}/>
       {tab && isResourceTab(tab) && <div className="view-bar">
         <nav className="view-path" aria-label="Location" title={tabPath(snapshot, tab)}>{breadcrumb(snapshot, tab).map((crumb, index, all) =>
           <span key={index} className={index === all.length - 1 ? 'current' : ''}>{crumb}</span>)}</nav>

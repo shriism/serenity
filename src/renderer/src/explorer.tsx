@@ -1,5 +1,6 @@
 import { memo, useMemo, useState, type MouseEvent } from 'react'
-import { ChevronRight, FilePlus2, FileText, FileUp, Search, UserPlus, X } from 'lucide-react'
+import { ChevronRight, Columns2, Copy, ExternalLink, FilePlus2, FileText, FileUp, Search, UserPlus, X } from 'lucide-react'
+import { useContextMenu } from './menu'
 import type { WorkspaceSnapshot } from '../../shared/types'
 import { resourceUri } from '../../shared/resources'
 import { entityTypes } from '../../shared/library'
@@ -33,6 +34,7 @@ export const Explorer = memo(function Explorer({ workspace, activeUri, onOpen, o
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [filter, setFilter] = useState('')
   const [filtering, setFiltering] = useState(false)
+  const contextMenu = useContextMenu()
 
   const folders = useMemo<Folder[]>(() => {
     const pages: Folder = { id: 'pages', title: 'Pages', items: [...workspace.pages]
@@ -75,7 +77,12 @@ export const Explorer = memo(function Explorer({ workspace, activeUri, onOpen, o
       {!closed && <ul role="group">
         {folder.items.slice(0, limit).map((item) => <li key={item.uri} role="treeitem" aria-level={depth + 1} aria-selected={item.uri === activeUri}>
           <button type="button" className={`tree-row ${item.uri === activeUri ? 'active' : ''}`} style={{ paddingLeft: 22 + (depth - 1) * 12 }}
-            onClick={open(item.uri)} title={item.detail ? `${item.title} · ${item.detail}` : item.title}>
+            onClick={open(item.uri)} title={item.detail ? `${item.title} · ${item.detail}` : item.title}
+            onContextMenu={(event) => contextMenu.open(event, `${item.title} actions`, [
+              { id: 'open', label: item.detail ? 'Open in its app' : 'Open', icon: item.detail ? <ExternalLink size={14}/> : <FileText size={14}/>, run: () => onOpen(item.uri, false) },
+              ...(item.detail ? [] : [{ id: 'side', label: 'Open in next pane', icon: <Columns2 size={14}/>, detail: '⌘-click', run: () => onOpen(item.uri, true) }]),
+              { id: 'link', label: 'Copy link', icon: <Copy size={14}/>, detail: `[[${item.title}]]`.length > 24 ? undefined : `[[${item.title}]]`, separated: true, run: () => window.serenity.copyText(`[[${item.title}]]`) }
+            ])}>
             <span className="tree-label">{item.title}</span>
           </button>
         </li>)}
@@ -100,6 +107,7 @@ export const Explorer = memo(function Explorer({ workspace, activeUri, onOpen, o
     {filtering && <div className="sidebar-filter"><input autoFocus value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Filter by name"
       aria-label="Filter files by name" onKeyDown={(event) => { if (event.key === 'Escape') { event.stopPropagation(); setFiltering(false); setFilter('') } }}/>
       {filter && <button type="button" className="icon-btn" onClick={() => setFilter('')} aria-label="Clear filter"><X size={13}/></button>}</div>}
+    {contextMenu.element}
     <div className="tree-scroll">
       <ul className="tree" role="tree" aria-label="Workspace files">
         {shown.filter((folder) => folder.id === 'pages').map((folder) => renderFolder(folder, 1))}

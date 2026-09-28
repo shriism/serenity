@@ -252,6 +252,7 @@ export interface SerenityAPI {
   forgetRecentWorkspace(path: string): Promise<{ path: string; name: string; available: boolean }[]>
   /** Matches the system-drawn title bar controls to the app's appearance. */
   setWindowTheme(theme: 'dark' | 'light'): void
+  copyText(text: string): void
   /** Runs when a command is chosen from the application menu. */
   onMenuCommand(callback: (id: string) => void): () => void
   refresh(): Promise<WorkspaceSnapshot | null>

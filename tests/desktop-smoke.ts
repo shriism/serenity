@@ -106,6 +106,11 @@ try {
   const hidden = await run(`click($('button[aria-label="Hide assistant"]')); await waitFor(() => !$('.right-sidebar')); const shown = Boolean($('button[aria-label="Show assistant"]'));
     click($('button[aria-label="Show assistant"]')); await waitFor(() => $('.right-sidebar')); return shown && $$('button[aria-label="Hide assistant"]').length === 1`)
   assert.equal(hidden, true, 'The same single toggle hides and shows the assistant')
+  const contextMenu = await run<string[]>(`const row = byText('.tree-row', 'research.pdf'); const rect = row.getBoundingClientRect();
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: rect.left + 10, clientY: rect.top + 5 }));
+    await waitFor(() => $('.menu.context')); const labels = $$('.menu.context .menu-label').map((item) => item.textContent);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); $('.menu.context')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await sleep(50); return labels`)
+  assert.deepEqual(contextMenu, ['Open', 'Open in next pane', 'Copy link'], 'Files have a right-click menu')
 
   // New entity dialog, notes with a wikilink, a sourced fact, and other views of the entity.
   await run(`click(byText('.sidebar-actions button', 'New entity')); await waitFor(() => $('#new-entity-title'));

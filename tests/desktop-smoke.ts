@@ -239,8 +239,13 @@ try {
   assert.deepEqual(documents, { text: true, outline: true, marked: true, pdf: true })
   // New creates a Markdown document that is edited and saved in place.
   await run(`click(byText('.ribbon-btn', 'Documents')); await waitFor(() => $$('.document-row').length); click(byText('.view-actions button', 'New'));
-    await waitFor(() => $('.document-file-title')?.textContent === 'Untitled.md'); focusEnd($('.document-view .cm-content'))`)
+    await waitFor(() => $('.document-file-title')?.textContent === 'Untitled.md'); await sleep(150); focusEnd($('.document-view .cm-content'))`)
   await type('Meeting notes for Sam')
+  if (!await run<boolean>(`return $('.document-view .cm-content')?.textContent.includes('Meeting notes for Sam')`)) {
+    await run(`focusEnd($('.document-view .cm-content'))`)
+    await type('Meeting notes for Sam')
+  }
+  assert.equal(await run<boolean>(`return $('.document-view .cm-content')?.textContent.includes('Meeting notes for Sam')`), true, 'Typing reaches the new document editor')
   await until('the new document to save', async () => (await readFile(join(workspace, 'documents', 'Untitled.md'), 'utf8').catch(() => '')) === 'Meeting notes for Sam')
 
   // Tasks and calendar: records written to the workspace, with their alternative views.

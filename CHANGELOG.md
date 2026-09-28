@@ -8,6 +8,7 @@ Serenity's notable changes, newest first. The workspace format stays readable Ma
 - Scrollbars can be hidden without leaving a gutter, or shown again in Settings. The editor and tab-number shortcuts have their own switches.
 - Command shortcuts, including the tab shortcuts, can be changed or cleared per workspace in Settings.
 - Markdown and plain-text documents can be created and edited in place with autosave and revision checks.
+- Arrow keys can move into a live query to edit its YAML directly; clicking the preview's open space does the same without a separate Edit button.
 
 ## 2.0.0 (2026-09-28)
 

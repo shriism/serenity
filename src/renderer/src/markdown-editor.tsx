@@ -2,7 +2,7 @@ import { useEffect, useRef, type MutableRefObject } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { EditorSelection, EditorState, StateEffect, StateField, type Extension, type Range } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType, keymap, placeholder, type DecorationSet } from '@codemirror/view'
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { cursorLineDown, cursorLineUp, defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { markdown, markdownKeymap, markdownLanguage } from '@codemirror/lang-markdown'
 import { HighlightStyle, ensureSyntaxTree, syntaxHighlighting, syntaxTree } from '@codemirror/language'
 import { autocompletion, completionKeymap, type CompletionContext, type CompletionResult } from '@codemirror/autocomplete'
@@ -69,15 +69,19 @@ class RuleWidget extends WidgetType {
   toDOM(): HTMLElement { const hr = document.createElement('span'); hr.className = 'cm-rule'; return hr }
 }
 
-/** A `serenity-query` block shown as its live result. Its own button moves the cursor in to edit the YAML. */
+/** A `serenity-query` block shown as its live result while the cursor is outside its source. */
 class QueryWidget extends WidgetType {
   constructor(readonly source: string, readonly context: EditorContext) { super() }
   eq(other: QueryWidget): boolean { return other.source === this.source && other.context === this.context }
   private render(root: Root, dom: HTMLElement, view: EditorView): void {
-    root.render(<div className="cm-query-card">
+    root.render(<div className="cm-query-card" onMouseDown={(event) => {
+      if ((event.target as HTMLElement).closest('button, a, input, select, textarea')) return
+      event.preventDefault()
+      const at = view.posAtDOM(dom)
+      view.dispatch({ selection: { anchor: at } })
+      view.focus()
+    }}>
       <LiveQuery source={this.source} workspace={this.context.workspace} onOpen={this.context.open}/>
-      <button type="button" className="cm-query-edit" title="Edit this live list" aria-label="Edit this live list"
-        onMouseDown={(event) => { event.preventDefault(); const at = view.posAtDOM(dom); view.dispatch({ selection: { anchor: at } }); view.focus() }}>Edit</button>
     </div>)
   }
   toDOM(view: EditorView): HTMLElement {
@@ -240,6 +244,34 @@ function wikilinkCompletions(completion: CompletionContext): CompletionResult | 
     options: wikilinkSuggestions(context.workspace, query, 20).map((item) => ({ label: item.title, detail: item.kind, apply: closed ? item.title : `${item.title}]]` })) }
 }
 
+/** Reveal a query's source when vertical cursor movement would otherwise step over its preview widget. */
+function enterQueryWithArrow(forward: boolean) {
+  return (view: EditorView): boolean => {
+    const selection = view.state.selection.main
+    if (!selection.empty) return false
+    const destination = view.moveVertically(selection, forward).head
+    const from = selection.head
+    let target: number | null = null
+    const tree = ensureSyntaxTree(view.state, Math.max(from, destination), 25) ?? syntaxTree(view.state)
+    tree.iterate({ from: Math.min(from, destination), to: Math.max(from, destination), enter(node) {
+      if (node.name !== 'FencedCode') return
+      if (forward && target !== null) return false
+      const info = node.node.getChild('CodeInfo')
+      if (!info || view.state.sliceDoc(info.from, info.to).trim() !== 'serenity-query') return false
+      const start = view.state.doc.lineAt(node.from).from
+      const end = view.state.doc.lineAt(node.to).to
+      if (forward ? from < start && destination >= start : from > end && destination <= end) {
+        const source = node.node.getChild('CodeText')
+        target = source ? (forward ? source.from : source.to) : (forward ? start : end)
+      }
+      return false
+    } })
+    if (target === null) return forward ? cursorLineDown(view) : cursorLineUp(view)
+    view.dispatch({ selection: { anchor: target }, scrollIntoView: true })
+    return true
+  }
+}
+
 /** Wraps the selection in a Markdown marker, or removes it if already wrapped. */
 function toggleMarker(marker: string) {
   return (view: EditorView): boolean => {
@@ -269,6 +301,7 @@ function extensions(placeholderText: string, label: string, onChange: (text: str
     markdown({ base: markdownLanguage, addKeymap: false }), syntaxHighlighting(highlight),
     autocompletion({ override: [wikilinkCompletions], icons: false }),
     keymap.of([{ key: 'Mod-b', run: toggleMarker('**') }, { key: 'Mod-i', run: toggleMarker('*') },
+      { key: 'ArrowDown', run: enterQueryWithArrow(true) }, { key: 'ArrowUp', run: enterQueryWithArrow(false) },
       ...markdownKeymap, ...completionKeymap, ...searchKeymap, ...historyKeymap, indentWithTab, ...defaultKeymap,
       // After suggestions and search have had their turn, Escape leaves the editor so the page reads without syntax.
       { key: 'Escape', run: (view) => { if (!preferences.get().escapeLeavesEditing) return false; view.contentDOM.blur(); return true } }]),

@@ -491,9 +491,7 @@ body.resizing .app, .app.switching-mode { transition: none; }
 .cm-task-done { color: var(--text-muted); text-decoration: line-through; }
 .cm-rule { display: inline-block; width: 100%; height: 1px; vertical-align: middle; background: var(--border-strong); }
 .cm-query { padding: 4px 0; }
-.cm-query-card { position: relative; }
-.cm-query-edit { position: absolute; top: 0; right: 0; height: 22px; padding: 0 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface-raised); color: var(--text-muted); font-size: 11.5px; opacity: 0; }
-.cm-query-card:hover .cm-query-edit, .cm-query-edit:focus-visible { opacity: 1; }
+.cm-query-card { cursor: text; }
 .cm-tooltip { border: 0 !important; border-radius: 8px; background: var(--surface-raised) !important; box-shadow: var(--shadow); overflow: hidden; }
 .cm-tooltip-autocomplete > ul { font-family: var(--font) !important; max-height: 260px !important; padding: 4px !important; }
 .cm-tooltip-autocomplete > ul > li { display: flex; gap: 8px; align-items: baseline; padding: 4px 8px !important; border-radius: 5px; color: var(--text); }

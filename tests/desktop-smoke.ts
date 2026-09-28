@@ -68,8 +68,8 @@ const run = <T = unknown>(script: string, timeout?: number) => app.evaluate<T>(`
 const shot = async (name: string) => { if (screenshots) await writeFile(join(screenshots, `${name}.png`), await app.screenshot()) }
 /** Types into the focused element as a person would, so editors see ordinary input events. */
 const type = (text: string) => app.send('Input.insertText', { text })
-const key = (key: string, modifiers = 0) => app.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: /^\d$/.test(key) ? `Digit${key}` : key.length === 1 ? `Key${key.toUpperCase()}` : key,
-  windowsVirtualKeyCode: key === 'Enter' ? 13 : key === 'Escape' ? 27 : key.toUpperCase().charCodeAt(0), modifiers }).then(() =>
+const key = (key: string, modifiers = 0) => app.send('Input.dispatchKeyEvent', { type: key.startsWith('Arrow') ? 'rawKeyDown' : 'keyDown', key, code: /^\d$/.test(key) ? `Digit${key}` : key.length === 1 ? `Key${key.toUpperCase()}` : key,
+  windowsVirtualKeyCode: ({ Enter: 13, Escape: 27, ArrowDown: 40, ArrowUp: 38 } as Record<string, number>)[key] ?? key.toUpperCase().charCodeAt(0), modifiers }).then(() =>
   app.send('Input.dispatchKeyEvent', { type: 'keyUp', key, modifiers }))
 const mod = process.platform === 'darwin' ? 4 : 2
 const until = async (label: string, check: () => Promise<boolean>, ms = 8000) => {
@@ -92,6 +92,15 @@ try {
   assert.match(home.review, /Alex/, 'Home should render a live review list from its Markdown file')
   assert.match(await readFile(join(workspace, 'pages', 'Home.md'), 'utf8'), /```serenity-query/)
   await shot('serenity-home')
+
+  // Arrow navigation into a live query reveals its editable source without a separate Edit button.
+  const queryCount = await run<number>(`return $$('.page-document .cm-query').length`)
+  await run(`const content = $('.page-document .cm-content'); const heading = $$('.page-document .cm-heading').find((line) => line.textContent.includes('Coming up'));
+    content.focus(); const range = document.createRange(); range.selectNodeContents(heading); range.collapse(false);
+    const selection = getSelection(); selection.removeAllRanges(); selection.addRange(range); await sleep(80)`)
+  for (let step = 0; step < 8 && await run<number>(`return $$('.page-document .cm-query').length`) === queryCount; step++) await key('ArrowDown')
+  assert.equal(await run<number>(`return $$('.page-document .cm-query').length`), queryCount - 1, 'ArrowDown enters the query source')
+  assert.match(await run<string>(`return $('.page-document .cm-content').textContent`), /```serenity-queryfrom: upcoming/, 'The query YAML is editable')
 
   // Live preview editing, saved without a Save button.
   await run(`const content = $('.page-document .cm-content'); focusEnd(content)`)

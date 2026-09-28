@@ -209,7 +209,8 @@ function applicationMenu(): Menu {
 function createWindow(): void {
   closeApproved = false
   window = new BrowserWindow({
-    show: !background,
+    // CI may render an unattended window while retaining background crash recovery.
+    show: !background || process.argv.includes('--show-window'),
     // `--window-size=WIDTHxHEIGHT` opens at a given size, e.g. to check a small window in automated tests.
     width: requestedSize?.[0] ?? 1280,
     height: requestedSize?.[1] ?? 820,

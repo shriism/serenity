@@ -30,7 +30,7 @@ export async function launch(workspace: string, options: { executable?: string; 
   const ownsProfile = !options.keepProfile && !options.profile
   const port = 20000 + Math.floor(Math.random() * 30000)
   const child = spawn(electron, [`--remote-debugging-port=${port}`, ...(profile ? [`--user-data-dir=${profile}`] : []),
-    ...(process.env.SERENITY_SMOKE_VISIBLE ? [] : ['--background']), ...(options.windowSize ? [`--window-size=${options.windowSize}`] : []), ...(options.executable ? [] : ['.']), ...(workspace ? [`--workspace=${workspace}`] : [])],
+    '--background', ...(process.env.SERENITY_SMOKE_VISIBLE ? ['--show-window'] : []), ...(options.windowSize ? [`--window-size=${options.windowSize}`] : []), ...(options.executable ? [] : ['.']), ...(workspace ? [`--workspace=${workspace}`] : [])],
   { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env } })
   let output = ''
   child.stdout?.on('data', (chunk: Buffer) => { output += chunk.toString() })

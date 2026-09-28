@@ -276,22 +276,45 @@ try {
     return Boolean(await waitFor(() => $$('.fc-event').some((item) => item.textContent.includes('Lunch with Sam at noon'))))`)
   assert.equal(editedEvent, true, 'Editing a FullCalendar event saves through Serenity')
   if (!(await run<boolean>(`return $('.app').classList.contains('narrow')`))) {
+    await until('the calendar editor to close', () => run<boolean>(`return !$('.calendar-event-dialog')`))
     const tomorrow = futureDate(1)
     const eventDrag = await run<{ from: { x: number; y: number }; to: { x: number; y: number } }>(`const item = $$('.fc-event').find((element) => element.textContent.includes('Lunch with Sam at noon'));
       item.scrollIntoView({ block: 'center', inline: 'nearest' }); await sleep(120);
       const event = item.getBoundingClientRect();
       const day = $('.fc-daygrid-day[data-date="${tomorrow}"]').getBoundingClientRect();
-      return { from: { x: event.x + event.width / 2, y: event.y + event.height / 2 }, to: { x: day.x + day.width / 2, y: day.y + day.height / 2 } }`)
-    await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...eventDrag.from, button: 'left', clickCount: 1 })
-    await delay(60)
-    for (let step = 1; step <= 10; step++) {
-      await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: eventDrag.from.x + (eventDrag.to.x - eventDrag.from.x) * step / 10,
-        y: eventDrag.from.y + (eventDrag.to.y - eventDrag.from.y) * step / 10, button: 'left', buttons: 1 })
-      await delay(20)
+      const from = { x: event.x + event.width / 2, y: event.y + event.height / 2 };
+      const to = { x: day.x + day.width / 2, y: day.y + day.height / 2 };
+      if (!item.contains(document.elementFromPoint(from.x, from.y))) throw new Error('Calendar drag source is obscured or outside the viewport');
+      if (document.elementFromPoint(to.x, to.y)?.closest('.fc-daygrid-day')?.dataset.date !== '${tomorrow}') throw new Error('Calendar drop target is obscured or outside the viewport');
+      return { from, to }`)
+    await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...eventDrag.from, buttons: 0 })
+    await run(`window.__calendarPointer = [];
+      window.__recordCalendarPointer = (event) => window.__calendarPointer.push({ type: event.type, x: event.clientX, y: event.clientY, buttons: event.buttons, target: event.target.closest('.fc-event')?.textContent ?? event.target.className });
+      for (const type of ['mousedown', 'mousemove', 'mouseup']) document.addEventListener(type, window.__recordCalendarPointer, true)`)
+    try {
+      await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...eventDrag.from, button: 'left', buttons: 1, clickCount: 1 })
+      assert.equal(await run<boolean>(`return window.__calendarPointer.some((event) => event.type === 'mousedown' && event.buttons === 1 && event.target.includes('Lunch with Sam at noon'))`), true,
+        'The calendar must receive the pressed mouse button at the drag source')
+      await delay(60)
+      for (let step = 1; step <= 10; step++) {
+        await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: eventDrag.from.x + (eventDrag.to.x - eventDrag.from.x) * step / 10,
+          y: eventDrag.from.y + (eventDrag.to.y - eventDrag.from.y) * step / 10, button: 'left', buttons: 1 })
+        await delay(20)
+      }
+      await delay(60)
+      await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...eventDrag.to, button: 'left', buttons: 0, clickCount: 1 })
+      await until('the dragged calendar event to save', async () => (await app.evaluate<WorkspaceSnapshot>('window.serenity.refresh()')).events.some((item) => item.title === 'Lunch with Sam at noon' && item.start === tomorrow))
+    } catch (error) {
+      const diagnostic = JSON.stringify({ expected: eventDrag, received: await run('return window.__calendarPointer') }, null, 2)
+      console.error('Calendar drag diagnostics:', diagnostic)
+      if (process.env.SERENITY_SMOKE_ARTIFACT_DIR) {
+        await mkdir(process.env.SERENITY_SMOKE_ARTIFACT_DIR, { recursive: true })
+        await writeFile(join(process.env.SERENITY_SMOKE_ARTIFACT_DIR, 'calendar-drag.json'), diagnostic)
+      }
+      throw error
+    } finally {
+      await run(`for (const type of ['mousedown', 'mousemove', 'mouseup']) document.removeEventListener(type, window.__recordCalendarPointer, true); delete window.__recordCalendarPointer; delete window.__calendarPointer`)
     }
-    await delay(60)
-    await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...eventDrag.to, button: 'left', clickCount: 1 })
-    await until('the dragged calendar event to save', async () => (await app.evaluate<WorkspaceSnapshot>('window.serenity.refresh()')).events.some((item) => item.title === 'Lunch with Sam at noon' && item.start === tomorrow))
   }
   await shot('serenity-calendar')
   const agenda = await run(`click(byText('.task-view-toggle button', 'Agenda')); await waitFor(() => $('.calendar-agenda'));
@@ -414,6 +437,7 @@ try {
     await writeFile(join(diagnostics, 'failure.txt'), `${String(error)}\n${app.logs()}`)
     await app.screenshot().then((bytes) => writeFile(join(diagnostics, 'failure.png'), bytes)).catch(() => undefined)
     const state = await run(`return { theme: document.documentElement.dataset.theme, viewport: [innerWidth, innerHeight],
+      window: [outerWidth, outerHeight], screen: [screen.width, screen.height], devicePixelRatio,
       focused: document.activeElement?.outerHTML, app: $('.app')?.className, body: document.body.innerText }`).catch(String)
     await writeFile(join(diagnostics, 'state.json'), JSON.stringify(state, null, 2))
   }

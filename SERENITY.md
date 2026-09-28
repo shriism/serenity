@@ -822,3 +822,19 @@ workbench settings determine how resources appear and where commands are
 shown. Home is an editable workspace page, not a special dashboard
 renderer. AI may draft and suggest within the same validation and review
 boundaries, but does not gain arbitrary command or filesystem access.
+
+## Workbench Panes and First Release
+
+The central workspace behaves like Obsidian's panes rather than a fixed
+pair of editor groups. Any open pane can be split horizontally or
+vertically, resized, and closed without affecting its underlying files;
+tabs move between panes, and the arrangement is restored with the
+workspace. Narrow windows stay usable by showing one pane at a time.
+The focused pane is the assistant's primary context, and other visible
+panes add context within the conversation's read permissions. Panes
+serve the knowledge work; they are not the product.
+
+The first release milestone is a finished, hardened desktop workbench
+on macOS, Windows, and Linux, released as Serenity 1.0.0 in September
+2026. Installable plugins, external actions, sync, local models, and
+mobile remain later goals that need their own decisions.

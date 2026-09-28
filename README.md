@@ -47,8 +47,8 @@ Each pane has its own tabs and view, so a document, an entity's profile, its tim
 
 Each tab remembers how it shows its resource:
 
-- **Entity:** **Profile** (the editable narrative and claims), **Timeline** (when each claim was recorded, corrected, chosen as current, merged, or proposed by AI, plus linked events and tasks, with sources), or **Connections** (confirmed relationships both ways, shared events and tasks, and pages and notes that mention it with a wikilink).
-- **Document:** **Text**, an **Outline** for Markdown documents with headings (PDF and DOCX show text without an inferred outline), and **Knowledge from it**: the facts, entities, and plans that name it as their source, including retracted claims, so you can see and correct what a document taught you. Long text is revealed in steps.
+- **Entity:** **Profile** (the editable narrative and claims), **Timeline** (when each claim was recorded, corrected, chosen as current, merged, or proposed by AI, plus linked events and tasks, with sources, and filterable by kind), or **Connections** (confirmed relationships both ways, shared events and tasks, and pages and notes that mention it with a wikilink).
+- **Document:** **Text**, an **Outline** for Markdown documents with headings (PDF and DOCX show text without an inferred outline), and **Knowledge from it**: the facts, entities, and plans that name it as their source, including retracted claims, so you can see and correct what a document taught you; **Suggest connections between these** asks the assistant for sourced relationships among them. Long text is revealed in steps.
 - **Page:** **Page** or **Links** (resolved links, names that need disambiguation or have no match, and incoming wikilink mentions).
 - **Tasks:** a list or a due-date board (Overdue, Next 7 days, Later, No date, Completed). The board groups existing tasks and adds no stored status.
 - **Calendar:** a month grid or an Agenda of that month's events and open due tasks.
@@ -100,11 +100,11 @@ The assistant can use GitHub Copilot or OpenAI Codex. Connect an account with th
 
 Text formats (`.txt`, `.md`, `.csv`, `.json`, `.yaml`, `.yml`, `.pdf`, `.docx`) can be searched and analyzed. Other imported files stay in the workspace and open in their native application; the Documents view marks them as not text-extractable. Sourced claims and proposals link to a document when their source names it.
 
-Search combines on-device full-text indexing (titles weigh most, and records matching every word come first), locally ranked AI topic terms, and optional on-demand provider retrieval. Large workspaces are handled with a visible catalog and relevant excerpts rather than neural embeddings.
+Search combines on-device full-text indexing (titles weigh most, records matching every word come first, and each result shows where it matched), locally ranked AI topic terms, and optional on-demand provider retrieval. The index is rebuilt in the background when files change. PDF and DOCX text is extracted in a background worker, so a large document does not hold up editing. Large workspaces are handled with a visible catalog and relevant excerpts rather than neural embeddings.
 
 ## Shortcuts and customization
 
-Settings lists every command with its current shortcut and ID. To change shortcuts for a workspace, add a `keybindings` map to `.serenity/workbench.yaml` from command ID to chord (`Mod` is ⌘ on macOS and Ctrl elsewhere), or `null` to remove a default:
+Settings lists every command with its current shortcut and ID. Appearance and **Switch view of this tab** are commands too, so they can be searched for and bound to keys. To change shortcuts for a workspace, add a `keybindings` map to `.serenity/workbench.yaml` from command ID to chord (`Mod` is ⌘ on macOS and Ctrl elsewhere), or `null` to remove a default:
 
 ```yaml
 keybindings:
@@ -124,7 +124,7 @@ npm run build
 npm run smoke:desktop
 ```
 
-The desktop smoke test launches Electron against a temporary workspace and exercises files, IPC, search (including PDF/DOCX), panes, tasks, calendar, recovery from a crashed window, and an axe-core accessibility check in both themes. It needs a graphical desktop, runs Serenity with `--background` (a hidden window that never takes focus) and a temporary browser profile so your own settings are untouched, and shows the window with `SERENITY_SMOKE_VISIBLE=1`. Set `SERENITY_SMOKE_PROVIDER=copilot` or `codex` to also test a live conversation (this uses your normal profile, where credentials are stored), and `SERENITY_SMOKE_EXECUTABLE` to test a packaged executable. If your shell sets `ELECTRON_RUN_AS_NODE=1`, unset it first.
+The desktop smoke test launches Electron against a temporary workspace and exercises files, IPC, search (including PDF/DOCX), panes, wikilinks, tasks, calendar, recovery from a crashed window, and an axe-core accessibility check of every main view in both themes. It needs a graphical desktop, runs Serenity with `--background` (a hidden window that never takes focus) and a temporary browser profile so your own settings are untouched, and shows the window with `SERENITY_SMOKE_VISIBLE=1`. Set `SERENITY_SMOKE_PROVIDER=copilot` or `codex` to also test a live conversation (this uses your normal profile, where credentials are stored), and `SERENITY_SMOKE_EXECUTABLE` to test a packaged executable. If your shell sets `ELECTRON_RUN_AS_NODE=1`, unset it first.
 
 `npm run perf:desktop` times the app on a large synthetic workspace (2,000 entities, 8,000 claims) and fails if launch, navigation, typing, or search exceed their budgets.
 
@@ -132,4 +132,4 @@ To package for the current OS use `npm run dist`; `npm run dist:mac`, `npm run d
 
 ## Scope
 
-This release covers the local desktop workspace, Copilot and Codex, human-reviewed and permission-bounded AI updates, connected knowledge, internal calendar and tasks, document analysis, and hybrid retrieval. Packaged builds pass smoke tests on macOS, Windows, and Linux, and live Copilot and Codex conversations have been tested from the packaged macOS app; provider sign-in is needed on each device. External calendar sync, cloud sync, local models, mobile access, and installable plugins are future goals.
+This release covers the local desktop workspace, Copilot and Codex, human-reviewed and permission-bounded AI updates, connected knowledge, internal calendar and tasks, document analysis, and hybrid retrieval. Serenity 1.1.0 is the current release; installers for each platform are attached to its GitHub release with a `SHA256SUMS` file. Packaged builds pass smoke tests on macOS, Windows, and Linux, and live Copilot and Codex conversations have been tested from the packaged macOS app; provider sign-in is needed on each device. External calendar sync, cloud sync, local models, mobile access, and installable plugins are future goals.

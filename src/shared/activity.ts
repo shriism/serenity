@@ -2,6 +2,9 @@ import type { WorkspaceSnapshot } from './types'
 import { resourceUri } from './resources'
 import { entityRepresentative } from './identity'
 
+/** How a provider is named to people: Copilot or Codex, or the recorded name capitalized. */
+const providerName = (provider: string): string => provider === 'copilot' ? 'Copilot' : provider === 'codex' ? 'Codex' : `${provider.charAt(0).toUpperCase()}${provider.slice(1)}`
+
 export type ActivityKind = 'claim' | 'merge' | 'resolution' | 'identity' | 'event' | 'task' | 'proposal' | 'message'
 export interface ActivityItem { id: string; at: string; kind: ActivityKind; title: string; detail: string; uri?: string }
 
@@ -38,9 +41,9 @@ export function workspaceActivity(snapshot: WorkspaceSnapshot): ActivityItem[] {
     ...(snapshot.modules.tasks ? snapshot.tasks.map((item) => ({ id: `task:${item.id}`, at: item.recordedAt ?? item.due ?? '', kind: 'task' as const, title: item.title,
       detail: `${item.completed ? 'Completed' : 'Open'}${item.source ? ` · Source: ${item.source}` : ''}`, uri: resourceUri({ kind: 'task', id: item.id }) })) : []),
     ...snapshot.proposals.map((item) => ({ id: `proposal:${item.id}`, at: item.recordedAt, kind: 'proposal' as const,
-      title: `${item.provider.charAt(0).toUpperCase()}${item.provider.slice(1)} suggested ${item.kind === 'claim' ? `${item.key}: ${titles.get(item.value) ?? item.value}` : item.title}`, detail: item.status, uri: resourceUri({ kind: 'proposal', id: item.id }) })),
+      title: `${providerName(item.provider)} suggested ${item.kind === 'claim' ? `${item.key}: ${titles.get(item.value) ?? item.value}` : item.title}`, detail: item.status, uri: resourceUri({ kind: 'proposal', id: item.id }) })),
     ...snapshot.conversations.flatMap((conversation) => conversation.messages.map((message) => ({ id: `message:${message.id}`, at: message.recordedAt, kind: 'message' as const,
-      title: `${message.role === 'user' ? 'You' : message.provider ?? 'Assistant'} · ${conversation.title}`, detail: message.text.slice(0, 180),
+      title: `${message.role === 'user' ? 'You' : message.provider ? providerName(message.provider) : 'Assistant'} · ${conversation.title}`, detail: message.text.slice(0, 180),
       uri: conversation.retained ? resourceUri({ kind: 'conversation', id: conversation.id }) : undefined })))
   ]
   return items.sort((a, b) => b.at.localeCompare(a.at) || a.id.localeCompare(b.id))

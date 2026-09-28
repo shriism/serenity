@@ -1,10 +1,8 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { WorkspaceSnapshot } from '../../shared/types'
 import { workspaceGraph } from '../../shared/graph'
 
-const width = 1000
-const height = 640
-const margin = 60
+const margin = 48
 const labelled = 25
 
 /** The workspace's entities and their links, as a map to explore. Opening a node opens the entity. */
@@ -17,6 +15,17 @@ export function WorkspaceGraph({ workspace, ids, onOpenEntity }: {
 }) {
   const graph = useMemo(() => workspaceGraph(workspace, ids), [workspace.entities, workspace.claims, workspace.pages, workspace.documents, ids])
   const [hovered, setHovered] = useState<string | null>(null)
+  // Laid out at the pane's own width, so labels keep a readable size instead of shrinking with the drawing.
+  const frame = useRef<HTMLDivElement>(null)
+  const [width, setWidth] = useState(760)
+  useEffect(() => {
+    const element = frame.current
+    if (!element) return
+    const observer = new ResizeObserver(([entry]) => setWidth(Math.max(320, Math.round(entry.contentRect.width))))
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [graph.nodes.length > 0])
+  const height = Math.round(Math.min(640, Math.max(300, width * 0.62)))
   const place = (value: number, size: number): number => margin + value * (size - margin * 2)
   const position = new Map(graph.nodes.map((node) => [node.id, { x: place(node.x, width), y: place(node.y, height) }]))
   const neighbors = useMemo(() => {
@@ -30,7 +39,7 @@ export function WorkspaceGraph({ workspace, ids, onOpenEntity }: {
   const prominent = new Set([...graph.nodes].sort((a, b) => b.degree - a.degree).slice(0, labelled).filter((node) => node.degree > 0).map((node) => node.id))
   const near = (id: string): boolean => !hovered || id === hovered || Boolean(neighbors.get(hovered)?.has(id))
   if (!graph.nodes.length) return <p className="hint">No entities to show.</p>
-  return <div className="workspace-graph">
+  return <div className="workspace-graph" ref={frame}>
     <svg viewBox={`0 0 ${width} ${height}`} role="group" aria-label={`Graph of ${graph.nodes.length} entities and ${graph.edges.length} links`}>
       {graph.edges.map((edge) => { const a = position.get(edge.from)!; const b = position.get(edge.to)!
         return <line key={`${edge.from}|${edge.to}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y} strokeWidth={Math.min(1 + edge.weight * 0.5, 3)}

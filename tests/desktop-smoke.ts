@@ -378,7 +378,13 @@ try {
       const found = await run<string[]>(`${setup}; await sleep(400);
         await Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined)));
         const result = await axe.run(document, { resultTypes: ['violations'] });
-        return result.violations.filter((item) => item.impact === 'serious' || item.impact === 'critical').map((item) => item.id + ' (' + item.nodes.length + ') at ' + item.nodes[0].target.join(' ') + ': ' + (item.nodes[0].failureSummary ?? '').replace(/\\s+/g, ' ').slice(0, 280))`)
+        return result.violations.filter((item) => item.impact === 'serious' || item.impact === 'critical').map((item) => {
+          const target = document.querySelector(item.nodes[0].target.join(' '));
+          const root = getComputedStyle(document.documentElement);
+          return item.id + ' (' + item.nodes.length + ') at ' + item.nodes[0].target.join(' ') + ': ' + (item.nodes[0].failureSummary ?? '').replace(/\\s+/g, ' ').slice(0, 280) +
+            ' [theme=' + document.documentElement.dataset.theme + ', rootText=' + root.getPropertyValue('--text').trim() + ', rootBg=' + root.getPropertyValue('--chrome').trim() +
+            ', targetColor=' + (target && getComputedStyle(target).color) + ', parentColor=' + (target?.parentElement && getComputedStyle(target.parentElement).color) + ']';
+        })`)
       accessibility.push(...found.map((item) => `${theme} ${view}: ${item}`))
     }
   }

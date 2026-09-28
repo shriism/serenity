@@ -186,7 +186,8 @@ function App() {
       const binding = eventKeybinding(event, mac)
       const id = binding ? current.keymap.bindings.get(binding) : undefined
       const command = id ? current.registry?.get(id) : undefined
-      if (!command || event.repeat) return
+      // A key the focused editor already handled, such as Mod+B for bold, is not also a workbench command.
+      if (!command || event.repeat || event.defaultPrevented) return
       const typing = event.target instanceof HTMLElement && event.target.closest('input, textarea, select, [contenteditable="true"]')
       if (typing && !command.whileTyping) return
       event.preventDefault()

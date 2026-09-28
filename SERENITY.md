@@ -789,23 +789,31 @@ silently attach evidence based on a name match.
 
 ## Desktop Interface Direction
 
-Use one continuous desktop workbench with a compact icon dock, a
-focused central canvas, and a contextual AI collaborator. The dock
-reveals its labels horizontally over the canvas without shifting its
-logo or icons. Home should surface real knowledge, plans, recent
-changes, and review proposals rather than a metrics dashboard.
-Conversations, workflow controls, and provider selection belong in the
-right AI pane; its focus mode can expand over the center while leaving
-the navigation available. Open entities and supported documents remain
-in central tabs. The assistant knows the active file path and may read
-its content when permitted; it prioritizes relevant open files and
-discloses the records actually sent with each response. Keep fast search
-and an integrated Home overview of upcoming items, review proposals,
-and connections. Default to a restrained dark appearance, with Light
-and System choices available. Use a near-black / muted periwinkle
-identity plus a coordinated light palette. Give the active document
-the strongest emphasis; keep navigation, history, and advanced AI
-controls quieter than its content.
+Serenity should feel like a native desktop application in the manner of
+Obsidian and the ChatGPT and Claude apps, not a web page in a window.
+Content reaches the title bar, with tabs beside the system window
+controls; type, spacing, and colour follow the platform, with neutral
+greys and a single periwinkle accent kept for focus and selection.
+Default to a restrained dark appearance, with Light and System choices.
+
+The shell is a hybrid of two modes, switched at the top left. Workspace
+mode is for reading and editing: a ribbon of views and a file-tree
+explorer on the left, tabbed panes in the centre, and the assistant in a
+right sidebar with exactly one control to show or hide it. Chat mode is
+a full-window conversation with the list of conversations on the left.
+Views such as Calendar, Tasks, and Review open as tabs like files;
+Settings is a dialog. Home is an ordinary, quiet page of real knowledge,
+plans, recent changes, and suggestions waiting for review, not a
+dashboard or a landing page.
+
+Files are always editable in a live-preview Markdown editor: formatting
+shows as it will read, and syntax appears only where the cursor is.
+Edits are saved as the person works, never silently over a newer version
+on disk. The assistant knows the focused file and other visible panes,
+may read them when permitted, and discloses the records actually sent
+with each response. Give the active document the strongest emphasis;
+keep navigation, history, and advanced AI controls quieter than its
+content.
 
 ## Workspace as Its Own World
 

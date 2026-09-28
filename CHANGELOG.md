@@ -2,6 +2,39 @@
 
 Serenity's notable changes, newest first. The workspace format stays readable Markdown and YAML; entries note anything that adds to it.
 
+## 2.0.0 (2026-09-28)
+
+A rebuilt interface that looks and behaves like a native desktop app. The workspace format is unchanged, and layouts saved by 1.x are restored.
+
+### Window and navigation
+
+- Content reaches the title bar. Tabs sit beside the macOS traffic lights; on Windows and Linux they sit under the system window controls, which follow the app's appearance.
+- A switch at the top left moves between **Workspace** and **Chat** modes.
+  - Workspace mode has a ribbon of views and a file tree of pages, entities (grouped by type), and documents on the left, tabbed panes in the center, and the assistant on the right.
+  - Chat mode is a full-window conversation with your conversations listed beside it.
+- The assistant has a single control to show or hide it (**⌘J** / **Ctrl+J**), where there used to be two.
+- Calendar, Tasks, Review, Documents, Knowledge, Activity, and Search open as tabs like any file. An empty tab offers quick actions. Closing a tab shows the one beside it.
+- Settings is a dialog with sections, and new entities are named in a short dialog that points out possible duplicates.
+- An application menu lists every action with its shortcut. New tab (**⌘T**), Close tab (**⌘W**, which no longer closes the window), Next and Previous tab (**⌘⇧]** / **⌘⇧[**), Settings (**⌘,**), New page (**⌘N**), and Open another workspace (**⌘O**) are new. The menu no longer includes developer tools in release builds.
+- The sidebars can be resized and float over the content in narrow windows. Pane content adapts to the pane's width.
+- Errors appear as dismissible notifications, and unreadable files are listed from the sidebar.
+
+### Writing
+
+- Pages and entity notes are always editable, in a live-preview Markdown editor. Formatting shows as it reads, and syntax appears only on the line you are editing.
+  - Links and `[[wikilinks]]` open on click; task checkboxes tick in place.
+  - **⌘B** and **⌘I** toggle bold and italic.
+  - Live `serenity-query` lists render inside the page.
+- Edits are saved as you type, with no Save button. If a file changes on disk while you are editing it, Serenity asks which version to keep.
+- Titles are edited in place. Renaming a page, like an entity, offers to update the links that name it.
+- An entity shows its type as a property and its sourced facts as compact rows, with actions in a menu.
+- New workspaces' Home no longer repeats its title as a large heading.
+
+### Details
+
+- A system font, neutral greys, and one accent colour replace the display typefaces, and every view has a plain title row.
+- Search excerpts no longer show Markdown syntax, and live lists show linked entities by name rather than by ID.
+
 ## 1.1.0 (2026-09-27)
 
 Improvements after the first desktop release; no changes to the workspace format.

@@ -277,15 +277,16 @@ try {
   assert.equal(editedEvent, true, 'Editing a FullCalendar event saves through Serenity')
   if (!(await run<boolean>(`return $('.app').classList.contains('narrow')`))) {
     await until('the calendar editor to close', () => run<boolean>(`return !$('.calendar-event-dialog')`))
-    const tomorrow = futureDate(1)
+    // Keep the event in this month so the following Agenda checks also work on its last day.
+    const dropDate = futureDate(new Date().getDate() === 1 ? 1 : -1)
     const eventDrag = await run<{ from: { x: number; y: number }; to: { x: number; y: number } }>(`const item = $$('.fc-event').find((element) => element.textContent.includes('Lunch with Sam at noon'));
       item.scrollIntoView({ block: 'center', inline: 'nearest' }); await sleep(120);
       const event = item.getBoundingClientRect();
-      const day = $('.fc-daygrid-day[data-date="${tomorrow}"]').getBoundingClientRect();
+      const day = $('.fc-daygrid-day[data-date="${dropDate}"]').getBoundingClientRect();
       const from = { x: event.x + event.width / 2, y: event.y + event.height / 2 };
       const to = { x: day.x + day.width / 2, y: day.y + day.height / 2 };
       if (!item.contains(document.elementFromPoint(from.x, from.y))) throw new Error('Calendar drag source is obscured or outside the viewport');
-      if (document.elementFromPoint(to.x, to.y)?.closest('.fc-daygrid-day')?.dataset.date !== '${tomorrow}') throw new Error('Calendar drop target is obscured or outside the viewport');
+      if (document.elementFromPoint(to.x, to.y)?.closest('.fc-daygrid-day')?.dataset.date !== '${dropDate}') throw new Error('Calendar drop target is obscured or outside the viewport');
       return { from, to }`)
     await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...eventDrag.from, buttons: 0 })
     await run(`window.__calendarPointer = [];
@@ -303,7 +304,7 @@ try {
       }
       await delay(60)
       await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...eventDrag.to, button: 'left', buttons: 0, clickCount: 1 })
-      await until('the dragged calendar event to save', async () => (await app.evaluate<WorkspaceSnapshot>('window.serenity.refresh()')).events.some((item) => item.title === 'Lunch with Sam at noon' && item.start === tomorrow))
+      await until('the dragged calendar event to save', async () => (await app.evaluate<WorkspaceSnapshot>('window.serenity.refresh()')).events.some((item) => item.title === 'Lunch with Sam at noon' && item.start === dropDate))
     } catch (error) {
       const diagnostic = JSON.stringify({ expected: eventDrag, received: await run('return window.__calendarPointer') }, null, 2)
       console.error('Calendar drag diagnostics:', diagnostic)

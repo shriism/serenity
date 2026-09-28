@@ -16,7 +16,7 @@ interface Props {
   onOpenSource(name: string): void
 }
 
-const origins = { human: 'you said', 'ai-statement': 'AI extraction', 'ai-inference': 'AI inference' }
+const origins = { human: '', 'ai-statement': 'AI extraction', 'ai-inference': 'AI inference' }
 
 /** One sourced fact about an entity, with where it came from and what can be done with it. */
 export function ClaimCard({ claim, target, mergedFrom, conflicting, previousAlternative,
@@ -29,8 +29,8 @@ export function ClaimCard({ claim, target, mergedFrom, conflicting, previousAlte
         claim.key === 'context' ? <details className="fact-context"><summary>Attached context</summary><p>{claim.value}</p></details> : <span>{claim.value}</span>}
       {badge && <span className={`badge ${badge === 'Conflict' ? 'warning' : badge === 'Current' ? 'accent' : ''}`}>{badge}</span>}
       <small className="fact-meta">
-        {sourceDocument ? <button className="text-button" onClick={() => onOpenSource(sourceDocument)}>{claim.source}</button> : claim.source}
-        {' · '}{origins[(claim.origin ?? 'human') as keyof typeof origins] ?? claim.origin}
+        {sourceDocument ? <button className="text-button" onClick={() => onOpenSource(sourceDocument)}>{claim.source}</button> : claim.source === 'Me' ? 'Your statement' : claim.source}
+        {claim.origin && claim.origin !== 'human' ? ` · ${origins[claim.origin] ?? claim.origin}` : ''}
         {claim.confidence !== undefined ? ` · ${Math.round(claim.confidence * 100)}% confident` : ''}
         {mergedFrom ? ` · from ${mergedFrom.title}` : ''}{claim.retractionReason ? ` · ${claim.retractionReason}` : ''}
       </small>

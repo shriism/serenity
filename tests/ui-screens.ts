@@ -47,5 +47,12 @@ try {
   await shot('08-review-light')
   await run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: navigator.platform.includes('Mac'), ctrlKey: !navigator.platform.includes('Mac'), bubbles: true })); await sleep(150); const input = $('.palette-input input'); if (input) setValue(input, 'rover'); await sleep(400)`)
   await shot('09-palette-light')
+  await run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); click(byText('.tree-row', 'Alex Rivera')); await sleep(300)`)
+  await shot('10-entity-light')
+  await app.send('Emulation.setDeviceMetricsOverride', { width: 820, height: 700, deviceScaleFactor: 2, mobile: false })
+  await run(`window.dispatchEvent(new Event('resize')); await sleep(400)`)
+  await shot('11-narrow')
+  await run(`click($('button[aria-label="Show sidebar"]')); await sleep(300)`)
+  await shot('12-narrow-sidebar')
 } catch (error) { console.error(error); console.error(app.logs().slice(-3000)) }
 finally { await app.close() }

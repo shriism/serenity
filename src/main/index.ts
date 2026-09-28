@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type MenuItemConstructorOptions } from 'electron'
 import { externalLink } from '../shared/external-links'
 import { fileURLToPath } from 'node:url'
 import { watchWorkspace } from './workspace-watcher'
@@ -164,6 +164,40 @@ let windowTheme: keyof typeof windowColors = 'dark'
 
 // `--background` runs without taking focus or showing a window, e.g. for automated checks while someone keeps working.
 const background = process.argv.includes('--background')
+
+/**
+ * The application menu. Workbench items run renderer commands; their shortcuts are shown here but handled by the
+ * renderer's keymap (so a workspace can rebind them), while standard items such as Copy and Quit keep system behavior.
+ */
+function applicationMenu(): Menu {
+  const command = (label: string, id: string, accelerator?: string): MenuItemConstructorOptions =>
+    ({ label, accelerator, registerAccelerator: false, click: () => window?.webContents.send('menu:command', id) })
+  const mac = process.platform === 'darwin'
+  const template: MenuItemConstructorOptions[] = [
+    ...(mac ? [{ label: app.name, submenu: [{ role: 'about' }, { type: 'separator' }, command('Settings…', 'view.settings', 'CmdOrCtrl+,'), { type: 'separator' },
+      { role: 'services' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] } as MenuItemConstructorOptions] : []),
+    { label: 'File', submenu: [
+      command('New Page', 'page.create', 'CmdOrCtrl+N'), command('New Entity', 'entity.create'), command('New Tab', 'tab.new', 'CmdOrCtrl+T'), { type: 'separator' },
+      command('Open Another Workspace…', 'workspace.choose', 'CmdOrCtrl+O'), command('Import Documents…', 'documents.import'),
+      command(mac ? 'Reveal Workspace in Finder' : 'Open Workspace Folder', 'workspace.open-folder'), { type: 'separator' },
+      command('Close Tab', 'tab.close', 'CmdOrCtrl+W'), { role: 'close', accelerator: 'CmdOrCtrl+Shift+W' },
+      ...(mac ? [] : [{ type: 'separator' } as MenuItemConstructorOptions, command('Settings…', 'view.settings', 'CmdOrCtrl+,'), { role: 'quit' } as MenuItemConstructorOptions])
+    ] },
+    { role: 'editMenu' },
+    { label: 'View', submenu: [
+      command('Search…', 'workspace.search', 'CmdOrCtrl+K'), command('Search in a Pane', 'view.search', 'CmdOrCtrl+Shift+F'), { type: 'separator' },
+      command('Toggle Sidebar', 'navigation.toggle', 'CmdOrCtrl+B'), command('Toggle Assistant', 'assistant.toggle', 'CmdOrCtrl+J'),
+      command('Switch Between Workspace and Chat', 'assistant.expand', 'CmdOrCtrl+Shift+J'), { type: 'separator' },
+      command('Split Right', 'layout.split', 'CmdOrCtrl+\\'), command('Split Down', 'layout.split-down', 'CmdOrCtrl+Shift+\\'),
+      command('Next Tab', 'tab.next', 'CmdOrCtrl+Shift+]'), command('Previous Tab', 'tab.previous', 'CmdOrCtrl+Shift+['), { type: 'separator' },
+      { role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }, { type: 'separator' }, { role: 'togglefullscreen' },
+      ...(app.isPackaged ? [] : [{ type: 'separator' } as MenuItemConstructorOptions, { role: 'reload' } as MenuItemConstructorOptions, { role: 'toggleDevTools' } as MenuItemConstructorOptions])
+    ] },
+    { role: 'windowMenu' },
+    { role: 'help', submenu: [command('Keyboard Shortcuts', 'view.settings'), { label: 'Serenity on GitHub', click: () => void shell.openExternal('https://github.com/shriism/serenity') }] }
+  ]
+  return Menu.buildFromTemplate(template)
+}
 
 function createWindow(): void {
   closeApproved = false
@@ -378,6 +412,7 @@ app.whenReady().then(async () => {
     try { await openWorkspace(selected) }
     catch (error) { dialog.showErrorBox('Could not open workspace', String(error)) }
   }
+  Menu.setApplicationMenu(applicationMenu())
   createWindow()
   app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow() })
 })

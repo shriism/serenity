@@ -20,7 +20,7 @@ export interface Harness {
 }
 
 /**
- * Launches Serenity on `workspace` in a temporary browser profile, in the background (no window, no focus) unless
+ * Launches Serenity on `workspace` (or, given an empty string, with none chosen yet) in a temporary browser profile, in the background (no window, no focus) unless
  * `SERENITY_SMOKE_VISIBLE` is set, and waits until its preload bridge is ready.
  */
 export async function launch(workspace: string, options: { executable?: string; keepProfile?: boolean; width?: number; height?: number } = {}): Promise<Harness> {
@@ -28,7 +28,7 @@ export async function launch(workspace: string, options: { executable?: string; 
   const profile = options.keepProfile ? null : await mkdtemp(join(tmpdir(), 'serenity-profile-'))
   const port = 20000 + Math.floor(Math.random() * 30000)
   const child = spawn(electron, [`--remote-debugging-port=${port}`, ...(profile ? [`--user-data-dir=${profile}`] : []),
-    ...(process.env.SERENITY_SMOKE_VISIBLE ? [] : ['--background']), ...(options.executable ? [] : ['.']), `--workspace=${workspace}`],
+    ...(process.env.SERENITY_SMOKE_VISIBLE ? [] : ['--background']), ...(options.executable ? [] : ['.']), ...(workspace ? [`--workspace=${workspace}`] : [])],
   { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env } })
   let output = ''
   child.stdout?.on('data', (chunk: Buffer) => { output += chunk.toString() })

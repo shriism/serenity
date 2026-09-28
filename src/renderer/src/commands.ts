@@ -1,4 +1,4 @@
-import { Layers, Monitor, Moon, Sun, Activity, ArrowDown, ArrowLeft, ArrowLeftRight, ArrowRight, ArrowRightLeft, ArrowUp, CalendarDays, Columns2, Rows2, SquareX, MoveRight, FileText, Files, FolderOpen, House, Inbox, Link2, ListTodo, Maximize2, MessageCircle, PanelLeft, PanelRight, Plus, RotateCw, Search, Settings2 } from 'lucide-react'
+import { X, Layers, Monitor, Moon, Sun, Activity, ArrowDown, ArrowLeft, ArrowLeftRight, ArrowRight, ArrowRightLeft, ArrowUp, CalendarDays, Columns2, Rows2, SquareX, MoveRight, FileText, Files, FolderOpen, House, Inbox, Link2, ListTodo, Maximize2, MessageCircle, PanelLeft, PanelRight, Plus, RotateCw, Search, Settings2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { WorkspaceSnapshot } from '../../shared/types'
 import type { ModuleId } from '../../shared/modules'
@@ -28,6 +28,11 @@ export interface CommandHost {
   setAppearance(theme: 'dark' | 'light' | 'system'): void
   /** Shows the focused tab through its resource's next view, e.g. an entity's Timeline after its Profile. */
   cyclePresentation(): void
+  /** Opens an empty tab in the focused pane. */
+  newTab(): void
+  closeTab(): void
+  /** `step` 1 shows the next tab in the focused pane, -1 the previous one. */
+  cycleTab(step: number): void
   refresh(): void
 }
 
@@ -58,17 +63,17 @@ const builtins: CommandContribution[] = [
   view('calendar', 'Calendar', CalendarDays, 'Organize', 'calendar'),
   view('tasks', 'Tasks', ListTodo, 'Organize', 'tasks'),
   view('activity', 'Activity', Activity, 'More'),
-  view('settings', 'Settings', Settings2, 'More'),
+  { ...view('settings', 'Settings', Settings2, 'More'), keybinding: 'Mod+,' },
   { ...view('search', 'Search in a pane', Search, undefined), keybinding: 'Mod+Shift+F' },
   { id: 'entity.create', title: 'New entity', icon: Plus, run: (host) => host.newEntity() },
-  { id: 'page.create', title: 'New page', icon: FileText, run: (host) => host.createPage() },
+  { id: 'page.create', title: 'New page', icon: FileText, keybinding: 'Mod+N', run: (host) => host.createPage() },
   { id: 'documents.import', title: 'Import documents', icon: FolderOpen, run: (host) => host.importDocuments() },
-  { id: 'workspace.choose', title: 'Choose workspace', icon: FolderOpen, run: (host) => host.chooseWorkspace() },
+  { id: 'workspace.choose', title: 'Open another workspace', icon: FolderOpen, keybinding: 'Mod+O', run: (host) => host.chooseWorkspace() },
   { id: 'workspace.open-folder', title: 'Open workspace folder', icon: FolderOpen, run: (host) => host.openWorkspaceFolder() },
   { id: 'assistant.new', title: 'New conversation', icon: MessageCircle, run: (host) => host.newConversation() },
   { id: 'assistant.toggle', title: 'Toggle assistant', icon: PanelRight, keybinding: 'Mod+J', run: (host) => host.toggleAssistant() },
-  { id: 'assistant.expand', title: 'Expand or restore assistant', icon: Maximize2, run: (host) => host.toggleAssistantExpansion() },
-  { id: 'navigation.toggle', title: 'Toggle navigation', icon: PanelLeft, keybinding: 'Mod+B', run: (host) => host.toggleNavigation() },
+  { id: 'assistant.expand', title: 'Switch between Workspace and Chat', icon: Maximize2, keybinding: 'Mod+Shift+J', run: (host) => host.toggleAssistantExpansion() },
+  { id: 'navigation.toggle', title: 'Toggle sidebar', icon: PanelLeft, keybinding: 'Mod+B', run: (host) => host.toggleNavigation() },
   { id: 'layout.split', title: 'Split right', icon: Columns2, keybinding: 'Mod+\\', run: (host) => host.splitEditor('row') },
   { id: 'layout.split-down', title: 'Split down', icon: Rows2, keybinding: 'Mod+Shift+\\', run: (host) => host.splitEditor('column') },
   { id: 'layout.close-group', title: 'Close pane', icon: SquareX, run: (host) => host.closeEditorGroup() },
@@ -79,6 +84,10 @@ const builtins: CommandContribution[] = [
   { id: 'layout.focus-up', title: 'Focus pane above', icon: ArrowUp, keybinding: 'Mod+Alt+ArrowUp', run: (host) => host.focusPane('up') },
   { id: 'layout.focus-down', title: 'Focus pane below', icon: ArrowDown, keybinding: 'Mod+Alt+ArrowDown', run: (host) => host.focusPane('down') },
   { id: 'layout.move-tab', title: 'Move tab to next pane', icon: MoveRight, run: (host) => host.moveTabToOtherGroup() },
+  { id: 'tab.new', title: 'New tab', icon: Plus, keybinding: 'Mod+T', run: (host) => host.newTab() },
+  { id: 'tab.close', title: 'Close tab', icon: X, keybinding: 'Mod+W', run: (host) => host.closeTab() },
+  { id: 'tab.next', title: 'Next tab', icon: ArrowRight, keybinding: 'Mod+Shift+]', run: (host) => host.cycleTab(1) },
+  { id: 'tab.previous', title: 'Previous tab', icon: ArrowLeft, keybinding: 'Mod+Shift+[', run: (host) => host.cycleTab(-1) },
   { id: 'workspace.search', title: 'Search workspace', icon: Search, keybinding: 'Mod+K', whileTyping: true, hideInPalette: true, run: (host) => host.toggleSearch() },
   { id: 'appearance.dark', title: 'Appearance: Dark', icon: Moon, run: (host) => host.setAppearance('dark') },
   { id: 'appearance.light', title: 'Appearance: Light', icon: Sun, run: (host) => host.setAppearance('light') },

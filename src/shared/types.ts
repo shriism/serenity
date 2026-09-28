@@ -247,6 +247,8 @@ export interface SerenityAPI {
   setEditorDirty(dirty: boolean): void
   /** Matches the system-drawn title bar controls to the app's appearance. */
   setWindowTheme(theme: 'dark' | 'light'): void
+  /** Runs when a command is chosen from the application menu. */
+  onMenuCommand(callback: (id: string) => void): () => void
   refresh(): Promise<WorkspaceSnapshot | null>
   saveEntity(entity: Entity): Promise<WorkspaceSnapshot>
   addClaim(claim: Pick<Claim, 'subject' | 'key' | 'value' | 'source'>): Promise<WorkspaceSnapshot>

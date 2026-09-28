@@ -209,7 +209,7 @@ input[type='checkbox'] { accent-color: var(--accent-strong); width: 14px; height
 .app.left-closed.right-closed { grid-template-columns: var(--ribbon) 0 minmax(0, 1fr) 0; }
 .app.mode-chat { grid-template-columns: 0 var(--left-width, 260px) minmax(0, 1fr) 0; }
 .app.mode-chat.left-closed { grid-template-columns: 0 0 minmax(0, 1fr) 0; }
-.app.no-workspace { grid-template-columns: 0 0 minmax(0, 1fr) 0; }
+.app.no-workspace.no-workspace.no-workspace { grid-template-columns: 0 0 minmax(0, 1fr) 0; }
 .app.narrow { grid-template-columns: var(--ribbon) 0 minmax(0, 1fr) 0; }
 .app.narrow.mode-chat { grid-template-columns: 0 0 minmax(0, 1fr) 0; }
 
@@ -417,7 +417,8 @@ input[type='checkbox'] { accent-color: var(--accent-strong); width: 14px; height
 .markdown-editor { font-size: 15px; line-height: 1.7; }
 .markdown-editor .cm-editor { background: transparent; outline: none; }
 .markdown-editor .cm-scroller { font-family: var(--font); overflow: visible; }
-.markdown-editor .cm-content { padding: 0; caret-color: var(--accent); min-height: 160px; }
+.markdown-editor .cm-content { padding: 0; caret-color: var(--accent); min-height: 60px; }
+.page-document .markdown-editor .cm-content { min-height: 240px; }
 .markdown-editor .cm-line { padding: 0; }
 .markdown-editor .cm-cursor { border-left: 2px solid var(--accent); }
 .markdown-editor .cm-selectionBackground, .markdown-editor .cm-focused .cm-selectionBackground, .markdown-editor .cm-content ::selection { background: var(--accent-soft) !important; }

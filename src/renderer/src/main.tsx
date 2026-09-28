@@ -150,6 +150,8 @@ function App() {
   useEffect(() => window.serenity.onWorkspaceChange(() => { void refresh() }), [refresh])
   useEffect(() => { void window.serenity.refresh().then(setWorkspace).catch((cause) => setError(String(cause))) }, [])
   useEffect(() => window.serenity.onIndexError((message) => setError(`Background AI: ${message}`)), [])
+  // Choices from the application menu run the same commands as their shortcuts.
+  useEffect(() => window.serenity.onMenuCommand((id) => { const current = commandContext.current; current?.registry?.dispatch(id, current.host) }), [])
   useEffect(() => {
     if (!workspace) return
     let current = true
@@ -476,6 +478,18 @@ function App() {
     focusNextGroup: (step) => focusNextGroup(step),
     focusPane,
     moveTabToOtherGroup: () => moveTabToOtherGroup(),
+    newTab: () => { if (mode === 'chat') setMode('workspace'); setWorkbench((current) => updateGroup(current, current.focused, (group) => showView(group, 'home'))) },
+    closeTab: () => {
+      const tab = activeTabOf(focused)
+      if (tab) closeTab(tabKey(tab), focused.id)
+      else if (multipleGroups) closeEditorGroup()
+    },
+    cycleTab: (step) => {
+      if (focused.tabs.length < 2) return
+      const index = focused.tabs.findIndex((tab) => tabKey(tab) === focused.activeTab)
+      const next = focused.tabs[(index + step + focused.tabs.length) % focused.tabs.length]
+      setWorkbench((current) => updateGroup(current, focused.id, (group) => showTab(group, next)))
+    },
     refresh: () => { void refresh() }
   }
   commandContext.current = { host: commandHost, registry: commandRegistry, keymap, escape: () => {

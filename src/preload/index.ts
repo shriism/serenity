@@ -45,6 +45,11 @@ const api: SerenityAPI = {
   markDistinctEntities: (left, right) => ipcRenderer.invoke('identity:distinct', left, right),
   undoIdentityDecision: (id) => ipcRenderer.invoke('identity:undo', id),
   setSemanticProvider: (provider) => ipcRenderer.invoke('semantic:provider', provider),
+  onMenuCommand: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, id: string): void => callback(id)
+    ipcRenderer.on('menu:command', listener)
+    return () => ipcRenderer.removeListener('menu:command', listener)
+  },
   onIndexError: (callback) => {
     const listener = (_event: Electron.IpcRendererEvent, message: string): void => callback(message)
     ipcRenderer.on('semantic:index-error', listener)

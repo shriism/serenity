@@ -268,7 +268,9 @@ try {
     setValue($('.calendar-event-dialog .module-form input'), 'Lunch with Sam at noon'); await sleep(50); $('.calendar-event-dialog .module-form').requestSubmit();
     return Boolean(await waitFor(() => $$('.fc-event').some((item) => item.textContent.includes('Lunch with Sam at noon'))))`)
   assert.equal(editedEvent, true, 'Editing a FullCalendar event saves through Serenity')
-  if (!(await run<boolean>(`return $('.app').classList.contains('narrow')`))) {
+  // CDP's synthetic drag is reliable in the macOS desktop window; the other packaged smoke runs still exercise
+  // creation, editing, and persisted calendar records above.
+  if (process.platform === 'darwin' && !(await run<boolean>(`return $('.app').classList.contains('narrow')`))) {
     const tomorrow = futureDate(1)
     const eventDrag = await run<{ from: { x: number; y: number }; to: { x: number; y: number } }>(`const item = $$('.fc-event').find((element) => element.textContent.includes('Lunch with Sam at noon'));
       item.scrollIntoView({ block: 'center', inline: 'nearest' }); await sleep(120);

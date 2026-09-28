@@ -97,7 +97,9 @@ export const Explorer = memo(function Explorer({ workspace, activeUri, onOpen, o
         </li>)}
         {folder.items.length > limit && <li role="none"><button type="button" className="tree-row more" style={{ paddingLeft: 22 + (depth - 1) * 12 }}
           onClick={() => setExpanded((current) => ({ ...current, [folder.id]: true }))}>Show {folder.items.length - limit} more</button></li>}
-        {!folder.items.length && <li role="none" className="tree-empty" style={{ paddingLeft: 22 + (depth - 1) * 12 }}>Empty</li>}
+        {!folder.items.length && <li role="none" className="tree-empty" style={{ paddingLeft: 22 + (depth - 1) * 12 }}>
+          {folder.id === 'documents' ? <button type="button" className="text-button" onClick={onImport}>Import documents…</button> :
+            folder.id === 'pages' ? <button type="button" className="text-button" onClick={onNewPage}>New page</button> : 'Empty'}</li>}
       </ul>}
     </li>
   }
@@ -127,7 +129,8 @@ export const Explorer = memo(function Explorer({ workspace, activeUri, onOpen, o
           </button>
           {(!collapsed.knowledge || wanted) && <ul role="group">
             {entityFolders.map((folder) => renderFolder(folder, 2))}
-            {!entityFolders.length && <li role="none" className="tree-empty" style={{ paddingLeft: 22 }}>No entities yet</li>}
+            {!entityFolders.length && <li role="none" className="tree-empty" style={{ paddingLeft: 22 }}>
+              <button type="button" className="text-button" onClick={onNewEntity}>New entity</button></li>}
           </ul>}
         </li>}
         {shown.filter((folder) => folder.id === 'documents').map((folder) => renderFolder(folder, 1))}

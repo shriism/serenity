@@ -189,16 +189,23 @@ try {
   assert.ok((await stat(join(workspace, 'documents', 'research.pdf'))).isFile(), 'Closing a pane leaves files alone')
   // Releasing a dragged divider must restore ordinary clicks and typing, even after the pointer moved far away.
   await run(`click($('[aria-label^="Pane actions"]')); await sleep(80); click(byText('.menu-item', 'Split right')); await waitFor(() => $$('.pane').length === 2)`)
-  const divider = await run<{ x: number; y: number }>(`const rect = $('.pane-divider.row').getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }`)
-  await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: divider.x, y: divider.y, button: 'left', clickCount: 1 })
-  await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: divider.x + 50, y: divider.y, button: 'left', buttons: 1 })
-  await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: divider.x + 130, y: divider.y, button: 'left', clickCount: 1 })
+  const divider = await run<{ x: number; y: number } | null>(`const rect = $('.pane-divider.row')?.getBoundingClientRect(); return rect ? { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 } : null`)
+  if (divider) {
+    await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: divider.x, y: divider.y, button: 'left', clickCount: 1 })
+    await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: divider.x + 50, y: divider.y, button: 'left', buttons: 1 })
+    await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: divider.x + 130, y: divider.y, button: 'left', clickCount: 1 })
+  }
+  await delay(300)
   const narrowAfterResize = await run<boolean>(`return $('.app').classList.contains('narrow')`)
   if (narrowAfterResize) { await key('j', mod | 8); await run(`await waitFor(() => $('.chat-main .composer textarea'))`) }
   const composerSelector = narrowAfterResize ? '.chat-main .composer textarea' : '.assistant-panel .composer textarea'
-  const composerPoint = await run<{ x: number; y: number }>(`const rect = $('${composerSelector}').getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }`)
-  await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: composerPoint.x, y: composerPoint.y, button: 'left', clickCount: 1 })
-  await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: composerPoint.x, y: composerPoint.y, button: 'left', clickCount: 1 })
+  for (let attempt = 0; attempt < 3 && !await run<boolean>(`return document.activeElement === $('${composerSelector}')`); attempt++) {
+    const composerPoint = await run<{ x: number; y: number }>(`const rect = $('${composerSelector}').getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }`)
+    await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: composerPoint.x, y: composerPoint.y, button: 'left', clickCount: 1 })
+    await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: composerPoint.x, y: composerPoint.y, button: 'left', clickCount: 1 })
+    await delay(100)
+  }
+  assert.equal(await run<boolean>(`return document.activeElement === $('${composerSelector}')`), true, 'Clicking the composer focuses it after a pane drag')
   await type('Typing works after resize')
   assert.equal(await run(`return $('${composerSelector}').value`), 'Typing works after resize')
   await run(`setValue($('${composerSelector}'), ''); ${narrowAfterResize ? "click($('.chat-header [aria-label=\"Return chat to sidebar\"]')); await waitFor(() => $('.pane'));" : ''}

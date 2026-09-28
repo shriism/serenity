@@ -53,7 +53,7 @@ export function DocumentPreview({ name, workspace, onOpen, onError, ...actions }
       <div className="view-actions"><button className="secondary" onClick={() => onOpen(name)}><ExternalLink size={14}/> Open in default app</button></div></header>
     <div className={suggestions.length ? 'document-with-suggestions' : undefined}>
       {loading ? <p className="hint">Reading document…</p> : content === null ? <div className="document-empty"><FileText size={26}/><p>Preview unavailable for this format.</p><button onClick={() => onOpen(name)}>Open in default app</button></div> :
-        <div>{outline.length > 0 && <details className="document-outline"><summary>Outline · {outline.length} sections</summary>
+        <div>{outline.length > 0 && <details className="document-outline"><summary>Outline · {outline.length} {outline.length === 1 ? 'section' : 'sections'}</summary>
           <nav aria-label={`Sections in ${name}`}><ol>{outline.map((heading, index) => <li key={heading.start}>
             <button type="button" style={{ paddingLeft: `${8 + (heading.level - 1) * 12}px` }} onClick={() => {
               if (heading.start < startOffset || heading.start >= shownLength) { setStartOffset(heading.start); setShownLength(heading.start + previewStep) }

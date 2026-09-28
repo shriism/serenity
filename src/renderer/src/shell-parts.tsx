@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import { FolderOpen, Settings2, X } from 'lucide-react'
+import { FolderOpen, LayoutPanelLeft, MessageSquare, Settings2, X } from 'lucide-react'
 import type { WorkbenchConfig, WorkspaceSnapshot } from '../../shared/types'
 import { identityCandidates } from '../../shared/identity'
 import type { CommandContribution } from './commands'
@@ -9,14 +9,20 @@ import type { View } from './views'
 const serenityIcon = new URL('../../../assets/icon.svg', import.meta.url).href
 
 /**
- * The narrow strip of view icons at the window's left edge. Its commands and their order come from the workspace's
- * `.serenity/workbench.yaml` navigation; Settings sits at the bottom, as in other desktop workbenches.
+ * The narrow strip of icons at the window's left edge, present in both modes so it never moves. At the top it switches
+ * between Workspace and Chat; below come the views, whose order comes from the workspace's `.serenity/workbench.yaml`
+ * navigation; Settings sits at the bottom, as in other desktop workbenches.
  */
-export function Ribbon({ commands, navigation, activeView, pendingCount, shortcutFor, onCommand }: {
+export function Ribbon({ commands, navigation, activeView, homeShown, pendingCount, mode, onMode, modeShortcut, shortcutFor, onCommand }: {
   commands: CommandContribution[]
   navigation: WorkbenchConfig['navigation']
   activeView: View | null
+  /** Whether the focused tab is the Home page, which lights up the Home icon. */
+  homeShown: boolean
   pendingCount: number
+  mode: 'workspace' | 'chat'
+  onMode(mode: 'workspace' | 'chat'): void
+  modeShortcut?: string
   shortcutFor(id: string): string | undefined
   onCommand(id: string): void
 }) {
@@ -24,11 +30,19 @@ export function Ribbon({ commands, navigation, activeView, pendingCount, shortcu
   const entries = ids.flatMap((id) => commands.filter((command) => command.id === id && command.id !== 'view.settings'))
   const settings = commands.find((command) => command.id === 'view.settings')
   const label = (command: CommandContribution): string => { const keys = shortcutFor(command.id); return keys ? `${command.title} (${keys})` : command.title }
+  const switchTitle = (name: string, detail: string): string => `${name}: ${detail}${modeShortcut ? ` (${modeShortcut} to switch)` : ''}`
   return <nav className="ribbon" aria-label="Views">
+    <div className="ribbon-group ribbon-mode" role="radiogroup" aria-label="Mode">
+      <button type="button" role="radio" aria-checked={mode === 'workspace'} className={`ribbon-btn mode ${mode === 'workspace' ? 'active' : ''}`} onClick={() => onMode('workspace')}
+        aria-label="Workspace" title={switchTitle('Workspace', 'your files, views, and panes')}><LayoutPanelLeft size={18} strokeWidth={1.75}/></button>
+      <button type="button" role="radio" aria-checked={mode === 'chat'} className={`ribbon-btn mode ${mode === 'chat' ? 'active' : ''}`} onClick={() => onMode('chat')}
+        aria-label="Chat" title={switchTitle('Chat', 'a full-window conversation')}><MessageSquare size={18} strokeWidth={1.75}/></button>
+    </div>
+    <div className="ribbon-separator" role="separator"/>
     <div className="ribbon-group">
       {entries.map((command) => {
         const Icon = command.icon
-        const active = command.view !== undefined && command.view !== 'home' && command.view === activeView
+        const active = mode === 'workspace' && (command.view === 'home' ? homeShown : command.view !== undefined && command.view === activeView)
         return <button key={command.id} type="button" className={`ribbon-btn ${active ? 'active' : ''}`} onClick={() => onCommand(command.id)}
           aria-label={command.id === 'view.review' && pendingCount ? `${command.title}, ${pendingCount} waiting` : command.title} title={label(command)} aria-current={active ? 'page' : undefined}>
           <Icon size={18} strokeWidth={1.75}/>{command.id === 'view.review' && pendingCount > 0 && <span className="ribbon-badge" aria-hidden="true">{pendingCount > 99 ? '99+' : pendingCount}</span>}

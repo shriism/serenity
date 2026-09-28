@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { AlertTriangle, ChevronDown, FolderOpen, LayoutPanelLeft, Maximize2, MessageSquare, MessageSquarePlus, MoveRight, PanelLeft, PanelRight, RotateCw, X } from 'lucide-react'
+import { AlertTriangle, ChevronDown, FolderOpen, History, Maximize2, MessageSquarePlus, MoreHorizontal, MoveRight, PanelLeft, PanelRight, RotateCw, Settings2, Trash2, X } from 'lucide-react'
 import type { Conversation, SearchResult, WorkspaceSnapshot } from '../../shared/types'
 import { useAssistant } from './use-assistant'
 import { ErrorBoundary } from './error-boundary'
@@ -51,9 +51,9 @@ function SidebarResizer({ side, width, min, max, onResize }: { side: 'left' | 'r
   const start = useRef<{ x: number; width: number } | null>(null)
   return <div className={`sidebar-resizer ${side}`} role="separator" aria-orientation="vertical" aria-label={`Resize ${side} sidebar`} tabIndex={0}
     aria-valuemin={min} aria-valuemax={max} aria-valuenow={width}
-    onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); start.current = { x: event.clientX, width } }}
+    onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); start.current = { x: event.clientX, width }; document.body.classList.add('resizing') }}
     onPointerMove={(event) => { if (!start.current) return; const delta = (event.clientX - start.current.x) * (side === 'left' ? 1 : -1); onResize(Math.min(max, Math.max(min, start.current.width + delta))) }}
-    onPointerUp={() => { start.current = null }}
+    onPointerUp={() => { start.current = null; document.body.classList.remove('resizing') }}
     onKeyDown={(event) => { const step = event.shiftKey ? 40 : 12; if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); const grow = (event.key === 'ArrowRight') === (side === 'left'); onResize(Math.min(max, Math.max(min, width + (grow ? step : -step)))) } }}/>
 }
 
@@ -662,15 +662,10 @@ function App() {
       {workspace && <>
         <button type="button" className="icon-btn" onClick={() => runCommand('navigation.toggle')} aria-pressed={leftOpen} aria-keyshortcuts={ariaShortcut('navigation.toggle')}
           aria-label={leftOpen ? 'Hide sidebar' : 'Show sidebar'} title={withShortcut(leftOpen ? 'Hide sidebar' : 'Show sidebar', 'navigation.toggle')}><PanelLeft size={16}/></button>
-        <div className="mode-switch" role="radiogroup" aria-label="Mode">
-          <button type="button" role="radio" aria-checked={mode === 'workspace'} className={mode === 'workspace' ? 'active' : ''} onClick={() => setMode('workspace')}
-            title={withShortcut('Workspace: your files and panes', 'assistant.expand')}><LayoutPanelLeft size={14}/><span>Workspace</span></button>
-          <button type="button" role="radio" aria-checked={mode === 'chat'} className={mode === 'chat' ? 'active' : ''} onClick={() => setMode('chat')}
-            title={withShortcut('Chat: a full-window conversation', 'assistant.expand')}><MessageSquare size={14}/><span>Chat</span></button>
-        </div>
       </>}
     </header>
-    {workspace && mode === 'workspace' && <Ribbon commands={commands} navigation={workspace.workbench.navigation} activeView={activeView} pendingCount={pending.length} shortcutFor={shortcut} onCommand={runCommand}/>}
+    {workspace && <Ribbon commands={commands} navigation={workspace.workbench.navigation} activeView={activeView} homeShown={focusedTab?.kind === 'page' && focusedTab.id === workspace.workbench.homePage} pendingCount={pending.length}
+      mode={mode} onMode={setMode} modeShortcut={shortcut('assistant.expand')} shortcutFor={shortcut} onCommand={runCommand}/>}
     {workspace && <aside className="left-sidebar" aria-label={mode === 'chat' ? 'Chats' : 'Workspace'} inert={!showLeft}>
       {mode === 'workspace' ? <Explorer workspace={workspace} activeUri={shownUri(focused)} onOpen={(uri, side) => { openResource(uri, { side }) }}
         onNewPage={() => void createPage()} onNewEntity={() => setNewEntityOpen(true)} onImport={() => void importDocuments()}/> :
@@ -695,10 +690,13 @@ function App() {
       {!workspace ? <Welcome recent={recent} onChoose={() => void chooseWorkspace()} onOpenRecent={(path) => void chooseWorkspace(path)}
         onForget={(path) => { void window.serenity.forgetRecentWorkspace(path).then(setRecent) }}/> : mode === 'chat' ? <section className="chat-main" aria-label="Chat">
         <header className="chat-header">
-          <MenuButton label="Conversation" className="chat-title" items={conversationMenu(workspace, assistantState, newChat)}>
-            <span>{assistant.conversation?.title ?? 'New chat'}</span><ChevronDown size={13}/></MenuButton>
+          <h1 className="chat-heading" title={assistant.conversation?.title}>{assistant.conversation?.title ?? 'New chat'}</h1>
           <div className="chat-header-actions">
             <button type="button" className="icon-btn" onClick={newChat} aria-label="New chat" title={withShortcut('New chat', 'assistant.new')}><MessageSquarePlus size={16}/></button>
+            <MenuButton label="Chat actions" align="end" items={[
+              { id: 'settings', label: 'Conversation settings…', icon: <Settings2 size={14}/>, run: () => setConversationSettingsOpen(true) },
+              ...(assistant.conversationId ? [{ id: 'delete', label: 'Delete this chat', icon: <Trash2 size={14}/>, danger: true, separated: true, run: () => void assistant.deleteConversation() }] : [])
+            ]}><MoreHorizontal size={16}/></MenuButton>
           </div>
         </header>
         <ErrorBoundary label="The conversation">
@@ -714,9 +712,9 @@ function App() {
     {showRight && <aside className="right-sidebar assistant-panel" aria-label="Assistant">
       {!narrow && <SidebarResizer side="right" width={rightWidth} min={300} max={640} onResize={setRightWidth}/>}
       <header className="assistant-header">
-        <MenuButton label="Conversation" className="chat-title small" items={conversationMenu(workspace, assistantState, newChat)}>
-          <span>{assistant.conversation?.title ?? 'New chat'}</span><ChevronDown size={13}/></MenuButton>
+        <h2 className="chat-heading small" title={assistant.conversation?.title}>{assistant.conversation?.title ?? 'New chat'}</h2>
         <div className="assistant-actions">
+          <MenuButton label="Chat history" title="Chat history" align="end" items={conversationMenu(workspace, assistantState, newChat)}><History size={15}/></MenuButton>
           <button type="button" className="icon-btn" onClick={newChat} aria-label="New chat" title={withShortcut('New chat', 'assistant.new')}><MessageSquarePlus size={16}/></button>
           <button type="button" className="icon-btn" onClick={() => setMode('chat')} aria-label="Open this chat full window" title={withShortcut('Open this chat full window', 'assistant.expand')}><Maximize2 size={15}/></button>
           {assistantToggle}

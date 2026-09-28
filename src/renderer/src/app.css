@@ -61,7 +61,7 @@
 html, body, #root { height: 100%; margin: 0; }
 body { font-family: var(--font); font-size: 13px; line-height: 1.45; color: var(--text); background: var(--chrome); -webkit-font-smoothing: antialiased; overflow: hidden; user-select: none; }
 button, input, select, textarea { font: inherit; color: inherit; }
-button { cursor: default; }
+button { cursor: default; transition: background-color .12s ease, color .12s ease, box-shadow .12s ease, opacity .12s ease, border-color .12s ease; }
 h1, h2, h3, h4 { margin: 0; font-weight: 600; letter-spacing: -.005em; }
 p { margin: 0; }
 a { color: var(--accent); }
@@ -139,6 +139,14 @@ input[type='checkbox'] { accent-color: var(--accent-strong); width: 14px; height
 
 .menu { position: fixed; z-index: 60; min-width: 190px; max-width: 320px; max-height: 60vh; overflow: auto; padding: 4px; border-radius: 8px; background: var(--surface-raised); box-shadow: var(--shadow); animation: pop .12s var(--ease); }
 @keyframes pop { from { opacity: 0; transform: translateY(-3px); } }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } }
+@keyframes appear { from { opacity: 0; } }
+/* Opening a tab, switching modes, and new messages ease in rather than cutting. */
+.pane-body > *, .chat-main, .welcome-card, .new-tab-actions { animation: appear .16s ease; }
+.message { animation: rise .22s var(--ease); }
+.toast { animation: rise .2s var(--ease); }
+.tab.active { transition: box-shadow .15s ease; }
+.tree-row, .ribbon-btn, .tab { transition: background-color .1s ease, color .1s ease; }
 .menu-header { padding: 6px 8px 8px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
 .menu-path { font-size: 11.5px; color: var(--text-muted); word-break: break-all; }
 .menu-separator { height: 1px; background: var(--border); margin: 4px 2px; }
@@ -207,19 +215,25 @@ input[type='checkbox'] { accent-color: var(--accent-strong); width: 14px; height
 .app.left-closed { grid-template-columns: var(--ribbon) 0 minmax(0, 1fr) var(--right-width, 360px); }
 .app.right-closed { grid-template-columns: var(--ribbon) var(--left-width, 260px) minmax(0, 1fr) 0; }
 .app.left-closed.right-closed { grid-template-columns: var(--ribbon) 0 minmax(0, 1fr) 0; }
-.app.mode-chat { grid-template-columns: 0 var(--left-width, 260px) minmax(0, 1fr) 0; }
-.app.mode-chat.left-closed { grid-template-columns: 0 0 minmax(0, 1fr) 0; }
+.app.mode-chat { grid-template-columns: var(--ribbon) var(--left-width, 260px) minmax(0, 1fr) 0; }
+.app.mode-chat.left-closed { grid-template-columns: var(--ribbon) 0 minmax(0, 1fr) 0; }
 .app.no-workspace.no-workspace.no-workspace { grid-template-columns: 0 0 minmax(0, 1fr) 0; }
 .app.narrow { grid-template-columns: var(--ribbon) 0 minmax(0, 1fr) 0; }
-.app.narrow.mode-chat { grid-template-columns: 0 0 minmax(0, 1fr) 0; }
+.app.narrow.mode-chat { grid-template-columns: var(--ribbon) 0 minmax(0, 1fr) 0; }
+/* Sidebars slide open and closed; their contents keep full width and are clipped while the column animates. */
+.app { transition: grid-template-columns .22s var(--ease); }
+body.resizing .app { transition: none; }
+.left-sidebar > .explorer, .left-sidebar > .chat-sidebar, .left-sidebar > .sidebar-footer { min-width: var(--left-width, 260px); }
+.right-sidebar > * { min-width: var(--right-width, 360px); }
+.app.left-closed .left-sidebar { transition: visibility 0s .22s; }
 
 /* The top-left corner holds the window controls (traffic lights on macOS), the sidebar toggle, and the mode switch. */
 .titlebar-start { grid-column: 1 / 3; grid-row: 1; z-index: 5; display: flex; align-items: center; gap: 4px; padding-left: 8px; min-width: 0; -webkit-app-region: drag; }
 [data-platform='mac'] .titlebar-start { padding-left: 78px; }
 .titlebar-start > * { -webkit-app-region: no-drag; }
 .app.left-closed .titlebar-start, .app.narrow .titlebar-start, .app.no-workspace .titlebar-start { position: absolute; top: 0; left: 0; height: var(--titlebar); width: var(--titlebar-start-width); }
-.app { --titlebar-start-width: 230px; }
-[data-platform='mac'].app { --titlebar-start-width: 300px; }
+.app { --titlebar-start-width: 52px; }
+[data-platform='mac'].app { --titlebar-start-width: 124px; }
 .app.no-workspace .titlebar-start { width: 100%; }
 .mode-switch { display: inline-flex; gap: 1px; padding: 2px; border-radius: 7px; background: var(--hover); margin-left: 2px; }
 .mode-switch button { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 500; }
@@ -228,13 +242,17 @@ input[type='checkbox'] { accent-color: var(--accent-strong); width: 14px; height
 
 .ribbon { grid-column: 1; grid-row: 2; display: flex; flex-direction: column; justify-content: space-between; align-items: center; padding: 6px 0 10px; overflow: hidden; }
 .ribbon-group { display: flex; flex-direction: column; gap: 2px; }
+.ribbon-group:not(.bottom) + .ribbon-separator + .ribbon-group { flex: 1; }
+.ribbon { justify-content: flex-start; }
+.ribbon-separator { width: 20px; height: 1px; margin: 8px 0; background: var(--border); flex: none; }
+.ribbon-btn.mode.active { background: var(--accent-soft); color: var(--accent); }
+.ribbon-btn.active:not(.mode)::before { content: ''; position: absolute; left: -6px; top: 8px; bottom: 8px; width: 3px; border-radius: 0 2px 2px 0; background: var(--accent); }
 .ribbon-btn { position: relative; display: grid; place-items: center; width: 32px; height: 32px; border: 0; border-radius: 7px; background: transparent; color: var(--text-muted); }
 .ribbon-btn:hover { background: var(--hover); color: var(--text); }
 .ribbon-btn.active { background: var(--active); color: var(--text); }
 .ribbon-badge { position: absolute; top: 3px; right: 1px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: var(--accent-strong); color: #fff; font-size: 9.5px; font-weight: 600; line-height: 15px; text-align: center; }
 
 .left-sidebar { grid-column: 2; grid-row: 2; position: relative; display: flex; flex-direction: column; min-width: 0; overflow: hidden; }
-.app.mode-chat .left-sidebar { grid-row: 1 / 3; padding-top: var(--titlebar); }
 .app.left-closed .left-sidebar { visibility: hidden; }
 .sidebar-resizer { position: absolute; top: 0; bottom: 0; width: 6px; z-index: 4; cursor: col-resize; }
 .sidebar-resizer.left { right: -3px; }
@@ -249,7 +267,6 @@ input[type='checkbox'] { accent-color: var(--accent-strong); width: 14px; height
 /* Narrow windows: sidebars float over the panes and a scrim closes them. */
 .app.narrow .left-sidebar, .app.narrow .right-sidebar { position: absolute; z-index: 30; top: 0; bottom: 0; background: var(--chrome); box-shadow: var(--shadow); }
 .app.narrow .left-sidebar { left: var(--ribbon); width: min(300px, calc(100vw - 80px)); padding-top: var(--titlebar); }
-.app.narrow.mode-chat .left-sidebar { left: 0; }
 .app.narrow .right-sidebar { right: 0; width: min(380px, calc(100vw - 60px)); }
 .app.narrow.left-open .left-sidebar { visibility: visible; }
 .app.narrow.left-open .titlebar-start { z-index: 31; }
@@ -709,6 +726,7 @@ button.timeline-title:hover { color: var(--accent); }
 .assistant-header, .chat-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; height: var(--titlebar); padding: 0 6px 0 10px; flex: none; -webkit-app-region: drag; }
 .assistant-header > *, .chat-header > * { -webkit-app-region: no-drag; }
 .assistant-header { border-bottom: 1px solid var(--border); }
+.assistant-header .chat-heading { flex: 1; }
 .assistant-actions { display: flex; align-items: center; gap: 1px; }
 .assistant-actions .icon-btn { width: 26px; height: 26px; }
 .chat-title { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; height: 28px; padding: 0 8px; border: 0; border-radius: var(--radius); background: transparent; color: var(--text); font-weight: 600; font-size: 13px; }
@@ -720,10 +738,12 @@ button.timeline-title:hover { color: var(--accent); }
 .assistant-composer { padding: 8px 12px 12px; flex: none; }
 
 .chat-main { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.chat-header { position: relative; justify-content: center; }
-.app.left-closed .chat-header, .app.narrow .chat-header { margin-left: var(--titlebar-start-width); }
-.chat-header-actions { position: absolute; right: 8px; top: 0; bottom: 0; display: flex; align-items: center; }
-[data-platform='windows'] .chat-header-actions, [data-platform='linux'] .chat-header-actions { right: 146px; }
+.chat-header { padding-left: 20px; }
+/* Moved over with a margin, not padding, so the draggable header never lies under the sidebar toggle. */
+.app.left-closed .chat-header, .app.narrow .chat-header { margin-left: calc(var(--titlebar-start-width) - var(--ribbon)); padding-left: 12px; }
+.chat-header-actions { display: flex; align-items: center; gap: 2px; }
+.chat-heading { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 600; }
+.chat-heading.small { font-weight: 500; padding-left: 4px; }
 .chat-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .chat-scroll { flex: 1; min-height: 0; overflow: auto; padding: 16px 24px 12px; }
 .chat-scroll .messages { max-width: 740px; margin: 0 auto; }

@@ -219,8 +219,9 @@ export function ConversationList({ workspace, activeId, busy, onSelect, compact 
 export function conversationMenu(workspace: WorkspaceSnapshot, assistant: AssistantState, onNew: () => void) {
   return [
     { id: 'new', label: 'New chat', icon: <MessageSquarePlus size={14}/>, run: onNew },
-    ...[...workspace.conversations].reverse().slice(0, 12).map((item, index) => ({ id: item.id, label: item.title, checked: item.id === assistant.conversationId,
+    ...[...workspace.conversations].reverse().slice(0, 15).map((item, index) => ({ id: item.id, label: item.title, checked: item.id === assistant.conversationId,
       separated: index === 0, run: () => assistant.selectConversation(item) })),
+    ...(workspace.conversations.length ? [] : [{ id: 'none', label: 'No earlier chats yet', disabled: true, separated: true, run: () => undefined }]),
     ...(assistant.conversationId ? [{ id: 'delete', label: 'Delete this chat', icon: <Trash2 size={14}/>, danger: true, separated: true, run: () => void assistant.deleteConversation() }] : [])
   ]
 }

@@ -189,11 +189,11 @@ try {
   assert.deepEqual({ ...settings, rows: true }, { rows: true, light: true, calendarHidden: true, calendarBack: true })
 
   // Chat mode, and conversation settings for a read scope limited to chosen knowledge.
-  const chat = await run<{ composer: boolean; scope: string }>(`click(byText('.mode-switch button', 'Chat')); await waitFor(() => $('.chat-main .composer'));
+  const chat = await run<{ composer: boolean; scope: string }>(`click(byText('.ribbon-mode button', 'Chat')); await waitFor(() => $('.chat-main .composer'));
     click($('.chat-main .composer button[aria-label^="Read scope"]')); await waitFor(() => $('[role="radiogroup"][aria-label="AI read scope"]'));
     click(byText('[role="radio"]', 'Selected knowledge')); await sleep(80); const scope = $('.chat-main .composer button[aria-label^="Read scope"]').textContent;
     click(byText('[role="radio"]', 'Whole workspace')); click(byText('.dialog button', 'Done')); await sleep(80);
-    const composer = Boolean($('.chat-main textarea[aria-label="Message"]')); click(byText('.mode-switch button', 'Workspace')); await waitFor(() => $('.pane'));
+    const composer = Boolean($('.chat-main textarea[aria-label="Message"]')); click(byText('.ribbon-mode button', 'Workspace')); await waitFor(() => $('.pane'));
     return { composer, scope }`)
   assert.equal(chat.composer, true)
   assert.match(chat.scope, /0 selected/)
@@ -223,11 +223,11 @@ try {
     ['Tasks', `click(byText('.ribbon-btn', 'Tasks'))`], ['Activity', `click(byText('.ribbon-btn', 'Activity'))`],
     ['Entity', `click(byText('.tree-row', 'Sam Rivera'))`], ['Timeline', `click(byText('.presentation-switcher button', 'Timeline'))`],
     ['New tab', `click($('.pane.focused .new-tab') ?? $('.new-tab'))`], ['Settings', `click($('.ribbon-btn[aria-label="Settings"]'))`],
-    ['Chat', `click($('.dialog-close')); click(byText('.mode-switch button', 'Chat'))`]
+    ['Chat', `click($('.dialog-close')); click(byText('.ribbon-mode button', 'Chat'))`]
   ]
   const accessibility: string[] = []
   for (const theme of ['dark', 'light']) {
-    await run(`if ($('.dialog-close')) click($('.dialog-close')); if (byText('.mode-switch button', 'Workspace')) click(byText('.mode-switch button', 'Workspace')); await sleep(150)`)
+    await run(`if ($('.dialog-close')) click($('.dialog-close')); if (byText('.ribbon-mode button', 'Workspace')) click(byText('.ribbon-mode button', 'Workspace')); await sleep(150)`)
     for (const [view, setup] of views) {
       const found = await run<string[]>(`document.documentElement.setAttribute('data-theme', '${theme}'); ${setup}; await sleep(400);
         await Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined)));

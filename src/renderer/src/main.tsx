@@ -10,6 +10,7 @@ import { documentAnalysisPrompt } from '../../shared/analysis-prompt'
 import { builtinViews, type BuiltinViewContext } from './builtin-views'
 import { CommandPalette } from './command-palette'
 import { useTheme } from './theme'
+import { preferences, usePreferences } from './preferences'
 import type { View } from './views'
 import { isResourceTab, routeResource, tabKey, tabPath, tabTitle, tabViewOf, viewTab, type TabRef } from './resource-routing'
 import { PresentationSwitcher, presentationFor, presentations } from './presentations'
@@ -79,7 +80,14 @@ function App() {
   }, [])
   const [workbench, setWorkbench] = useState<Workbench>(initialWorkbench)
   const [errors, setErrors] = useState<{ id: number; text: string }[]>([])
-  const [mode, setMode] = useStored<Mode>('serenity.mode', 'workspace')
+  const [mode, setModeState] = useStored<Mode>('serenity.mode', 'workspace')
+  // Mode changes swap the layout in one step (no column slide) and fade the new content in.
+  const [switchingMode, setSwitchingMode] = useState(false)
+  const setMode = useCallback((next: Mode | ((current: Mode) => Mode)) => {
+    setSwitchingMode(true)
+    setModeState(next)
+    window.setTimeout(() => setSwitchingMode(false), 260)
+  }, [])
   const [leftOpen, setLeftOpen] = useStored<boolean>('serenity.left-open', true)
   const [rightOpen, setRightOpen] = useStored<boolean>('serenity.right-open', true)
   const [leftWidth, setLeftWidth] = useStored<number>('serenity.left-width', 260)
@@ -117,6 +125,22 @@ function App() {
   const clearErrors = useCallback(() => setErrors([]), [])
 
   useEffect(() => { window.serenity.setWindowTheme(resolvedTheme) }, [resolvedTheme])
+  const prefs = usePreferences()
+  // Auto-hiding scrollbars show while an area scrolls, then fade; the choice is a device preference.
+  useEffect(() => {
+    document.documentElement.dataset.scrollbars = prefs.autoHideScrollbars ? 'auto' : 'always'
+    if (!prefs.autoHideScrollbars) return
+    const timers = new WeakMap<Element, number>()
+    const scrolled = (event: Event): void => {
+      const target = event.target instanceof Element ? event.target : document.scrollingElement
+      if (!target) return
+      target.classList.add('is-scrolling')
+      window.clearTimeout(timers.get(target))
+      timers.set(target, window.setTimeout(() => target.classList.remove('is-scrolling'), 900))
+    }
+    document.addEventListener('scroll', scrolled, true)
+    return () => document.removeEventListener('scroll', scrolled, true)
+  }, [prefs.autoHideScrollbars])
   useEffect(() => {
     const resize = (): void => setWindowWidth(window.innerWidth)
     window.addEventListener('resize', resize)
@@ -336,6 +360,14 @@ function App() {
     } catch (error) { setError(String(error)) }
   }
 
+  async function createDocument(groupId: string = workbench.focused): Promise<void> {
+    try {
+      const { snapshot, name } = await window.serenity.createDocument()
+      setWorkspace(snapshot)
+      openTab({ kind: 'document', id: name }, groupId)
+    } catch (error) { setError(String(error)) }
+  }
+
   async function searchSemantically() {
     if (!query.trim() || searching) return
     setSearching(true)
@@ -511,6 +543,11 @@ function App() {
       if (tab) closeTab(tabKey(tab), focused.id)
       else if (multipleGroups) closeEditorGroup()
     },
+    goToTab: (position) => {
+      if (!preferences.get().numberedTabShortcuts || mode !== 'workspace' || !focused.tabs.length) return
+      const tab = position >= 9 ? focused.tabs.at(-1) : focused.tabs[position - 1]
+      if (tab) setWorkbench((current) => updateGroup(current, focused.id, (group) => showTab(group, tab)))
+    },
     cycleTab: (step) => {
       if (focused.tabs.length < 2) return
       const index = focused.tabs.findIndex((tab) => tabKey(tab) === focused.activeTab)
@@ -568,7 +605,7 @@ function App() {
       onUpdate: setWorkspace, onError: (message) => { if (message) setError(message) },
       onOpenResource: (uri, side) => { openResource(uri, { group: group.id, side }) },
       onResolve: (id, accept) => { void resolveProposal(id, accept) }, onAttach: (id, entityId) => { void attachProposal(id, entityId) },
-      onOpenSource: (name) => { openDocumentTab(name, group.id) }, onImport: () => { void importDocuments() }, onOpenDocument: (name) => { openDocumentTab(name, group.id) },
+      onOpenSource: (name) => { openDocumentTab(name, group.id) }, onImport: () => { void importDocuments() }, onNewDocument: () => { void createDocument(group.id) }, onOpenDocument: (name) => { openDocumentTab(name, group.id) },
       onAnalyze: (name) => { openDocumentTab(name, group.id); startConversation(documentAnalysisPrompt(name)) },
       taskPresentation: group.viewPresentations.tasks === 'board' ? 'board' : 'list',
       onTaskPresentationChange: (presentation) => setWorkbench((current) => updateGroup(current, group.id, (item) => presentView(item, 'tasks', presentation))),
@@ -697,7 +734,7 @@ function App() {
   const showLeft = leftOpen && Boolean(workspace)
   const showRight = workspace && mode === 'workspace' && rightOpen
 
-  return <div className={`app mode-${mode} ${showLeft ? 'left-open' : 'left-closed'} ${showRight ? 'right-open' : 'right-closed'} ${narrow ? 'narrow' : ''} ${workspace ? '' : 'no-workspace'}`}
+  return <div className={`app mode-${mode} ${switchingMode ? 'switching-mode' : ''} ${showLeft ? 'left-open' : 'left-closed'} ${showRight ? 'right-open' : 'right-closed'} ${narrow ? 'narrow' : ''} ${workspace ? '' : 'no-workspace'}`}
     data-platform={platform} style={{ '--left-width': `${leftWidth}px`, '--right-width': `${rightWidth}px` } as CSSProperties}>
     <header className="titlebar-start">
       {workspace && <>

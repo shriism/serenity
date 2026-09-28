@@ -3,7 +3,7 @@ import YAML from 'yaml'
 import type { WorkspacePage, WorkspaceSnapshot } from '../../shared/types'
 import { resourceUri } from '../../shared/resources'
 import { wikilinkMentions } from '../../shared/wikilinks'
-import { MarkdownEditor, type EditorContext } from './markdown-editor'
+import { MarkdownEditor, type EditorContext, type EditorHandle } from './markdown-editor'
 import { useAutosave, type SaveState } from './use-autosave'
 
 /** The frontmatter of `text` with its title replaced; other fields and comments stay as written. */
@@ -61,6 +61,7 @@ export function WorkspacePageView({ page, workspace, context, onUpdate, onError 
   })
   const [title, setTitle] = useState(draft.title)
   useEffect(() => setTitle(draft.title), [draft.title])
+  const body = useRef<EditorHandle | null>(null)
 
   async function commitTitle(): Promise<void> {
     const next = title.trim()
@@ -81,8 +82,12 @@ export function WorkspacePageView({ page, workspace, context, onUpdate, onError 
     <ConflictBar state={state} what="page" onResolve={resolve}/>
     <input className="inline-title" value={title} aria-label="Page title" spellCheck={false}
       onChange={(event) => setTitle(event.target.value)} onBlur={() => void commitTitle()}
-      onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur() } else if (event.key === 'Escape') { setTitle(draft.title); event.currentTarget.blur() } }}/>
-    <MarkdownEditor value={draft.body} onChange={(body) => setDraft({ ...draft, body })} onBlur={() => void flush()} context={context}
+      onKeyDown={(event) => {
+        // Enter continues into the page, as in a document editor; Escape puts the title back.
+        if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); body.current?.focusStart() }
+        else if (event.key === 'Escape') { setTitle(draft.title); event.currentTarget.blur() }
+      }}/>
+    <MarkdownEditor handle={body} value={draft.body} onChange={(text) => setDraft({ ...draft, body: text })} onBlur={() => void flush()} context={context}
       label={`${draft.title} text`} placeholder="Start writing. Type [[ to link a page, entity, or document."/>
   </article>
 }

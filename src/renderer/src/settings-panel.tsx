@@ -1,5 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Blocks, Info, Keyboard, Palette, Sparkles } from 'lucide-react'
+import { Blocks, Info, Keyboard, Palette, PenLine, Sparkles } from 'lucide-react'
+import { preferences, usePreferences, type Preferences } from './preferences'
+import { eventKeybinding } from '../../shared/keybindings'
 import type { Provider, WorkspaceSnapshot } from '../../shared/types'
 import { modules, type ModuleId } from '../../shared/modules'
 import type { ThemePreference } from './theme'
@@ -7,6 +9,7 @@ import { Dialog } from './dialog'
 
 const sections = [
   { id: 'general', title: 'General', icon: Palette },
+  { id: 'editor', title: 'Editor', icon: PenLine },
   { id: 'modules', title: 'Modules', icon: Blocks },
   { id: 'ai', title: 'AI providers', icon: Sparkles },
   { id: 'shortcuts', title: 'Shortcuts', icon: Keyboard },
@@ -27,6 +30,31 @@ interface Props {
   onClose(): void
 }
 
+/** A shortcut cell that records the next chord pressed and saves it for this workspace. */
+function ShortcutRecorder({ id, title, keys, overridden, onSave }: { id: string; title: string; keys?: string; overridden: boolean
+  onSave(id: string, chord: string | null | undefined): void }) {
+  const [recording, setRecording] = useState(false)
+  const mac = navigator.platform.includes('Mac')
+  return <div className="shortcut-cell">
+    <button type="button" className={`shortcut-button ${recording ? 'recording' : ''}`} aria-label={recording ? `Press the new shortcut for ${title}` : `Change shortcut for ${title}`}
+      onClick={() => setRecording(true)} onBlur={() => setRecording(false)}
+      onKeyDown={(event) => {
+        if (!recording) return
+        event.preventDefault()
+        event.stopPropagation()
+        if (event.key === 'Escape') { setRecording(false); return }
+        if (event.key === 'Backspace' || event.key === 'Delete') { setRecording(false); onSave(id, null); return }
+        const chord = eventKeybinding(event, mac)
+        if (!chord) return
+        setRecording(false)
+        onSave(id, chord)
+      }}>
+      {recording ? 'Press keys…' : keys ? <kbd>{keys}</kbd> : <span className="hint">Add</span>}
+    </button>
+    {overridden && !recording && <button type="button" className="text-button" onClick={() => onSave(id, undefined)} title="Use the default shortcut">Reset</button>}
+  </div>
+}
+
 function Toggle({ checked, disabled, label, onChange }: { checked: boolean; disabled?: boolean; label: string; onChange(value: boolean): void }) {
   return <button type="button" role="switch" aria-checked={checked} aria-label={label} disabled={disabled} className={`switch ${checked ? 'on' : ''}`}
     onClick={() => onChange(!checked)}><span/></button>
@@ -34,6 +62,7 @@ function Toggle({ checked, disabled, label, onChange }: { checked: boolean; disa
 
 export function SettingsDialog({ workspace, shortcuts, theme, onThemeChange, onChooseWorkspace, onOpenFolder, onUpdate, onError, onClose }: Props) {
   const [section, setSection] = useState<Section>('general')
+  const prefs = usePreferences()
   const [credentials, setCredentials] = useState<Record<Provider, boolean> | null>(null)
   const [keyProvider, setKeyProvider] = useState<Provider>('copilot')
   const [key, setKey] = useState('')
@@ -83,6 +112,18 @@ export function SettingsDialog({ workspace, shortcuts, theme, onThemeChange, onC
                 {option === 'system' ? 'System' : option === 'dark' ? 'Dark' : 'Light'}</button>)}</div></div>
           <p className="hint">Everything in “{name}” is ordinary Markdown and YAML you can open and back up with other apps. Workspace settings live in its <code>.serenity</code> folder.</p>
         </section>}
+        {section === 'editor' && <section aria-labelledby="settings-editor">
+          <h2 id="settings-editor">Editor</h2>
+          <p className="hint">These apply on this device, in every workspace.</p>
+          {([
+            ['escapeLeavesEditing', 'Escape leaves editing', 'Press Esc to stop editing a page or note and read it without Markdown syntax.'],
+            ['autoHideScrollbars', 'Hide scrollbars until scrolling', 'Scrollbars appear while you scroll or point at them, instead of always.'],
+            ['numberedTabShortcuts', 'Switch tabs with ⌘/Ctrl-1…9', '1–8 go to that tab in the focused pane and 9 to the last one. The shortcuts can also be changed under Shortcuts.']
+          ] as [keyof Preferences, string, string][]).map(([key, title, detail]) => <div key={key} className="setting-row">
+            <div><strong>{title}</strong><small>{detail}</small></div>
+            <Toggle label={title} checked={prefs[key]} onChange={(value) => preferences.set({ [key]: value })}/>
+          </div>)}
+        </section>}
         {section === 'modules' && <section aria-labelledby="settings-modules">
           <h2 id="settings-modules">Modules</h2>
           <p className="hint">Turning a module off hides it without removing its files. Background AI modules send workspace content to the provider below, so they are off by default.</p>
@@ -122,11 +163,14 @@ export function SettingsDialog({ workspace, shortcuts, theme, onThemeChange, onC
         </section>}
         {section === 'shortcuts' && <section className="settings-shortcuts" aria-labelledby="shortcuts-heading">
           <h2 id="shortcuts-heading">Shortcuts</h2>
-          <p className="hint">Change them for this workspace in <code>.serenity/workbench.yaml</code>, for example <code>keybindings: {'{'} entity.create: Mod+Shift+E {'}'}</code>, or set a command to <code>null</code> to remove its shortcut.</p>
+          <p className="hint">Click a shortcut and press new keys to change it for this workspace; Backspace removes it and Esc cancels. Changes are saved in <code>.serenity/workbench.yaml</code>, which you can also edit directly.</p>
           <input className="settings-filter" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Filter commands" aria-label="Filter commands"/>
           <table>
             <thead><tr><th scope="col">Command</th><th scope="col">Shortcut</th><th scope="col">ID</th></tr></thead>
-            <tbody>{shownShortcuts.map((item) => <tr key={item.id}><td>{item.title}</td><td>{item.keys ? <kbd>{item.keys}</kbd> : <span className="hint">—</span>}</td><td><code>{item.id}</code></td></tr>)}</tbody>
+            <tbody>{shownShortcuts.map((item) => <tr key={item.id}><td>{item.title}</td>
+              <td><ShortcutRecorder id={item.id} title={item.title} keys={item.keys} overridden={workspace.workbench.keybindings?.[item.id] !== undefined}
+                onSave={(id, chord) => { void window.serenity.setKeybinding(id, chord).then(onUpdate, (error) => onError(String(error))) }}/></td>
+              <td><code>{item.id}</code></td></tr>)}</tbody>
           </table>
         </section>}
         {section === 'about' && <section className="settings-about" aria-labelledby="about-heading">

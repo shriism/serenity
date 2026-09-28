@@ -33,6 +33,8 @@ export interface CommandHost {
   closeTab(): void
   /** `step` 1 shows the next tab in the focused pane, -1 the previous one. */
   cycleTab(step: number): void
+  /** Shows the tab at `position` (1-based) in the focused pane; 9 means the last tab, as in browsers. */
+  goToTab(position: number): void
   refresh(): void
 }
 
@@ -88,6 +90,8 @@ const builtins: CommandContribution[] = [
   { id: 'tab.close', title: 'Close tab', icon: X, keybinding: 'Mod+W', whileTyping: true, run: (host) => host.closeTab() },
   { id: 'tab.next', title: 'Next tab', icon: ArrowRight, keybinding: 'Mod+Shift+]', whileTyping: true, run: (host) => host.cycleTab(1) },
   { id: 'tab.previous', title: 'Previous tab', icon: ArrowLeft, keybinding: 'Mod+Shift+[', whileTyping: true, run: (host) => host.cycleTab(-1) },
+  ...Array.from({ length: 9 }, (_, index): CommandContribution => ({ id: `tab.go-${index + 1}`, title: index === 8 ? 'Go to last tab' : `Go to tab ${index + 1}`,
+    icon: ArrowRight, keybinding: `Mod+${index + 1}`, whileTyping: true, hideInPalette: true, run: (host) => host.goToTab(index + 1) })),
   { id: 'workspace.search', title: 'Search workspace', icon: Search, keybinding: 'Mod+K', whileTyping: true, hideInPalette: true, run: (host) => host.toggleSearch() },
   { id: 'appearance.dark', title: 'Appearance: Dark', icon: Moon, run: (host) => host.setAppearance('dark') },
   { id: 'appearance.light', title: 'Appearance: Light', icon: Sun, run: (host) => host.setAppearance('light') },

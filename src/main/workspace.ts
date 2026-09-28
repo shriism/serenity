@@ -20,6 +20,9 @@ import { canExtractText, extractDocument } from './documents'
 /** Extra YAML fields as searchable words; records without any add nothing. */
 const metadataText = (metadata: Record<string, unknown> | undefined): string => metadata && Object.keys(metadata).length ? JSON.stringify(metadata) : ''
 
+/** Documents Serenity can edit as text; others are read through extraction or opened in their own app. */
+const editableDocument = /\.(md|markdown|txt)$/i
+
 /** `name` in `directory`, or, if taken, the same name with a number before its extension; earlier files are kept. */
 async function freeName(directory: string, name: string): Promise<string> {
   const dot = name.lastIndexOf('.')
@@ -1225,6 +1228,61 @@ export class Workspace {
     return this.withFileMutation(source, async () => {
       if (checksum(await this.readOwnedText(source)) !== revision) throw new Error('This page changed on disk. Refresh before archiving it.')
       await rename(source, await freeName(archive, basename(page.path)))
+      this.markDirty()
+      return this.snapshot()
+    })
+  }
+
+  /** A Markdown or plain-text document's text and revision, for editing it in place. */
+  async readEditableDocument(name: string): Promise<{ text: string; revision: string }> {
+    if (!editableDocument.test(name)) throw new Error('Only Markdown and plain-text documents can be edited here')
+    const text = await this.readOwnedText(await this.documentPath(name))
+    return { text, revision: checksum(text) }
+  }
+
+  /** Saves an edited Markdown or plain-text document, refusing if it changed on disk since `revision`. */
+  async saveDocumentText(name: string, text: string, revision: string): Promise<{ snapshot: WorkspaceSnapshot; revision: string }> {
+    if (!editableDocument.test(name)) throw new Error('Only Markdown and plain-text documents can be edited here')
+    if (typeof text !== 'string') throw new Error('Document text must be text')
+    const path = await this.documentPath(name)
+    return this.withFileMutation(path, async () => {
+      if (checksum(await this.readOwnedText(path)) !== revision) throw new Error('This document changed on disk. Refresh before saving to avoid overwriting it.')
+      await atomicWrite(path, text)
+      this.extractedText.delete(name)
+      this.markDirty()
+      return { snapshot: await this.snapshot(), revision: checksum(text) }
+    })
+  }
+
+  /** Creates an empty Markdown document (Untitled.md, or a numbered name beside existing ones) and returns its name. */
+  async createDocument(): Promise<{ snapshot: WorkspaceSnapshot; name: string }> {
+    await this.verifyDirectories()
+    const path = await freeName(this.directories[2], 'Untitled.md')
+    await writeFile(path, '', { flag: 'wx' })
+    this.markDirty()
+    return { snapshot: await this.snapshot(), name: basename(path) }
+  }
+
+  /**
+   * Sets a command's shortcut in `.serenity/workbench.yaml`: a chord, `null` to remove its default, or `undefined` to go
+   * back to the default. Other settings and comments in the file stay as written.
+   */
+  async setKeybinding(commandId: string, chord: string | null | undefined): Promise<WorkspaceSnapshot> {
+    if (typeof commandId !== 'string' || !/^[a-z][a-z0-9.-]{0,80}$/.test(commandId)) throw new Error('Invalid command ID')
+    const normalized = chord === null || chord === undefined ? chord : normalizeKeybinding(chord)
+    if (normalized === null && chord !== null) throw new Error('Choose a chord with ⌘/Ctrl or Alt, such as Mod+Shift+K')
+    const path = join(this.path, '.serenity', 'workbench.yaml')
+    return this.withFileMutation(path, async () => {
+      const document = YAML.parseDocument(await this.readOwnedText(path).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT') return YAML.stringify(defaultWorkbench)
+        throw error
+      }))
+      if (document.errors.length) throw new Error('.serenity/workbench.yaml cannot be read; fix it before changing shortcuts here')
+      if (normalized === undefined) document.deleteIn(['keybindings', commandId])
+      else document.setIn(['keybindings', commandId], normalized)
+      const keybindings = document.get('keybindings')
+      if (YAML.isMap(keybindings) && keybindings.items.length === 0) document.delete('keybindings')
+      await atomicWrite(path, document.toString())
       this.markDirty()
       return this.snapshot()
     })

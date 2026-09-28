@@ -20,8 +20,8 @@ export function useAutosave<T>({ saved, revision, save, revisionOf, onUpdate, on
   saved: T
   /** Revision of the stored content, from the latest snapshot. */
   revision: string | undefined
-  /** Writes `draft` over `base`; returns the new snapshot. */
-  save(draft: T, base: string | undefined): Promise<WorkspaceSnapshot>
+  /** Writes `draft` over `base`; returns the new snapshot, with the file's new revision when the snapshot does not carry it. */
+  save(draft: T, base: string | undefined): Promise<WorkspaceSnapshot | { snapshot: WorkspaceSnapshot; revision: string }>
   /** The stored revision in a snapshot a save returned, so typing during the save does not look like a conflict. */
   revisionOf(snapshot: WorkspaceSnapshot): string | undefined
   onUpdate(snapshot: WorkspaceSnapshot): void
@@ -47,8 +47,9 @@ export function useAutosave<T>({ saved, revision, save, revisionOf, onUpdate, on
     const sent = edit.draft
     setState('saving')
     try {
-      const snapshot = await io.current.save(sent, edit.base)
-      edit.base = io.current.revisionOf(snapshot)
+      const result = await io.current.save(sent, edit.base)
+      const snapshot = 'snapshot' in result ? result.snapshot : result
+      edit.base = 'snapshot' in result ? result.revision : io.current.revisionOf(snapshot)
       edit.saving = false
       io.current.onUpdate(snapshot)
       // Typing that happened during the save is saved next.
@@ -83,7 +84,8 @@ export function useAutosave<T>({ saved, revision, save, revisionOf, onUpdate, on
     if (timer.current !== null) window.clearTimeout(timer.current)
     const edit = current.current
     // Closing a tab saves what was typed; a refused save is reported rather than silently lost.
-    if (edit.dirty && !edit.saving && !edit.conflict) void io.current.save(edit.draft, edit.base).then(io.current.onUpdate, (error) => io.current.onError(`Your last edits were not saved: ${String(error)}`))
+    if (edit.dirty && !edit.saving && !edit.conflict) void io.current.save(edit.draft, edit.base).then((result) => io.current.onUpdate('snapshot' in result ? result.snapshot : result),
+      (error) => io.current.onError(`Your last edits were not saved: ${String(error)}`))
     else if (edit.conflict) io.current.onError('A closed editor had edits that conflicted with a change on disk; they were not saved.')
     count(false)
   }, [])

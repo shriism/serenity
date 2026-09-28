@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type MutableRefObject } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { EditorSelection, EditorState, StateEffect, StateField, type Extension, type Range } from '@codemirror/state'
 import { Decoration, EditorView, WidgetType, keymap, placeholder, type DecorationSet } from '@codemirror/view'
@@ -13,6 +13,7 @@ import { resolveWikilink, wikilinkSuggestions } from '../../shared/wikilinks'
 import { parseResourceUri } from '../../shared/resources'
 import { externalLink } from '../../shared/external-links'
 import { LiveQuery } from './live-query'
+import { preferences } from './preferences'
 
 /** What the editor needs from the workbench: the workspace to resolve links against, and how to follow them. */
 export interface EditorContext {
@@ -268,7 +269,9 @@ function extensions(placeholderText: string, label: string, onChange: (text: str
     markdown({ base: markdownLanguage, addKeymap: false }), syntaxHighlighting(highlight),
     autocompletion({ override: [wikilinkCompletions], icons: false }),
     keymap.of([{ key: 'Mod-b', run: toggleMarker('**') }, { key: 'Mod-i', run: toggleMarker('*') },
-      ...markdownKeymap, ...completionKeymap, ...searchKeymap, ...historyKeymap, indentWithTab, ...defaultKeymap]),
+      ...markdownKeymap, ...completionKeymap, ...searchKeymap, ...historyKeymap, indentWithTab, ...defaultKeymap,
+      // After suggestions and search have had their turn, Escape leaves the editor so the page reads without syntax.
+      { key: 'Escape', run: (view) => { if (!preferences.get().escapeLeavesEditing) return false; view.contentDOM.blur(); return true } }]),
     placeholder(placeholderText),
     EditorView.contentAttributes.of({ 'aria-label': label, 'aria-multiline': 'true', spellcheck: 'true' }),
     EditorView.updateListener.of((update) => { if (update.docChanged) onChange(update.state.doc.toString()) }),
@@ -295,7 +298,10 @@ function extensions(placeholderText: string, label: string, onChange: (text: str
  * A Markdown editor with live preview. `value` is adopted when it changes from outside (for example, the file was
  * edited in another app) and differs from what the editor holds; typing reports through `onChange`.
  */
-export function MarkdownEditor({ value, onChange, onBlur = () => undefined, context, placeholder: placeholderText = '', label, className = '', autoFocus = false }: {
+/** Lets a parent move the cursor into the editor, e.g. from a title field. */
+export interface EditorHandle { focusStart(): void; goTo(position: number): void }
+
+export function MarkdownEditor({ value, onChange, onBlur = () => undefined, context, placeholder: placeholderText = '', label, className = '', autoFocus = false, handle }: {
   value: string
   onChange(text: string): void
   onBlur?(): void
@@ -304,6 +310,7 @@ export function MarkdownEditor({ value, onChange, onBlur = () => undefined, cont
   label: string
   className?: string
   autoFocus?: boolean
+  handle?: MutableRefObject<EditorHandle | null>
 }) {
   const host = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
@@ -318,7 +325,11 @@ export function MarkdownEditor({ value, onChange, onBlur = () => undefined, cont
     editor.dispatch({ effects: setContext.of(context) })
     view.current = editor
     if (autoFocus) editor.focus()
-    return () => { editor.destroy(); view.current = null }
+    if (handle) handle.current = {
+      focusStart: () => { editor.focus(); editor.dispatch({ selection: { anchor: 0 }, scrollIntoView: true }) },
+      goTo: (position) => { const anchor = Math.min(position, editor.state.doc.length); editor.focus(); editor.dispatch({ selection: { anchor }, effects: EditorView.scrollIntoView(anchor, { y: 'start', yMargin: 24 }) }) }
+    }
+    return () => { editor.destroy(); view.current = null; if (handle) handle.current = null }
   }, [])
   useEffect(() => { view.current?.dispatch({ effects: setContext.of(context) }) }, [context])
   useEffect(() => {

@@ -381,6 +381,9 @@ app.whenReady().then(async () => {
     if (!(await selected.snapshot()).documents.some((item) => item.name === name && item.extractable)) throw new Error('Readable document not found in this workspace')
     return extractDocument(await selected.documentPath(name))
   })
+  ipcMain.handle('document:read-editable', (_event, name: string) => currentWorkspace().readEditableDocument(name))
+  ipcMain.handle('document:save-text', (_event, name: string, text: string, revision: string) => currentWorkspace().saveDocumentText(name, text, revision))
+  ipcMain.handle('document:create', () => currentWorkspace().createDocument())
   ipcMain.handle('workspace:search', (_event, query: string) => currentWorkspace().search(query))
   ipcMain.handle('workspace:semantic-search', (_event, query: string, provider: Provider) => withActiveRequest(() => semanticSearch(currentWorkspace(), query, provider)))
   ipcMain.handle('workspace:cached-semantic-search', (_event, query: string) => rankSemanticIndex(currentWorkspace(), query))
@@ -422,6 +425,7 @@ app.whenReady().then(async () => {
     return snapshot
   })
   ipcMain.handle('calendar:save', (_event, item: CalendarEvent) => currentWorkspace().saveEvent(item))
+  ipcMain.handle('keybinding:set', (_event, id: string, chord: string | null | undefined) => currentWorkspace().setKeybinding(id, chord))
   ipcMain.handle('page:archive', (_event, id: string, revision: string) => currentWorkspace().archivePage(id, revision))
   ipcMain.handle('entity:archive', (_event, id: string, revision: string) => currentWorkspace().archiveEntity(id, revision))
   ipcMain.handle('document:archive', (_event, name: string) => currentWorkspace().archiveDocument(name))

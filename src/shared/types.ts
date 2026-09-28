@@ -270,6 +270,13 @@ export interface SerenityAPI {
   createPage(): Promise<WorkspaceSnapshot>
   /** Moves a page to `archive/pages/`; the Home page cannot be archived. */
   archivePage(id: string, revision: string): Promise<WorkspaceSnapshot>
+  /** A Markdown or plain-text document's text and revision, for editing. */
+  readEditableDocument(name: string): Promise<{ text: string; revision: string }>
+  saveDocumentText(name: string, text: string, revision: string): Promise<{ snapshot: WorkspaceSnapshot; revision: string }>
+  /** Creates an empty Markdown document in `documents/`. */
+  createDocument(): Promise<{ snapshot: WorkspaceSnapshot; name: string }>
+  /** Sets a command's shortcut for this workspace: a chord, null for none, or undefined for the default. */
+  setKeybinding(commandId: string, chord: string | null | undefined): Promise<WorkspaceSnapshot>
   /** Moves an entity and its facts to `archive/removed/`. */
   archiveEntity(id: string, revision: string): Promise<WorkspaceSnapshot>
   /** Moves an imported document to `archive/documents/`. */

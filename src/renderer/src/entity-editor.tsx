@@ -1,11 +1,11 @@
-import { useEffect, useId, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 import { MessageCircle, Plus } from 'lucide-react'
 import type { Claim, Entity, WorkspaceSnapshot } from '../../shared/types'
 import { ClaimCard } from './claim-card'
 import { sourceDocument } from '../../shared/provenance'
 import { wikilinkMentions } from '../../shared/wikilinks'
 import { resourceUri } from '../../shared/resources'
-import { MarkdownEditor, type EditorContext } from './markdown-editor'
+import { MarkdownEditor, type EditorContext, type EditorHandle } from './markdown-editor'
 import { useAutosave } from './use-autosave'
 import { ConflictBar, SaveIndicator } from './workspace-page'
 
@@ -45,6 +45,7 @@ export function EntityEditor(props: EntityEditorProps) {
   useEffect(() => setTitle(draft.title), [draft.title])
   useEffect(() => setType(draft.type), [draft.type])
   const [adding, setAdding] = useState(false)
+  const notes = useRef<EditorHandle | null>(null)
   const [claim, setClaim] = useState(emptyClaim)
   const [claimTarget, setClaimTarget] = useState('')
   const [mergeTarget, setMergeTarget] = useState('')
@@ -122,7 +123,11 @@ export function EntityEditor(props: EntityEditorProps) {
     <ConflictBar state={state} what="entity" onResolve={resolve}/>
     <input className="inline-title" value={title} aria-label="Name" spellCheck={false}
       onChange={(event) => setTitle(event.target.value)} onBlur={() => void commitTitle()}
-      onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur() } else if (event.key === 'Escape') { setTitle(draft.title); event.currentTarget.blur() } }}/>
+      onKeyDown={(event) => {
+        // Enter continues into the notes, as in a document editor; Escape puts the name back.
+        if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur(); notes.current?.focusStart() }
+        else if (event.key === 'Escape') { setTitle(draft.title); event.currentTarget.blur() }
+      }}/>
     <div className="properties">
       <label className="property" htmlFor={`${id}-type`}><span className="property-key">Type</span>
         <input id={`${id}-type`} className="property-value" value={type} list={`${id}-types`} onChange={(event) => setType(event.target.value)} onBlur={commitType}
@@ -130,7 +135,7 @@ export function EntityEditor(props: EntityEditorProps) {
       <datalist id={`${id}-types`}>{types.map((item) => <option key={item} value={item}/>)}</datalist>
       {stored.source && <div className="property"><span className="property-key">Source</span><span className="property-value static">{stored.source}</span></div>}
     </div>
-    <MarkdownEditor value={draft.body} onChange={(body) => setDraft({ ...draft, body })} onBlur={() => void flush()} context={props.context}
+    <MarkdownEditor handle={notes} value={draft.body} onChange={(body) => setDraft({ ...draft, body })} onBlur={() => void flush()} context={props.context}
       label={`Notes about ${draft.title}`} placeholder="Write what you know in your own words. Type [[ to link a page, entity, or document."/>
 
     <section className="facts" aria-labelledby={`${id}-facts`}>

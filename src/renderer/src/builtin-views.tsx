@@ -3,6 +3,7 @@ import { CalendarModule, TasksModule } from './module-views'
 import { ReviewPanel } from './review-panel'
 import { DocumentsPanel } from './documents-panel'
 import { DocumentPreview } from './document-preview'
+import { DocumentEditor, isEditableDocument } from './document-editor'
 import { ActivityPanel } from './activity-panel'
 import { WorkspacePageView } from './workspace-page'
 import { KnowledgeView } from './knowledge-view'
@@ -42,6 +43,7 @@ export interface BuiltinViewContext {
   onAttach(id: string, entityId: string): void
   onOpenSource(name: string): void
   onImport(): void
+  onNewDocument(): void
   onOpenDocument(name: string): void
   onAnalyze(name: string): void
   onOpenEntity(id: string): void
@@ -81,11 +83,14 @@ builtinViews.register({ id: 'tasks', module: 'tasks', render: ({ workspace, onUp
 builtinViews.register({ id: 'review', render: ({ workspace, onResolve, onAttach, onOpenSource, onOpenResource, onUpdate, onError }) =>
   <ReviewPanel workspace={workspace} onResolve={onResolve} onAttach={onAttach} onOpenSource={onOpenSource} onOpenResource={(uri, side) => onOpenResource(uri, side)}
     onUpdate={onUpdate} onError={onError}/> })
-builtinViews.register({ id: 'documents', render: ({ workspace, activeDocument, onImport, onOpenDocument, onOpenSource, onError, onAnalyze, onResolve, onAttach, presentation, onOpenResource, onAsk }) =>
+builtinViews.register({ id: 'documents', render: ({ workspace, activeDocument, onImport, onNewDocument, onOpenDocument, onOpenSource, onError, onAnalyze, onResolve, onAttach, presentation, onOpenResource, onAsk, editor, onUpdate }) =>
   activeDocument ? presentationFor('document', presentation) === 'knowledge'
     ? <DocumentKnowledgeView name={activeDocument} workspace={workspace} onOpenResource={(uri, side) => onOpenResource(uri, side)} onAsk={onAsk}/>
-    : <DocumentPreview name={activeDocument} workspace={workspace} onOpen={onOpenSource} onError={onError} onResolve={onResolve} onAttach={onAttach} onOpenSource={onOpenSource}/>
-    : <DocumentsPanel workspace={workspace} onImport={onImport} onOpen={onOpenDocument} onAnalyze={onAnalyze}/> })
+    : isEditableDocument(activeDocument)
+      ? <DocumentEditor key={activeDocument} name={activeDocument} workspace={workspace} context={editor} onUpdate={onUpdate} onError={onError} onOpen={onOpenSource}
+          onReview={() => onOpenResource('serenity:view/review')}/>
+      : <DocumentPreview name={activeDocument} workspace={workspace} onOpen={onOpenSource} onError={onError} onResolve={onResolve} onAttach={onAttach} onOpenSource={onOpenSource}/>
+    : <DocumentsPanel workspace={workspace} onImport={onImport} onNew={onNewDocument} onOpen={onOpenDocument} onAnalyze={onAnalyze}/> })
 builtinViews.register({ id: 'search', render: ({ workspace, searchQuery, onOpenResource, onAsk }) =>
   <SearchView workspace={workspace} initialQuery={searchQuery} onOpenResource={(uri, side) => onOpenResource(uri, side)} onAsk={onAsk}/> })
 builtinViews.register({ id: 'activity', render: ({ workspace, activity, onOpenResource }) => <ActivityPanel workspace={workspace} activity={activity} onOpenResource={(uri, side) => onOpenResource(uri, side)}/> })

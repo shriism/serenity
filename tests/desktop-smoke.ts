@@ -68,7 +68,7 @@ const run = <T = unknown>(script: string, timeout?: number) => app.evaluate<T>(`
 const shot = async (name: string) => { if (screenshots) await writeFile(join(screenshots, `${name}.png`), await app.screenshot()) }
 /** Types into the focused element as a person would, so editors see ordinary input events. */
 const type = (text: string) => app.send('Input.insertText', { text })
-const key = (key: string, modifiers = 0) => app.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: key.length === 1 ? `Key${key.toUpperCase()}` : key,
+const key = (key: string, modifiers = 0) => app.send('Input.dispatchKeyEvent', { type: 'keyDown', key, code: /^\d$/.test(key) ? `Digit${key}` : key.length === 1 ? `Key${key.toUpperCase()}` : key,
   windowsVirtualKeyCode: key === 'Enter' ? 13 : key === 'Escape' ? 27 : key.toUpperCase().charCodeAt(0), modifiers }).then(() =>
   app.send('Input.dispatchKeyEvent', { type: 'keyUp', key, modifiers }))
 const mod = process.platform === 'darwin' ? 4 : 2
@@ -103,6 +103,12 @@ try {
   // Renaming a page through its inline title writes the frontmatter.
   await run(`const title = $('.inline-title'); title.focus(); setValue(title, 'My Home'); title.blur()`)
   await until('the title to save', async () => /title: My Home/.test(await readFile(join(workspace, 'pages', 'Home.md'), 'utf8')))
+  // Enter in the title continues into the page; Escape leaves editing.
+  const keys = await run<{ intoBody: boolean; left: boolean }>(`const title = $('.inline-title'); title.focus(); title.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    await sleep(50); const intoBody = document.activeElement?.classList.contains('cm-content') ?? false;
+    document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })); await sleep(50);
+    return { intoBody, left: !document.activeElement?.classList.contains('cm-content') }`)
+  assert.deepEqual(keys, { intoBody: true, left: true })
 
   // The explorer lists the workspace; the ribbon opens views as tabs; the assistant has one toggle.
   const shell = await run<{ explorer: string[]; toggles: number; ribbon: string[] }>(`await showSidebar(); return { explorer: $$('.tree-row .tree-label').map((item) => item.textContent),
@@ -145,6 +151,12 @@ try {
   assert.deepEqual(presentations, ['Timeline:true', 'Connections:true', 'Profile:true'])
   await shot('serenity-entity')
 
+  // ⌘/Ctrl-1 shows the first tab and 9 the last.
+  await key('1', mod)
+  assert.match(await run<string>(`await sleep(100); return $('.tab.active')?.textContent ?? ''`), /My Home/, 'Mod+1 shows the first tab')
+  await key('9', mod)
+  assert.match(await run<string>(`await sleep(100); return $('.tab.active')?.textContent ?? ''`), /Sam Rivera/, 'Mod+9 shows the last tab')
+
   // Panes: split, open beside, move a tab, and close a pane without losing files.
   const panes = await run<{ split: number; moved: boolean; closed: number }>(`click($('[aria-label^="Pane actions"]')); await sleep(80); click(byText('.menu-item', 'Split right'));
     await waitFor(() => $$('.pane').length === 2); const split = $$('.pane').length;
@@ -167,12 +179,19 @@ try {
     return $('.tab.active')?.textContent.includes('Search')`)
   assert.equal(kept, true, 'Search results stay open in a Search tab')
 
-  // Documents open as text with an outline; unsupported formats are marked.
-  const documents = await run<{ text: boolean; outline: boolean; marked: boolean }>(`click(byText('.ribbon-btn', 'Documents')); await waitFor(() => $$('.document-row').length);
+  // Markdown documents open for editing with an outline; PDF and Word documents are read; unsupported formats are marked.
+  const documents = await run<{ text: boolean; outline: boolean; marked: boolean; pdf: boolean }>(`click(byText('.ribbon-btn', 'Documents')); await waitFor(() => $$('.document-row').length);
     const marked = $$('.document-row').some((row) => row.textContent.includes('unreadable.bin') && row.textContent.includes('opens in its app'));
-    click(byText('.document-name', 'notes.md')); await waitFor(() => $('.document-text'));
-    return { text: Boolean($('.document-text')), outline: Boolean(await waitFor(() => $('.document-outline'))), marked }`)
-  assert.deepEqual(documents, { text: true, outline: true, marked: true })
+    click(byText('.document-name', 'notes.md')); await waitFor(() => $('.document-view .cm-content'), 8000);
+    const outline = Boolean(await waitFor(() => $('.document-outline'))); const text = Boolean($('.document-view .cm-content'));
+    click(byText('.ribbon-btn', 'Documents')); await waitFor(() => $$('.document-row').length); click(byText('.document-name', 'research.pdf'));
+    return { text, outline, marked, pdf: Boolean(await waitFor(() => $('.document-text'))) }`)
+  assert.deepEqual(documents, { text: true, outline: true, marked: true, pdf: true })
+  // New creates a Markdown document that is edited and saved in place.
+  await run(`click(byText('.ribbon-btn', 'Documents')); await waitFor(() => $$('.document-row').length); click(byText('.view-actions button', 'New'));
+    await waitFor(() => $('.document-file-title')?.textContent === 'Untitled.md'); focusEnd($('.document-view .cm-content'))`)
+  await type('Meeting notes for Sam')
+  await until('the new document to save', async () => (await readFile(join(workspace, 'documents', 'Untitled.md'), 'utf8').catch(() => '')) === 'Meeting notes for Sam')
 
   // Tasks and calendar: records written to the workspace, with their alternative views.
   const taskDue = futureDate(7)

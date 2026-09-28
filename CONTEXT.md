@@ -132,7 +132,7 @@ Serenity 2.0 is a finished, hardened desktop workbench for the agreed initial sc
 
 - **2.0.0** rebuilds the interface as a native workbench: title-bar tabs, ribbon and explorer, views as tabs, a live-preview editor with autosave, Chat mode, dialogs, and an application menu. It keeps the workspace format; sessions from 1.x restore.
 - **1.0.0** (`v1.0.0`) was the first desktop release. **1.1.0** (`v1.1.0`, commit `8a7d8d3`) adds search excerpts and a search pane, questions scoped to search results, structured document analysis, query tables and counts, timeline filters, and PDF/DOCX extraction in a worker thread.
-- Releases hold the CI-built installers (DMG and ZIP for Apple silicon, the Windows installer, a Linux AppImage), `SHA256SUMS`, and notes from `CHANGELOG.md`. 1.1.0 is published; 2.0.0 (`v2.0.0`, commit `1e47a87`, CI green on all three platforms) is a **draft** for the owner to publish; 1.0.0 remains a draft, superseded.
+- **2.0.2** is the release containing the calendar refresh/drag fix, corrected macOS titlebar dividers, and Documents button emphasis. Releases hold the CI-built installers (DMG and ZIP for Apple silicon, the x64 Windows installer, an x64 Linux AppImage), `SHA256SUMS`, and notes from `CHANGELOG.md`. Older 1.0.0, 2.0.0, and 2.0.1 drafts are superseded. Installers are published only after the matching commit passes packaged smoke tests on all three platforms.
 - `SERENITY_SMOKE_WINDOW=900x640 npm run smoke:desktop` repeats the smoke test in a small window, where the sidebars float; Windows CI machines use such a window.
 - Builds are unsigned. Signing and notarizing for macOS, and signing for Windows, need the owner's certificates.
 - New user-visible changes go under a new heading in `CHANGELOG.md`.

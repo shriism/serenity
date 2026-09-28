@@ -302,7 +302,10 @@ try {
           y: eventDrag.from.y + (eventDrag.to.y - eventDrag.from.y) * step / 10, button: 'left', buttons: 1 })
         await delay(20)
       }
-      await delay(60)
+      // A file-watcher refresh during a drag must not invalidate FullCalendar's
+      // starting context or discard the drop when the mouse button is released.
+      await app.evaluate(`window.serenity.saveTask({ id: '', title: 'Refresh during calendar drag', completed: false, notes: '', relatedEntityIds: [] })`)
+      await delay(700)
       await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...eventDrag.to, button: 'left', buttons: 0, clickCount: 1 })
       await until('the dragged calendar event to save', async () => (await app.evaluate<WorkspaceSnapshot>('window.serenity.refresh()')).events.some((item) => item.title === 'Lunch with Sam at noon' && item.start === dropDate))
     } catch (error) {

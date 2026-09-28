@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { memo, useEffect, useMemo, useReducer, useRef, useState, type FormEvent, type RefObject } from 'react'
 import { Plus } from 'lucide-react'
 import FullCalendar from '@fullcalendar/react'
 import dayGridPlugin from '@fullcalendar/daygrid'
 import timeGridPlugin from '@fullcalendar/timegrid'
 import interactionPlugin from '@fullcalendar/interaction'
-import type { EventDropArg, EventInput } from '@fullcalendar/core'
+import type { CalendarOptions, EventDropArg, EventInput } from '@fullcalendar/core'
 import type { EventResizeDoneArg } from '@fullcalendar/interaction'
 import { ResourcePicker } from './resource-picker'
 import type { CalendarEvent, TaskItem, WorkspaceSnapshot } from '../../shared/types'
@@ -45,6 +45,14 @@ function EntityLinks({ workspace, selected, onChange }: {
   </fieldset>
 }
 
+// FullCalendar keeps the starting context by identity throughout a pointer gesture.
+// Replacing its options on a watcher refresh can silently discard the drop. Hold the
+// rendered options until the gesture ends; the parent then renders the latest snapshot.
+const InteractiveCalendar = memo(function InteractiveCalendar({ calendarRef, interacting: _interacting, ...options }:
+  CalendarOptions & { calendarRef: RefObject<FullCalendar | null>; interacting: RefObject<boolean> }) {
+  return <FullCalendar ref={calendarRef} {...options}/>
+}, (_previous, next) => next.interacting.current)
+
 export function CalendarModule({ workspace, onUpdate, onError, focusEventId, focusVersion,
   calendarPresentation = 'month', onCalendarPresentationChange, onOpenResource }: Props) {
   const [month, setMonth] = useState(today().slice(0, 7))
@@ -54,6 +62,14 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
   const [endTime, setEndTime] = useState('')
   const [busy, setBusy] = useState(false)
   const calendar = useRef<FullCalendar>(null)
+  const interacting = useRef(false)
+  const [, redrawCalendar] = useReducer((version: number) => version + 1, 0)
+  const beginInteraction = (): void => { interacting.current = true }
+  const endInteraction = (): void => {
+    // eventDragStop/eventResizeStop fire before the drop/resize commit callback.
+    // Let that callback finish with the original revision before updating options.
+    queueMicrotask(() => { interacting.current = false; redrawCalendar() })
+  }
   const [editorOpen, setEditorOpen] = useState(false)
   useEffect(() => {
     const event = workspace.events.find((item) => item.id === focusEventId)
@@ -163,7 +179,7 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
               {item.detail && <small className="agenda-detail">{item.detail}</small>}</button>
           </li>)}</ol>
         </div> : <div className="calendar-surface">
-          <FullCalendar ref={calendar} plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+          <InteractiveCalendar calendarRef={calendar} interacting={interacting} plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
             initialView={{ month: 'dayGridMonth', week: 'timeGridWeek', day: 'timeGridDay' }[calendarPresentation]}
             initialDate={selectedDay} headerToolbar={{ left: 'title', center: '', right: 'today prev,next' }}
             buttonIcons={false} buttonText={{ prev: '‹', next: '›', today: 'Today' }}
@@ -176,6 +192,8 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
               const selected = workspace.events.find((item) => `event:${item.id}` === info.event.id)
               if (selected) { setSelectedDay(selected.start.slice(0, 10)); setDraft(selected); setTime(selected.start.slice(11, 16)); setEndTime(selected.end?.slice(11, 16) ?? ''); setEditorOpen(true) }
             }}
+            eventDragStart={beginInteraction} eventDragStop={endInteraction}
+            eventResizeStart={beginInteraction} eventResizeStop={endInteraction}
             eventDrop={(info) => void moveEvent(info)} eventResize={(info) => void moveEvent(info)}/>
         </div>}
       </div>

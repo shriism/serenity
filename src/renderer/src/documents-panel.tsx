@@ -12,7 +12,7 @@ interface Props {
 export function DocumentsPanel({ workspace, onImport, onNew, onAnalyze, onOpen }: Props) {
   return <section className="page wide">
     <header className="view-header"><div><h1>Documents</h1><p className="view-subtitle">Imported files are copied into this workspace. Text, Markdown, PDF, and Word documents can be searched and analyzed.</p></div>
-      <div className="view-actions"><button className="secondary" onClick={onNew}><FilePlus2 size={15}/> New</button><button className="primary" onClick={onImport}><FileUp size={15}/> Import…</button></div></header>
+      <div className="view-actions"><button className="primary" onClick={onNew}><FilePlus2 size={15}/> New</button><button className="secondary" onClick={onImport}><FileUp size={15}/> Import…</button></div></header>
     {workspace.documents.length === 0 && <div className="empty-state"><FileText size={22}/><h2>No documents yet</h2><p>Import files to read them here, search their text, and ask the assistant to analyze them, or start a new Markdown document.</p></div>}
     <div className="document-list">
       {workspace.documents.map((item) => <div key={item.name} className="document-row">

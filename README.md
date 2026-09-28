@@ -6,7 +6,9 @@ Product principles and agreed decisions are in [SERENITY.md](SERENITY.md), imple
 
 ## Install and run
 
-Install Node.js 24 or newer, then:
+Download the installer for your platform from [the latest release](https://github.com/shriism/serenity/releases/latest). macOS builds target Apple silicon; Windows and Linux builds target x64.
+
+To run from source, install Node.js 24 or newer, then:
 
 ```sh
 npm install
@@ -166,4 +168,4 @@ To package for the current OS use `npm run dist`; `npm run dist:mac`, `npm run d
 
 ## Scope
 
-This release covers the local desktop workspace, Copilot and Codex, human-reviewed and permission-bounded AI updates, connected knowledge, internal calendar and tasks, document analysis, and hybrid retrieval. Serenity 2.0.1 is the current release; installers for each platform are attached to its GitHub release with a `SHA256SUMS` file. Packaged builds pass smoke tests on macOS, Windows, and Linux, and live Copilot and Codex conversations have been tested from the packaged macOS app; provider sign-in is needed on each device. External calendar sync, cloud sync, local models, mobile access, and installable plugins are future goals.
+This release covers the local desktop workspace, Copilot and Codex, human-reviewed and permission-bounded AI updates, connected knowledge, internal calendar and tasks, document analysis, and hybrid retrieval. Serenity 2.0.2 is the current release; installers for each platform are attached to its GitHub release with a `SHA256SUMS` file. Packaged builds pass smoke tests on macOS, Windows, and Linux, and live Copilot and Codex conversations have been tested from the packaged macOS app; provider sign-in is needed on each device. External calendar sync, cloud sync, local models, mobile access, and installable plugins are future goals.

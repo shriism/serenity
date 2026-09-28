@@ -7,7 +7,8 @@ Serenity's notable changes, newest first. The workspace format stays readable Ma
 ## 2.0.2 (2026-09-28)
 
 - Calendar drag and resize gestures survive workspace refreshes without silently discarding changes.
-- Navigation dividers start below the titlebar, clear of macOS window controls; the welcome screen has no stray titlebar line. In full screen, the isolated sidebar toggle has a divider separating it from the tabs.
+- Navigation dividers start below the titlebar, clear of macOS window controls; the welcome screen has no stray titlebar line. In full screen, the ribbon divider extends through the titlebar whether the sidebar is open or closed. Serenity is centered as the application title.
+- The assistant sidebar toggle receives native mouse clicks instead of being intercepted by the draggable titlebar.
 - Documents uses the accent color for New and the neutral style for Import.
 
 ## 2.0.1 (2026-09-28)

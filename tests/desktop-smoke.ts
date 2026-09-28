@@ -133,12 +133,23 @@ try {
   assert.ok(shell.explorer.includes('My Home') && shell.explorer.includes('research.pdf'), `Explorer: ${shell.explorer}`)
   assert.equal(shell.toggles, 1, 'Exactly one control shows or hides the assistant')
   assert.ok(shell.ribbon.includes('Calendar') && shell.ribbon.includes('Settings'), `Ribbon: ${shell.ribbon}`)
-  const hidden = await run(`if ($('button[aria-label="Show assistant"]')) { click($('button[aria-label="Show assistant"]')); await waitFor(() => $('.right-sidebar[aria-hidden="false"]')) }
-    const before = $('.assistant-edge-toggle').getBoundingClientRect().x;
-    click($('button[aria-label="Hide assistant"]')); await waitFor(() => $('.right-sidebar[aria-hidden="true"]')); const shown = Boolean($('button[aria-label="Show assistant"]'));
-    click($('button[aria-label="Show assistant"]')); await waitFor(() => $('.right-sidebar[aria-hidden="false"]'));
-    return shown && $$('button[aria-label="Hide assistant"]').length === 1 && Math.abs($('.assistant-edge-toggle').getBoundingClientRect().x - before) < 1`)
-  assert.equal(hidden, true, 'The same single toggle hides and shows the assistant')
+  const clickAssistantToggle = async () => {
+    const point = await run<{ x: number; y: number }>(`const button = $('.assistant-edge-toggle');
+      if (getComputedStyle(button).getPropertyValue('-webkit-app-region') !== 'no-drag') throw new Error('The assistant toggle must receive clicks instead of dragging the window');
+      const rect = button.getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }`)
+    await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...point, buttons: 0 })
+    await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...point, button: 'left', buttons: 1, clickCount: 1 })
+    await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...point, button: 'left', buttons: 0, clickCount: 1 })
+  }
+  if (await run<boolean>(`return Boolean($('button[aria-label="Show assistant"]'))`)) await clickAssistantToggle()
+  await until('the assistant to open', () => run<boolean>(`return Boolean($('.right-sidebar[aria-hidden="false"]'))`))
+  const toggleX = await run<number>(`return $('.assistant-edge-toggle').getBoundingClientRect().x`)
+  await clickAssistantToggle()
+  await until('a pointer click to close the assistant', () => run<boolean>(`return Boolean($('.right-sidebar[aria-hidden="true"]') && $('button[aria-label="Show assistant"]'))`))
+  await clickAssistantToggle()
+  await until('a pointer click to reopen the assistant', () => run<boolean>(`return Boolean($('.right-sidebar[aria-hidden="false"]'))`))
+  assert.equal(await run<boolean>(`return $$('button[aria-label="Hide assistant"]').length === 1 && Math.abs($('.assistant-edge-toggle').getBoundingClientRect().x - ${toggleX}) < 1`), true,
+    'The same fixed toggle hides and shows the assistant')
   const contextMenu = await run<string[]>(`await showSidebar(); const row = byText('.tree-row', 'research.pdf'); const rect = row.getBoundingClientRect();
     row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: rect.left + 10, clientY: rect.top + 5 }));
     await waitFor(() => $('.menu.context')); const labels = $$('.menu.context .menu-label').map((item) => item.textContent);

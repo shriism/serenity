@@ -740,7 +740,6 @@ function App() {
         {showLeft && <span className="titlebar-brand" aria-hidden="true">Serenity</span>}
       </>}
     </header>
-    {workspace && mode === 'workspace' && assistantToggle}
     {workspace && <Ribbon commands={commands} navigation={workspace.workbench.navigation} activeView={activeView} homeShown={focusedTab?.kind === 'page' && focusedTab.id === workspace.workbench.homePage} pendingCount={pending.length}
       mode={mode} shortcutFor={shortcut} onCommand={runCommand}/>}
     {workspace && <aside className="left-sidebar" aria-label={mode === 'chat' ? 'Chats' : 'Workspace'} inert={!showLeft} aria-hidden={!showLeft}>
@@ -809,6 +808,8 @@ function App() {
       </ErrorBoundary>
     </aside>}
     {narrow && (showLeft || showRight) && <div className="scrim" onClick={() => { setLeftOpen(false); setRightOpen(false) }} aria-hidden="true"/>}
+    {/* Native drag regions follow paint order: keep this no-drag control after the headers beneath it. */}
+    {workspace && mode === 'workspace' && assistantToggle}
     {errors.length > 0 && <div className="toasts" role="alert">{errors.map((item) => <div key={item.id} className="toast">
       <AlertTriangle size={14}/><span>{item.text}</span>
       <button type="button" className="icon-btn" onClick={() => setErrors((current) => current.filter((entry) => entry.id !== item.id))} aria-label="Dismiss"><X size={14}/></button>

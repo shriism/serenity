@@ -420,6 +420,7 @@ app.whenReady().then(async () => {
     return snapshot
   })
   ipcMain.handle('calendar:save', (_event, item: CalendarEvent) => currentWorkspace().saveEvent(item))
+  ipcMain.handle('page:archive', (_event, id: string, revision: string) => currentWorkspace().archivePage(id, revision))
   ipcMain.handle('task:save', (_event, item: TaskItem) => currentWorkspace().saveTask(item))
   ipcMain.handle('calendar:archive', (_event, id: string, revision: string) => currentWorkspace().archiveEvent(id, revision))
   ipcMain.handle('calendar:restore', (_event, id: string) => currentWorkspace().restoreEvent(id))

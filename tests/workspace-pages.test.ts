@@ -215,3 +215,26 @@ test('page queries can show a count or a table and report how many matched in to
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
+
+test('pages move to the archive intact, never the Home page, and never over a newer edit', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-archive-page-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const created = (await workspace.createPage()).pages.find((page) => page.id !== 'home')!
+    const home = (await workspace.snapshot()).pages.find((page) => page.id === 'home')!
+    await assert.rejects(workspace.archivePage('home', home.revision), /Home page cannot be archived/)
+    await assert.rejects(workspace.archivePage(created.id, 'stale'), /changed on disk/)
+    const after = await workspace.archivePage(created.id, created.revision)
+    assert.equal(after.pages.some((page) => page.id === created.id), false)
+    const archived = await readdir(join(directory, 'archive', 'pages'))
+    assert.equal(archived.length, 1)
+    assert.equal(await readFile(join(directory, 'archive', 'pages', archived[0]), 'utf8'), created.text, 'the archived file is unchanged')
+    await writeFile(join(directory, 'pages', archived[0]), created.text)
+    workspace.markDirty()
+    const again = (await workspace.snapshot()).pages.find((page) => page.id === created.id)!
+    await workspace.archivePage(again.id, again.revision)
+    assert.equal((await readdir(join(directory, 'archive', 'pages'))).length, 2, 'a second archive of the same name is kept beside the first')
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})

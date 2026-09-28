@@ -17,6 +17,7 @@ const api: SerenityAPI = {
   savePage: (page) => ipcRenderer.invoke('page:save', page),
   renameWikilinks: (from, to, uris) => ipcRenderer.invoke('wikilinks:rename', from, to, uris),
   createPage: () => ipcRenderer.invoke('page:create'),
+  archivePage: (id, revision) => ipcRenderer.invoke('page:archive', id, revision),
   loadSession: () => ipcRenderer.invoke('workspace:session:load'),
   saveSession: (session) => ipcRenderer.invoke('workspace:session:save', session),
   addClaim: (claim) => ipcRenderer.invoke('claim:add', claim),

@@ -266,6 +266,8 @@ export interface SerenityAPI {
   readDocument(name: string): Promise<string | null>
   savePage(page: Pick<WorkspacePage, 'id' | 'path' | 'text' | 'revision'>): Promise<WorkspaceSnapshot>
   createPage(): Promise<WorkspaceSnapshot>
+  /** Moves a page to `archive/pages/`; the Home page cannot be archived. */
+  archivePage(id: string, revision: string): Promise<WorkspaceSnapshot>
   renameWikilinks(from: string, to: string, uris: string[]): Promise<{ snapshot: WorkspaceSnapshot; count: number }>
   loadSession(): Promise<WorkbenchSession | null>
   saveSession(session: WorkbenchSession): Promise<void>

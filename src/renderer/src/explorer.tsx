@@ -1,8 +1,8 @@
 import { memo, useMemo, useState, type MouseEvent } from 'react'
-import { ChevronRight, Columns2, Copy, ExternalLink, FilePlus2, FileText, FileUp, Search, UserPlus, X } from 'lucide-react'
+import { Archive, ChevronRight, Columns2, Copy, ExternalLink, FilePlus2, FileText, FileUp, Search, UserPlus, X } from 'lucide-react'
 import { useContextMenu } from './menu'
 import type { WorkspaceSnapshot } from '../../shared/types'
-import { resourceUri } from '../../shared/resources'
+import { parseResourceUri, resourceUri } from '../../shared/resources'
 import { entityTypes } from '../../shared/library'
 
 // A folder shows this many items at first; a larger one offers the rest on request rather than drawing thousands.
@@ -21,7 +21,7 @@ interface Folder { id: string; title: string; items: Item[] }
  * The workspace as a tree: pages, entities grouped by their type, and imported documents. Clicking an item opens it in
  * the focused pane; ⌘/Ctrl-click opens it in the next one.
  */
-export const Explorer = memo(function Explorer({ workspace, activeUri, onOpen, onNewPage, onNewEntity, onImport }: {
+export const Explorer = memo(function Explorer({ workspace, activeUri, onOpen, onNewPage, onNewEntity, onImport, onArchivePage }: {
   workspace: WorkspaceSnapshot
   /** The resource shown in the focused pane, highlighted in the tree. */
   activeUri?: string
@@ -29,6 +29,8 @@ export const Explorer = memo(function Explorer({ workspace, activeUri, onOpen, o
   onNewPage(): void
   onNewEntity(): void
   onImport(): void
+  /** Moves a page to the workspace archive, after asking. */
+  onArchivePage(id: string): void
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => stored('serenity.explorer-collapsed'))
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
@@ -66,22 +68,29 @@ export const Explorer = memo(function Explorer({ workspace, activeUri, onOpen, o
   }
 
   const open = (uri: string) => (event: MouseEvent) => onOpen(uri, event.metaKey || event.ctrlKey)
+  const archivable = (uri: string) => {
+    const ref = parseResourceUri(uri)
+    return ref?.kind === 'page' && ref.id !== workspace.workbench.homePage
+      ? [{ id: 'archive', label: 'Move to archive…', icon: <Archive size={14}/>, danger: true, separated: true, run: () => onArchivePage(ref.id) }] : []
+  }
   const entityFolders = shown.filter((folder) => folder.id.startsWith('type:'))
   const renderFolder = (folder: Folder, depth: number) => {
     const closed = !wanted && (collapsed[folder.id] ?? (folder.id.startsWith('type:') && folder.items.length > 60))
     const limit = expanded[folder.id] ? Infinity : folderLimit
-    return <li key={folder.id} className="tree-folder" role="treeitem" aria-expanded={!closed} aria-level={depth} aria-selected={false}>
-      <button type="button" className="tree-row folder" style={{ paddingLeft: 8 + (depth - 1) * 12 }} onClick={() => toggle(folder.id)}>
+    const name = `${folder.title}, ${folder.items.length} ${folder.items.length === 1 ? 'item' : 'items'}`
+    return <li key={folder.id} className="tree-folder" role="treeitem" aria-expanded={!closed} aria-level={depth} aria-selected={false} aria-label={name}>
+      <button type="button" className="tree-row folder" style={{ paddingLeft: 8 + (depth - 1) * 12 }} onClick={() => toggle(folder.id)} aria-label={name}>
         <ChevronRight size={13} className="tree-chevron"/><span className="tree-label">{folder.title}</span><span className="tree-count">{folder.items.length}</span>
       </button>
       {!closed && <ul role="group">
-        {folder.items.slice(0, limit).map((item) => <li key={item.uri} role="treeitem" aria-level={depth + 1} aria-selected={item.uri === activeUri}>
+        {folder.items.slice(0, limit).map((item) => <li key={item.uri} role="treeitem" aria-level={depth + 1} aria-selected={item.uri === activeUri} aria-label={item.title}>
           <button type="button" className={`tree-row ${item.uri === activeUri ? 'active' : ''}`} style={{ paddingLeft: 22 + (depth - 1) * 12 }}
             onClick={open(item.uri)} title={item.detail ? `${item.title} · ${item.detail}` : item.title}
             onContextMenu={(event) => contextMenu.open(event, `${item.title} actions`, [
               { id: 'open', label: item.detail ? 'Open in its app' : 'Open', icon: item.detail ? <ExternalLink size={14}/> : <FileText size={14}/>, run: () => onOpen(item.uri, false) },
               ...(item.detail ? [] : [{ id: 'side', label: 'Open in next pane', icon: <Columns2 size={14}/>, detail: '⌘-click', run: () => onOpen(item.uri, true) }]),
-              { id: 'link', label: 'Copy link', icon: <Copy size={14}/>, detail: `[[${item.title}]]`.length > 24 ? undefined : `[[${item.title}]]`, separated: true, run: () => window.serenity.copyText(`[[${item.title}]]`) }
+              { id: 'link', label: 'Copy link', icon: <Copy size={14}/>, detail: `[[${item.title}]]`.length > 24 ? undefined : `[[${item.title}]]`, separated: true, run: () => window.serenity.copyText(`[[${item.title}]]`) },
+              ...archivable(item.uri)
             ])}>
             <span className="tree-label">{item.title}</span>
           </button>
@@ -111,8 +120,9 @@ export const Explorer = memo(function Explorer({ workspace, activeUri, onOpen, o
     <div className="tree-scroll">
       <ul className="tree" role="tree" aria-label="Workspace files">
         {shown.filter((folder) => folder.id === 'pages').map((folder) => renderFolder(folder, 1))}
-        {(entityFolders.length > 0 || !wanted) && <li className="tree-folder" role="treeitem" aria-expanded={!collapsed.knowledge || Boolean(wanted)} aria-level={1} aria-selected={false}>
-          <button type="button" className="tree-row folder" style={{ paddingLeft: 8 }} onClick={() => toggle('knowledge')}>
+        {(entityFolders.length > 0 || !wanted) && <li className="tree-folder" role="treeitem" aria-expanded={!collapsed.knowledge || Boolean(wanted)} aria-level={1} aria-selected={false}
+          aria-label={`Knowledge, ${workspace.entities.length} entities`}>
+          <button type="button" className="tree-row folder" style={{ paddingLeft: 8 }} onClick={() => toggle('knowledge')} aria-label={`Knowledge, ${workspace.entities.length} entities`}>
             <ChevronRight size={13} className="tree-chevron"/><span className="tree-label">Knowledge</span><span className="tree-count">{workspace.entities.length}</span>
           </button>
           {(!collapsed.knowledge || wanted) && <ul role="group">

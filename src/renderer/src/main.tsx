@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { AlertTriangle, ChevronDown, Columns2, FolderOpen, History, Maximize2, MessageSquarePlus, MoreHorizontal, MoveRight, PanelLeft, PanelRight, RotateCw, Settings2, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Archive, ChevronDown, Columns2, FolderOpen, History, Maximize2, MessageSquarePlus, MoreHorizontal, MoveRight, PanelLeft, PanelRight, RotateCw, Settings2, Trash2, X } from 'lucide-react'
 import type { Conversation, SearchResult, WorkspaceSnapshot } from '../../shared/types'
 import { useAssistant } from './use-assistant'
 import { ErrorBoundary } from './error-boundary'
@@ -374,6 +374,13 @@ function App() {
     return openTab({ kind: 'document', id: name }, groupId)
   }
 
+  async function archivePage(id: string): Promise<void> {
+    const page = workspace?.pages.find((item) => item.id === id)
+    if (!page || !window.confirm(`Move “${page.title}” to the archive? Its file moves to archive/pages, where you can still open it or move it back.`)) return
+    try { setWorkspace(await window.serenity.archivePage(page.id, page.revision)) }
+    catch (cause) { setError(String(cause)) }
+  }
+
   function closeTab(key: string, groupId: string): void {
     setWorkbench((current) => updateGroup(current, groupId, (group) => removeTab(group, key)))
   }
@@ -618,7 +625,8 @@ function App() {
         onDropTab={(dragged, before) => { setDropTarget(null); dropTab(dragged.group, dragged.key, group.id, 'center', before) }}
         onSplit={(direction) => splitPane(direction, group.id)} onClosePane={() => closeEditorGroup(group.id)}
         menu={[...(tab && multipleGroups ? [{ id: 'move', label: 'Move tab to next pane', icon: <MoveRight size={14}/>, run: () => moveTabToOtherGroup(group.id) }] : []),
-          ...(tab ? [{ id: 'close-tab', label: 'Close tab', icon: <X size={14}/>, run: () => closeTab(tabKey(tab), group.id) }] : [])]}
+          ...(tab ? [{ id: 'close-tab', label: 'Close tab', icon: <X size={14}/>, run: () => closeTab(tabKey(tab), group.id) }] : []),
+          ...(tab?.kind === 'page' && tab.id !== snapshot.workbench.homePage ? [{ id: 'archive', label: 'Move page to archive…', icon: <Archive size={14}/>, danger: true, separated: true, run: () => void archivePage(tab.id) }] : [])]}
         trailing={edge.top && edge.right && !rightOpen && mode === 'workspace' ? assistantToggle : undefined}
         tabMenu={(key) => {
           const index = group.tabs.findIndex((item) => tabKey(item) === key)
@@ -678,9 +686,9 @@ function App() {
     </header>
     {workspace && <Ribbon commands={commands} navigation={workspace.workbench.navigation} activeView={activeView} homeShown={focusedTab?.kind === 'page' && focusedTab.id === workspace.workbench.homePage} pendingCount={pending.length}
       mode={mode} onMode={setMode} modeShortcut={shortcut('assistant.expand')} shortcutFor={shortcut} onCommand={runCommand}/>}
-    {workspace && <aside className="left-sidebar" aria-label={mode === 'chat' ? 'Chats' : 'Workspace'} inert={!showLeft}>
+    {workspace && <aside className="left-sidebar" aria-label={mode === 'chat' ? 'Chats' : 'Workspace'} inert={!showLeft} aria-hidden={!showLeft}>
       {mode === 'workspace' ? <Explorer workspace={workspace} activeUri={shownUri(focused)} onOpen={(uri, side) => { openResource(uri, { side }) }}
-        onNewPage={() => void createPage()} onNewEntity={() => setNewEntityOpen(true)} onImport={() => void importDocuments()}/> :
+        onNewPage={() => void createPage()} onNewEntity={() => setNewEntityOpen(true)} onImport={() => void importDocuments()} onArchivePage={(id) => void archivePage(id)}/> :
         <div className="chat-sidebar">
           <button type="button" className="sidebar-action" onClick={newChat}><MessageSquarePlus size={15}/> New chat</button>
           <ConversationList workspace={workspace} activeId={conversationId} busy={assistant.busy} onSelect={(item: Conversation) => selectConversation(item)}/>

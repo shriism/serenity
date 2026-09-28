@@ -86,7 +86,7 @@ There is no Save button: edits are saved as you pause, when you leave the editor
 
 ### Pages, links, and live lists
 
-Home is `pages/Home.md`; the built-in template is yours to replace, and **New page** (**⌘N**) creates more. Page Markdown can contain:
+Home is `pages/Home.md`; the built-in template is yours to replace, and **New page** (**⌘N**) creates more. To remove a page, right-click it and choose **Move to archive…**: its file moves to `archive/pages/`, where it stays readable and can be moved back. Page Markdown can contain:
 
 - **Wikilinks**, as in Obsidian: `[[Alex]]` or `[[Alex|my friend]]` link a page, entity, or document by its exact title. A name shared by several things, or by nothing yet, is marked instead of guessed. Entity narratives support them too, typing `[[` suggests titles, and renaming an entity offers to update the links that named it.
 - Stable `serenity:` links to resources and `serenity:command/…` links to commands.

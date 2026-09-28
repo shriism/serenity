@@ -1193,6 +1193,36 @@ export class Workspace {
     return this.restoreModuleRecord(this.directories[5], 'calendar', id)
   }
 
+  /**
+   * Moves a page out of `pages/` into `archive/pages/`, where it stays readable and can be moved back by hand. The Home
+   * page cannot be archived, and a page changed on disk since it was read is left alone.
+   */
+  async archivePage(pageId: string, revision: string): Promise<WorkspaceSnapshot> {
+    const snapshot = await this.snapshot()
+    const page = snapshot.pages.find((item) => item.id === pageId)
+    if (!page) throw new Error('Page not found in this workspace')
+    if (page.id === snapshot.workbench.homePage) throw new Error('The Home page cannot be archived. Choose another Home page in .serenity/workbench.yaml first.')
+    const source = await this.ownedFile(join(this.pagesDirectory, basename(page.path)))
+    const archive = join(this.path, 'archive', 'pages')
+    try { await mkdir(archive) }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
+    const info = await lstat(archive)
+    if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`Workspace directory must be an actual directory: ${archive}`)
+    return this.withFileMutation(source, async () => {
+      if (checksum(await this.readOwnedText(source)) !== revision) throw new Error('This page changed on disk. Refresh before archiving it.')
+      // An earlier archived page of the same name is kept; this one gets a distinct name beside it.
+      let destination = join(archive, basename(page.path))
+      for (let attempt = 2; ; attempt++) {
+        try { await lstat(destination) }
+        catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') break; throw error }
+        destination = join(archive, basename(page.path).replace(/\.md$/, ` ${attempt}.md`))
+      }
+      await rename(source, destination)
+      this.markDirty()
+      return this.snapshot()
+    })
+  }
+
   async archiveTask(id: string, revision: string): Promise<WorkspaceSnapshot> {
     return this.archiveModuleRecord(this.directories[6], 'tasks', id, revision)
   }

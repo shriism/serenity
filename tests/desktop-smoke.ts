@@ -270,12 +270,19 @@ try {
   assert.equal(editedEvent, true, 'Editing a FullCalendar event saves through Serenity')
   if (!(await run<boolean>(`return $('.app').classList.contains('narrow')`))) {
     const tomorrow = futureDate(1)
-    const eventDrag = await run<{ from: { x: number; y: number }; to: { x: number; y: number } }>(`const event = $$('.fc-event').find((item) => item.textContent.includes('Lunch with Sam at noon')).getBoundingClientRect();
+    const eventDrag = await run<{ from: { x: number; y: number }; to: { x: number; y: number } }>(`const item = $$('.fc-event').find((element) => element.textContent.includes('Lunch with Sam at noon'));
+      item.scrollIntoView({ block: 'center', inline: 'nearest' }); await sleep(120);
+      const event = item.getBoundingClientRect();
       const day = $('.fc-daygrid-day[data-date="${tomorrow}"]').getBoundingClientRect();
       return { from: { x: event.x + event.width / 2, y: event.y + event.height / 2 }, to: { x: day.x + day.width / 2, y: day.y + day.height / 2 } }`)
     await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...eventDrag.from, button: 'left', clickCount: 1 })
-    for (let step = 1; step <= 5; step++) await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: eventDrag.from.x + (eventDrag.to.x - eventDrag.from.x) * step / 5,
-      y: eventDrag.from.y + (eventDrag.to.y - eventDrag.from.y) * step / 5, button: 'left', buttons: 1 })
+    await delay(60)
+    for (let step = 1; step <= 10; step++) {
+      await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: eventDrag.from.x + (eventDrag.to.x - eventDrag.from.x) * step / 10,
+        y: eventDrag.from.y + (eventDrag.to.y - eventDrag.from.y) * step / 10, button: 'left', buttons: 1 })
+      await delay(20)
+    }
+    await delay(60)
     await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...eventDrag.to, button: 'left', clickCount: 1 })
     await until('the dragged calendar event to save', async () => (await app.evaluate<WorkspaceSnapshot>('window.serenity.refresh()')).events.some((item) => item.title === 'Lunch with Sam at noon' && item.start === tomorrow))
   }

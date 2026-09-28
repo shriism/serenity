@@ -1,53 +1,60 @@
-# Project context
+# Development
 
-Serenity is a local-first desktop knowledge workspace with provider-backed AI assistance. This document records the current project scope and development direction. For use, see [README.md](README.md); for product decisions, see [SERENITY.md](SERENITY.md); for implementation boundaries, see [ARCHITECTURE.md](ARCHITECTURE.md). Dated release history belongs in [CHANGELOG.md](CHANGELOG.md).
-
-## Current capabilities
-
-- **Workspaces:** one selected folder at a time, readable Markdown and YAML records, copied document imports, external-edit detection, revision-checked saves, recoverable settings, and rebuildable indexes.
-- **Knowledge:** authored pages, flexible entities, sourced claims, corrections, current-answer decisions, reversible merges, explicit distinct-identity judgments, links, relationship exploration, and provenance-aware activity.
-- **Documents and retrieval:** text extraction, source-linked knowledge, local full-text search, bounded live queries, optional AI-assisted retrieval, and opt-in document analysis.
-- **Planning:** internal tasks and events linked to entities and sources; modules can be disabled without removing their data.
-- **Assistant:** separate Copilot and Codex integrations, retained conversations, per-conversation read scope and autonomy, disclosed context, checked citations, and reviewable suggestions.
-- **Desktop quality:** restorable multi-pane work, configurable commands and shortcuts, responsive layouts, accessibility checks, performance budgets, and packaged CI validation on macOS, Windows, and Linux.
-
-Builds are currently unsigned. Provider authentication is needed for AI requests, while local workspace capabilities remain available without it. The current release and downloads are on [GitHub Releases](https://github.com/shriism/serenity/releases/latest).
+Use this guide to run, test, and package Serenity. For a technical overview, read [Architecture](ARCHITECTURE.md); for the reasoning behind the product, read [Product and design](SERENITY.md).
 
 ## Repository map
 
 | Path | Purpose |
 | --- | --- |
-| `src/main/` | Electron lifecycle, validated workspace operations, search, extraction, providers, and credentials. |
-| `src/preload/` | Typed IPC bridge. |
-| `src/renderer/` | Desktop interface, editors, resource views, and assistant. |
-| `src/shared/` | Pure types and logic for resource addressing, queries, layout, provenance, and workflows. |
-| `tests/` | Unit, desktop smoke, performance, and screenshot checks. |
+| `src/main/` | Workspace I/O, provider calls, extraction, indexing, credentials, and Electron lifecycle. |
+| `src/preload/` | Typed application bridge. |
+| `src/renderer/` | Editors, resource views, workbench, and assistant interface. |
+| `src/shared/` | Types and pure logic for identity, provenance, workflows, queries, and presentation. |
+| `tests/` | Unit/integration tests, desktop smoke, performance, and screenshot helpers. |
 | `assets/`, `scripts/` | Artwork and build helpers. |
-| `.github/workflows/` | Cross-platform checks and packaging. |
+| `.github/workflows/` | Cross-platform checks, packaging, and packaged smoke tests. |
 
-Resource URIs identify records independently of filenames or presentation. Commands give actions stable IDs across the application. Workspace YAML configures existing capabilities; adding executable views or modules requires code, validation, and a typed main-process API.
-
-## Development direction
-
-Near-term work follows real use: improve editing and retrieval, exercise recovery and migrations against older and larger workspaces, and maintain packaging reliability. PDF and DOCX extraction does not currently preserve reliable headings, so those formats do not receive an inferred outline.
-
-Signing, notarization, and automatic updates require certificates and an update-channel decision. Installable plugins require a versioned contribution API and an explicit trust model. External actions, external calendar sync, cloud or device sync, local models, mobile access, and simultaneous workspaces need separate designs. Before making a durable change to knowledge representation, ontology, memory, autonomy, or extension trust, use the decision principles in [SERENITY.md](SERENITY.md).
-
-## Development workflow
+## Run and verify
 
 Use Node.js 24 or newer:
 
 ```sh
-npm install
+git clone https://github.com/shriism/serenity.git
+cd serenity
+npm ci
 npm run dev
+```
+
+Choose a workspace folder in the app, or supply `--workspace=/path/to/folder` when launching the executable. Unset `ELECTRON_RUN_AS_NODE` if the shell exports it. Local work requires no provider sign-in; live AI requests require supported provider authentication.
+
+```sh
 npm run typecheck
 npm test
 npm run build
-npm run smoke:desktop
-npm run perf:desktop
-npm run dist
 ```
 
-Desktop smoke and performance checks need a graphical session. They use a temporary profile and can run without taking focus. `SERENITY_SMOKE_VISIBLE=1` displays the test window; `SERENITY_SMOKE_EXECUTABLE` selects a packaged app. `SERENITY_SMOKE_PROVIDER=copilot` or `codex` enables a live authenticated turn and uses provider quota. Unset `ELECTRON_RUN_AS_NODE` if the shell exports it. A small-window pass can be run with `SERENITY_SMOKE_WINDOW=900x640 npm run smoke:desktop`.
+Desktop integration and performance checks require a graphical session:
 
-Inspect the diff and run relevant checks before committing. CI verifies pushed commits. Record user-visible changes in [CHANGELOG.md](CHANGELOG.md).
+```sh
+npm run smoke:desktop
+npm run perf:desktop
+```
+
+These use temporary workspaces and profiles. Smoke tests include both themes and an axe-core accessibility check. Performance tests measure a large synthetic workspace.
+
+| Environment variable | Purpose |
+| --- | --- |
+| `SERENITY_SMOKE_VISIBLE=1` | Display the test window. |
+| `SERENITY_SMOKE_EXECUTABLE` | Test a packaged executable. |
+| `SERENITY_SMOKE_WINDOW=900x640` | Run a small-window pass. |
+| `SERENITY_SMOKE_PROVIDER=copilot` or `codex` | Opt into an authenticated live turn; uses provider quota. |
+
+## Package
+
+Package for the current OS with `npm run dist`. Platform scripts are `npm run dist:mac`, `npm run dist:win`, and `npm run dist:linux`, subject to available tooling. CI runs type checks, tests, packaging, and packaged smoke checks on macOS, Windows, and Linux. Live provider requests are excluded. CI disables signing identity discovery; signing, notarization, and an automatic update channel require separate release work.
+
+## Making changes
+
+Inspect the diff and run checks appropriate to the change. Record user-visible behavior changes in [CHANGELOG.md](CHANGELOG.md). For documentation changes, verify claims against the relevant source and check links and commands.
+
+Before making durable changes to knowledge representation, memory, autonomy, or extension trust, explain the problem, viable approaches, tradeoffs, and a recommendation to the owner. [Product and design](SERENITY.md#open-questions-and-direction) records unresolved product questions; the architecture document records current implementation limits.

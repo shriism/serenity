@@ -4,6 +4,8 @@ Notable user-visible changes are listed newest first. Workspace files remain rea
 
 ## Unreleased
 
+- Reorganized documentation into a practical introduction, product/design explanation, architecture reference, and development guide. Clarified sourced statements, revisable decisions, AI review, and current implementation limits.
+
 ## 2.0.3 — 2026-09-28
 
 - Put **New chat** before **Chat history** in the assistant sidebar and removed the duplicate New chat action from the history menu.

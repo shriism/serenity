@@ -2,7 +2,9 @@
 
 Serenity's notable changes, newest first. The workspace format stays readable Markdown and YAML; entries note anything that adds to it.
 
-## Unreleased
+## 1.1.0 (2026-09-27)
+
+Improvements after the first desktop release; no changes to the workspace format.
 
 - PDF and DOCX text is extracted in a background worker, so indexing or reading a large document no longer stalls saving and other actions.
 - Search results show a snippet of where the words matched, with the matches highlighted.

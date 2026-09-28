@@ -48,8 +48,10 @@ export function PaneDivider({ divider, area, onResize, onReset }: {
   return <div role="separator" tabIndex={0} aria-orientation={row ? 'vertical' : 'horizontal'} aria-label="Resize panes"
     aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(boundary * 100)}
     className={`pane-divider ${row ? 'row' : 'column'}`} style={percentRect(divider.line)}
-    onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId) }}
+    onPointerDown={(event) => { if (event.button !== 0) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId) }}
     onPointerMove={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) pointer(event) }}
+    onPointerUp={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId) }}
+    onPointerCancel={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId) }}
     onDoubleClick={() => onReset(divider.path)} onKeyDown={keys}
     // A drag should not leave the divider focused, or the next key press would light up its focus ring.
     onMouseDown={(event) => event.preventDefault()}/>

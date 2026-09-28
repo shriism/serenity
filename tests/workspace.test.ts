@@ -308,7 +308,7 @@ test('conversation retention and accepting a proposal preserve claim provenance'
     assert.equal(accepted.proposals[0].status, 'accepted')
     await workspace.deleteConversation(conversationId)
     assert.equal((await workspace.snapshot()).conversations.length, 0)
-    assert.equal((await workspace.snapshot()).claims.length, 1)
+    assert.equal((await workspace.snapshot()).claims.length, 0)
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
@@ -360,7 +360,43 @@ test('concurrent module switches keep both choices and order new writes', async 
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
-test('calendar events and tasks can be archived and restored without losing their files', async () => {
+test('starred chats persist and deleting one removes its proposals, accepted claims, and activity only', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-chat-delete-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    const chatId = '123e4567-e89b-42d3-a456-426614174501'
+    const proposalId = '123e4567-e89b-42d3-a456-426614174502'
+    const activityId = '123e4567-e89b-42d3-a456-426614174503'
+    const legacyActivityId = '123e4567-e89b-42d3-a456-426614174504'
+    const started = new Date()
+    const entity = (await workspace.saveEntity({ id: '', title: 'Alex', type: 'person', body: '' })).entities[0]
+    await workspace.saveConversation({ id: chatId, title: 'Remember Alex', messages: [
+      { id: 'user', role: 'user', text: 'Remember Alex', provider: 'copilot', recordedAt: new Date(started.getTime() - 5000).toISOString() },
+      { id: 'assistant', role: 'assistant', text: 'Done', provider: 'copilot', recordedAt: new Date(started.getTime() + 5000).toISOString() }
+    ], retained: true })
+    assert.equal((await workspace.starConversation(chatId, true)).conversations[0].starred, true)
+    await workspace.addProposal({ id: proposalId, kind: 'claim', subject: entity.id, key: 'hobby', value: 'Sailing', source: 'Chat statement',
+      origin: 'ai-statement', provider: 'copilot', conversationId: chatId, status: 'pending', recordedAt: new Date().toISOString() })
+    await workspace.resolveProposal(proposalId, true)
+    await writeFile(join(directory, 'activity', `${activityId}.yaml`), YAML.stringify({ id: activityId, conversationId: chatId, provider: 'copilot',
+      operation: 'conversation', refs: [], promptCharacters: 10, promptChecksum: 'abc', startedAt: new Date().toISOString(), status: 'completed' }))
+    await writeFile(join(directory, 'activity', `${legacyActivityId}.yaml`), YAML.stringify({ id: legacyActivityId, provider: 'copilot',
+      operation: 'conversation', refs: [], promptCharacters: 10, promptChecksum: 'abc', startedAt: started.toISOString(), status: 'completed' }))
+    const unrelated = (await workspace.saveEntity({ id: '', title: 'Pat', type: 'person', body: '' })).entities.find((item) => item.id !== entity.id)!
+    await workspace.deleteConversation(chatId)
+    const after = await workspace.snapshot()
+    assert.equal(after.conversations.length, 0)
+    assert.equal(after.proposals.length, 0)
+    assert.equal(after.claims.length, 0)
+    assert.equal(after.providerActivity.length, 0)
+    assert.ok(after.entities.some((item) => item.id === unrelated.id))
+    await assert.rejects(readFile(join(directory, 'proposals', `${proposalId}.yaml`)), /ENOENT/)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('calendar events move to Trash and tasks archive without losing their files', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
   try {
     const workspace = new Workspace(directory)
@@ -370,7 +406,7 @@ test('calendar events and tasks can be archived and restored without losing thei
     const archived = await workspace.archiveEvent(event.id, event.revision!)
     assert.equal(archived.events.length, 0)
     assert.equal(archived.archivedEvents[0].title, 'Meeting')
-    assert.match(await readFile(join(directory, 'archive', 'calendar', `${event.id}.yaml`), 'utf8'), /Original note/)
+    assert.match(await readFile(join(directory, 'trash', 'calendar', `${event.id}.yaml`), 'utf8'), /Original note/)
     await workspace.setModule('calendar', false)
     await assert.rejects(workspace.restoreEvent(event.id), /disabled/)
     await workspace.setModule('calendar', true)

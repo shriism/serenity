@@ -41,6 +41,18 @@ export function PaneHeader({ group, position, tabs, active, splittable, closable
   const contextMenu = useContextMenu()
   const [insertBefore, setInsertBefore] = useState<string | null>(null)
   const strip = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const element = strip.current
+    if (!element) return
+    const scrollWithWheel = (event: WheelEvent): void => {
+      if (Math.abs(event.deltaX) >= Math.abs(event.deltaY) || element.scrollWidth <= element.clientWidth) return
+      const before = element.scrollLeft
+      element.scrollLeft += event.deltaY
+      if (element.scrollLeft !== before) event.preventDefault()
+    }
+    element.addEventListener('wheel', scrollWithWheel, { passive: false })
+    return () => element.removeEventListener('wheel', scrollWithWheel)
+  }, [])
   // Keep the shown tab in view when a narrow pane scrolls its tab strip.
   useEffect(() => { strip.current?.querySelector('.tab.active')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }) }, [active, tabs.length])
   const paneName = position ? ` pane ${position}` : ''
@@ -78,11 +90,11 @@ export function PaneHeader({ group, position, tabs, active, splittable, closable
           requestAnimationFrame(() => { if (neighbor?.isConnected) neighbor.focus(); else pane?.focus() })
         }} aria-label={`Close ${title}`} title={`Close ${title}`}><X size={13}/></button>
       </div>)}
-      <button type="button" className="icon-btn new-tab" onClick={onNewTab} aria-label={`New tab${paneName}`} title="New tab"><Plus size={15}/></button>
       <div className="tab-strip-fill"/>
     </div>
     {contextMenu.element}
     <div className="pane-actions">
+      <button type="button" className="icon-btn new-tab" onClick={onNewTab} aria-label={`New tab${paneName}`} title="New tab"><Plus size={15}/></button>
       <MenuButton label={`Pane actions${paneName}`} title="Pane actions" items={items} align="end"><MoreHorizontal size={16}/></MenuButton>
       {trailing}
     </div>

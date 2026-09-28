@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { Workspace } from '../src/main/workspace'
 import { dragDivider, isWorkbenchView, layoutGeometry, maxEditorGroups, parseLayout, removeFromLayout, splitLayout } from '../src/shared/layout'
 import { parseResourceUri, resourceUri } from '../src/shared/resources'
-import { activeTabOf, closeGroup, emptyGroup, findGroup, homeWorkbench, focusedGroup, initialWorkbench, moveTab, presentTab, presentView, removeTab, nextGroupId, orderedGroups, pruneWorkbench, restoreWorkbench, showTab, showView, splitWorkbench, updateGroup, workbenchSession } from '../src/renderer/src/workbench-groups'
+import { activeTabOf, closeEmptyGroups, closeGroup, emptyGroup, findGroup, homeWorkbench, focusedGroup, initialWorkbench, moveTab, presentTab, presentView, removeTab, nextGroupId, orderedGroups, pruneWorkbench, restoreWorkbench, showTab, showView, splitWorkbench, updateGroup, workbenchSession } from '../src/renderer/src/workbench-groups'
 
 const parse = (value: unknown) => parseLayout(value, isWorkbenchView, (uri) => parseResourceUri(uri) !== null)
 
@@ -82,7 +82,8 @@ test('a two-group session restores through the main process and drops unavailabl
     await workspace.saveSession({ view: 'home', openUris: [], layout: { root: { group: 'main' }, groups: [], focused: 'main' } as never })
     assert.equal((await workspace.loadSession())?.layout, undefined, 'a damaged layout falls back to the single-group fields')
     const pruned = pruneWorkbench(restored, { ...snapshot, entities: [] }, () => true)
-    assert.equal(activeTabOf(orderedGroups(pruned)[0]), undefined)
+    assert.equal(pruned.groups.length, 1, 'a pane emptied by an external removal closes')
+    assert.deepEqual(activeTabOf(orderedGroups(pruned)[0]), { kind: 'page', id: 'research' })
     assert.equal(pruneWorkbench(restored, snapshot, () => true), restored)
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
@@ -170,7 +171,7 @@ test('pane geometry places every pane and divider, and dividers resize only thei
   assert.deepEqual(splitLayout({ group: 'a' }, 'a', 'b', 'column', true), { split: 'column', children: [{ group: 'b' }, { group: 'a' }] }, 'a pane can be added before another')
 })
 
-test('tabs move between panes with their presentation, and closing a pane keeps the others', () => {
+test('tabs move between panes with their presentation, and empty split panes close', () => {
   const alex = { kind: 'entity' as const, id: 'alex' }
   let bench = updateGroup(initialWorkbench, 'main', (group) => presentTab(showTab(group, alex), 'entity:alex', 'timeline'))
   bench = splitWorkbench(bench, { duplicate: false, direction: 'column' })!
@@ -178,10 +179,12 @@ test('tabs move between panes with their presentation, and closing a pane keeps 
   assert.equal(moved.focused, 'group-2')
   assert.deepEqual(activeTabOf(focusedGroup(moved)), alex)
   assert.equal(focusedGroup(moved).presentations['entity:alex'], 'timeline')
-  assert.equal(orderedGroups(moved)[0].tabs.length, 0)
+  assert.deepEqual(orderedGroups(moved).map((group) => group.id), ['group-2'], 'moving the last tab closes its old pane')
   assert.equal(moveTab(moved, 'group-2', 'entity:alex', 'group-2'), moved, 'moving to the same pane changes nothing')
-  const three = splitWorkbench(moved, { from: 'main', direction: 'row' })!
-  assert.deepEqual(orderedGroups(closeGroup(three, 'group-2')).map((group) => group.id), ['main', 'group-3'])
+  const two = splitWorkbench(moved, { from: 'group-2', direction: 'row' })!
+  const closed = closeEmptyGroups(updateGroup(two, 'group-3', (group) => removeTab(group, 'entity:alex')))
+  assert.deepEqual(orderedGroups(closed).map((group) => group.id), ['group-2'], 'closing the last tab in a split pane closes that pane')
+  assert.equal(closeGroup(closed, 'group-2'), closed, 'the last pane stays open')
 })
 
 test('a dropped tab lands before the tab it was dropped on, in the same pane or another', () => {

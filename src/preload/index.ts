@@ -11,6 +11,12 @@ const api: SerenityAPI = {
   appInfo: () => ipcRenderer.invoke('app:info'),
   setEditorDirty: (dirty) => ipcRenderer.send('editor:dirty', dirty),
   setWindowTheme: (theme) => ipcRenderer.send('window:theme', theme),
+  isFullScreen: () => ipcRenderer.invoke('window:is-full-screen'),
+  onFullScreenChange: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, fullScreen: boolean) => callback(fullScreen)
+    ipcRenderer.on('window:full-screen-change', listener)
+    return () => ipcRenderer.removeListener('window:full-screen-change', listener)
+  },
   copyText: (text) => ipcRenderer.send('clipboard:write', text),
   refresh: () => ipcRenderer.invoke('workspace:refresh'),
   saveEntity: (entity) => ipcRenderer.invoke('entity:save', entity),
@@ -42,6 +48,7 @@ const api: SerenityAPI = {
   resolveProposal: (id, accept) => ipcRenderer.invoke('proposal:resolve', id, accept),
   attachEntityProposal: (proposalId, entityId) => ipcRenderer.invoke('proposal:attach-entity', proposalId, entityId),
   deleteConversation: (id) => ipcRenderer.invoke('conversation:delete', id),
+  starConversation: (id, starred) => ipcRenderer.invoke('conversation:star', id, starred),
   credentialStatus: () => ipcRenderer.invoke('credential:status'),
   saveCredential: (provider, key) => ipcRenderer.invoke('credential:save', provider, key),
   setModule: (id, enabled) => ipcRenderer.invoke('module:set', id, enabled),

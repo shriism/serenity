@@ -6,6 +6,8 @@ import { highlighted } from './search-excerpt'
 
 interface Props {
   open: boolean
+  mode: 'all' | 'files'
+  files: SearchResult[]
   query: string
   results: SearchResult[] | null
   searching: boolean
@@ -42,11 +44,12 @@ export function CommandPalette(props: Props) {
   useEffect(() => setActive(0), [props.results, props.query])
   if (!props.open) return null
 
-  const commandMatches = props.commands.filter((command) =>
+  const commandMatches = (props.mode === 'files' ? [] : props.commands).filter((command) =>
     command.title.toLowerCase().includes(props.query.trim().toLowerCase())).slice(0, props.query.trim() ? 6 : 8)
+  const fileMatches = props.files.filter((item) => `${item.title} ${item.detail}`.toLowerCase().includes(props.query.trim().toLowerCase())).slice(0, 100)
   const entries = [
     ...commandMatches.map((command) => ({ type: 'command' as const, command })),
-    ...(props.results ?? []).map((result) => ({ type: 'result' as const, result }))
+    ...(props.mode === 'files' ? fileMatches : props.results ?? []).map((result) => ({ type: 'result' as const, result }))
   ]
 
   function choose(index: number, side = false): void {
@@ -72,10 +75,10 @@ export function CommandPalette(props: Props) {
   }
 
   return <div className="palette-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) props.onClose() }}>
-    <div ref={dialog} className="command-palette" role="dialog" aria-modal="true" aria-label="Search workspace" onKeyDown={dialogKeyDown}>
-      <div className="palette-input"><Search size={20}/><input ref={input} value={props.query} onChange={(event) => props.onChange(event.target.value)} onKeyDown={onKeyDown} placeholder="Search your world..." aria-label="Search workspace"/><button onClick={props.onClose} aria-label="Close search"><X size={17}/></button></div>
+    <div ref={dialog} className="command-palette" role="dialog" aria-modal="true" aria-label={props.mode === 'files' ? 'Open file in workspace' : 'Search workspace'} onKeyDown={dialogKeyDown}>
+      <div className="palette-input"><Search size={20}/><input ref={input} value={props.query} onChange={(event) => props.onChange(event.target.value)} onKeyDown={onKeyDown} placeholder={props.mode === 'files' ? 'Find a file in this workspace...' : 'Search your world...'} aria-label={props.mode === 'files' ? 'Find file' : 'Search workspace'}/><button onClick={props.onClose} aria-label="Close search"><X size={17}/></button></div>
       <div className="palette-body">
-        {props.query.trim() && <div className="palette-actions">
+        {props.mode === 'all' && props.query.trim() && <div className="palette-actions">
           <button onClick={props.onAISearch} disabled={props.searching}><Sparkles size={16}/>{props.searching ? 'Finding connections…' : `Search meaning with ${props.provider}`}<ArrowRight size={15}/></button>
           {props.savedIndexEnabled && <button onClick={props.onSavedSearch}><Link2 size={16}/>Search saved concepts offline<ArrowRight size={15}/></button>}
           <button onClick={props.onKeepInPane}><Search size={16}/>Keep results in a pane<ArrowRight size={15}/></button>
@@ -90,7 +93,7 @@ export function CommandPalette(props: Props) {
             <span className="palette-result-icon"><Icon size={17}/></span><span><strong>{title}</strong><small>{detail}</small>
               {entry.type === 'result' && entry.result.excerpt && <span className="palette-excerpt">{highlighted(entry.result.excerpt)}</span>}</span><ArrowRight size={15}/>
           </button>
-        })}</div> : <div className="palette-empty">No local matches yet. Try another phrase or search meaning with AI.</div>}
+        })}</div> : <div className="palette-empty">{props.mode === 'files' ? 'No files found in this workspace.' : 'No local matches yet. Try another phrase or search meaning with AI.'}</div>}
       </div>
       <div className="palette-footer"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>↵</kbd> Open</span><span><kbd>{navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}</kbd><kbd>↵</kbd> Open to the side</span><span><kbd>esc</kbd> Close</span></div>
     </div>

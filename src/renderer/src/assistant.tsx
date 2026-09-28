@@ -1,8 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { AlertTriangle, ArrowUp, ChevronDown, FileText, Lock, MessageSquarePlus, Search, Square, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowUp, ChevronDown, FileText, Lock, MessageSquarePlus, Search, Square, Star, Trash2 } from 'lucide-react'
 import type { Autonomy, Conversation, Message, Provider, ReadScope, WorkflowPermissions, WorkspaceSnapshot } from '../../shared/types'
 import { answerSegments, citationUri, type Citation } from '../../shared/citations'
-import { MenuButton } from './menu'
+import { MenuButton, useContextMenu } from './menu'
 import { Dialog } from './dialog'
 import { ResourcePicker } from './resource-picker'
 import { ProposalCard, type ProposalActions } from './proposal-card'
@@ -55,7 +55,7 @@ export interface AssistantState {
   busy: boolean
   sendMessage(event: FormEvent): Promise<void>
   cancelMessage(): Promise<void>
-  deleteConversation(): Promise<void>
+  deleteConversation(id?: string): Promise<void>
   saveWorkflowSettings(): Promise<void>
   selectConversation(item: Conversation): void
 }
@@ -214,28 +214,43 @@ export function ConversationSettings({ workspace, assistant, onClose }: { worksp
 }
 
 /** Conversations, newest first, for switching between them. */
-export function ConversationList({ workspace, activeId, busy, onSelect, compact = false }: {
+export function ConversationList({ workspace, activeId, busy, onSelect, onStar, onDelete, compact = false }: {
   workspace: WorkspaceSnapshot
   activeId: string | null
   busy: boolean
   onSelect(conversation: Conversation): void
+  onStar?(conversation: Conversation): void
+  onDelete?(conversation: Conversation): void
   compact?: boolean
 }) {
   const [query, setQuery] = useState('')
+  const menu = useContextMenu()
   const wanted = query.trim().toLocaleLowerCase()
   const conversations = [...workspace.conversations].reverse().filter((item) => !wanted || item.title.toLocaleLowerCase().includes(wanted))
+  const starred = conversations.filter((item) => item.starred)
+  const recent = conversations.filter((item) => !item.starred)
+  const rows = (items: Conversation[]) => items.map((item) => <div key={item.id} className={`conversation-row ${activeId === item.id ? 'active' : ''}`}
+    onContextMenu={(event) => { event.preventDefault(); menu.open(event, item.title, [
+      { id: 'star', label: item.starred ? 'Remove star' : 'Star chat', icon: <Star size={14}/>, run: () => onStar?.(item) },
+      { id: 'delete', label: 'Delete chat', icon: <Trash2 size={14}/>, danger: true, run: () => onDelete?.(item) }
+    ]) }}>
+    <button type="button" className="conversation-select" disabled={busy} aria-current={activeId === item.id ? 'true' : undefined}
+      onClick={() => onSelect(item)} title={item.title}><span>{item.title}</span>{!item.retained && <small>not kept</small>}</button>
+    <button type="button" className={`conversation-star ${item.starred ? 'starred' : ''}`} disabled={busy}
+      aria-label={`${item.starred ? 'Remove star from' : 'Star'} ${item.title}`} aria-pressed={Boolean(item.starred)} title={item.starred ? 'Remove star' : 'Star chat'}
+      onClick={() => onStar?.(item)}><Star size={14} fill={item.starred ? 'currentColor' : 'none'}/></button>
+  </div>)
   return <div className="conversation-list">
     {!compact && workspace.conversations.length > 6 && <label className="search-field"><Search size={14}/>
       <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search chats" aria-label="Search conversations"/></label>}
-    {!compact && <h3 className="sidebar-heading">Recents</h3>}
     <nav aria-label="Conversations">
-      {conversations.map((item) => <button key={item.id} type="button" className={`conversation-row ${activeId === item.id ? 'active' : ''}`} disabled={busy}
-        aria-current={activeId === item.id ? 'true' : undefined} onClick={() => onSelect(item)} title={item.title}>
-        <span>{item.title}</span>{!item.retained && <small>not kept</small>}
-      </button>)}
+      {starred.length > 0 && <><h3 className="sidebar-heading">Starred</h3>{rows(starred)}</>}
+      {!compact && <h3 className="sidebar-heading">Recents</h3>}
+      {rows(recent)}
       {!workspace.conversations.length && <p className="sidebar-empty">Conversations you start show up here.</p>}
       {wanted && workspace.conversations.length > 0 && !conversations.length && <p className="sidebar-empty">No chats match.</p>}
     </nav>
+    {menu.element}
   </div>
 }
 
@@ -249,4 +264,3 @@ export function conversationMenu(workspace: WorkspaceSnapshot, assistant: Assist
     ...(assistant.conversationId ? [{ id: 'delete', label: 'Delete this chat', icon: <Trash2 size={14}/>, danger: true, separated: true, run: () => void assistant.deleteConversation() }] : [])
   ]
 }
-

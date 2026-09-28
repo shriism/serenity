@@ -74,11 +74,11 @@ export function useAssistant({ workspace, setWorkspace, refresh, setError, conte
     catch (cause) { setError(String(cause)) }
   }
 
-  async function deleteConversation(): Promise<void> {
-    if (!conversationId || !window.confirm('Delete this conversation? Confirmed knowledge remains in your workspace.')) return
+  async function deleteConversation(targetId = conversationId ?? ''): Promise<void> {
+    if (!targetId || !window.confirm('Delete this conversation and the knowledge created from it? This cannot be undone.')) return
     try {
-      setWorkspace(await window.serenity.deleteConversation(conversationId))
-      setConversationId(null)
+      setWorkspace(await window.serenity.deleteConversation(targetId))
+      if (targetId === conversationId) setConversationId(null)
       setError('')
     } catch (cause) { setError(String(cause)) }
   }

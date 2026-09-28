@@ -16,6 +16,7 @@ export interface CommandHost {
   openWorkspaceFolder(): void
   newConversation(): void
   toggleSearch(): void
+  openFileSearch(): void
   toggleNavigation(): void
   splitEditor(direction: 'row' | 'column'): void
   closeEditorGroup(): void
@@ -70,7 +71,8 @@ const builtins: CommandContribution[] = [
   { id: 'entity.create', title: 'New entity', icon: Plus, run: (host) => host.newEntity() },
   { id: 'page.create', title: 'New page', icon: FileText, keybinding: 'Mod+N', run: (host) => host.createPage() },
   { id: 'documents.import', title: 'Import documents', icon: FolderOpen, run: (host) => host.importDocuments() },
-  { id: 'workspace.choose', title: 'Open another workspace', icon: FolderOpen, keybinding: 'Mod+O', run: (host) => host.chooseWorkspace() },
+  { id: 'workspace.choose', title: 'Open another workspace', icon: FolderOpen, keybinding: 'Mod+Shift+O', run: (host) => host.chooseWorkspace() },
+  { id: 'workspace.open-file', title: 'Open file in workspace', icon: FileText, keybinding: 'Mod+O', whileTyping: true, run: (host) => host.openFileSearch() },
   { id: 'workspace.open-folder', title: 'Open workspace folder', icon: FolderOpen, run: (host) => host.openWorkspaceFolder() },
   { id: 'assistant.new', title: 'New conversation', icon: MessageCircle, run: (host) => host.newConversation() },
   { id: 'assistant.toggle', title: 'Toggle assistant', icon: PanelRight, keybinding: 'Mod+J', whileTyping: true, run: (host) => host.toggleAssistant() },

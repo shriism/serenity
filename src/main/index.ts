@@ -184,7 +184,8 @@ function applicationMenu(): Menu {
       { role: 'services' }, { type: 'separator' }, { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' }, { type: 'separator' }, { role: 'quit' }] } as MenuItemConstructorOptions] : []),
     { label: 'File', submenu: [
       command('New Page', 'page.create', 'CmdOrCtrl+N'), command('New Entity', 'entity.create'), command('New Tab', 'tab.new', 'CmdOrCtrl+T'), { type: 'separator' },
-      command('Open Another Workspace…', 'workspace.choose', 'CmdOrCtrl+O'), command('Import Documents…', 'documents.import'),
+      command('Open File in Workspace…', 'workspace.open-file', 'CmdOrCtrl+O'),
+      command('Open Another Workspace…', 'workspace.choose', 'CmdOrCtrl+Shift+O'), command('Import Documents…', 'documents.import'),
       command(mac ? 'Reveal Workspace in Finder' : 'Open Workspace Folder', 'workspace.open-folder'), { type: 'separator' },
       command('Close Tab', 'tab.close', 'CmdOrCtrl+W'), { role: 'close', accelerator: 'CmdOrCtrl+Shift+W' },
       ...(mac ? [] : [{ type: 'separator' } as MenuItemConstructorOptions, command('Settings…', 'view.settings', 'CmdOrCtrl+,'), { role: 'quit' } as MenuItemConstructorOptions])
@@ -230,6 +231,8 @@ function createWindow(): void {
     }
   })
   window.on('closed', () => { window = null; closeApproved = false })
+  window.on('enter-full-screen', () => window?.webContents.send('window:full-screen-change', true))
+  window.on('leave-full-screen', () => window?.webContents.send('window:full-screen-change', false))
   // A crashed or killed renderer leaves a blank window. Workspace files are only written through validated
   // operations, so reloading is safe; only unsaved editor text is lost, and the person is told so.
   window.webContents.on('render-process-gone', (_event, details) => {
@@ -334,6 +337,7 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('app:info', () => ({ version: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome,
     platform: `${process.platform} ${process.getSystemVersion()} (${process.arch})` }))
+  ipcMain.handle('window:is-full-screen', () => window?.isFullScreen() ?? false)
   ipcMain.handle('link:open-external', async (_event, url: unknown) => {
     const link = externalLink(url)
     if (!link) throw new Error('Only web and email links can be opened')
@@ -404,6 +408,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('proposal:resolve', (_event, id: string, accept: boolean) => currentWorkspace().resolveProposal(id, accept))
   ipcMain.handle('proposal:attach-entity', (_event, proposalId: string, entityId: string) => currentWorkspace().attachEntityProposal(proposalId, entityId))
   ipcMain.handle('conversation:delete', (_event, id: string) => currentWorkspace().deleteConversation(id))
+  ipcMain.handle('conversation:star', (_event, id: string, starred: boolean) => currentWorkspace().starConversation(id, starred))
   ipcMain.handle('credential:status', () => credentialStatus())
   ipcMain.handle('credential:save', async (_event, provider: Provider, key: string) => {
     await saveCredential(provider, key)

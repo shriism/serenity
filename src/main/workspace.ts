@@ -235,7 +235,7 @@ export class Workspace {
     await mkdir(this.path, { recursive: true })
     if ((await lstat(this.path)).isSymbolicLink()) throw new Error('Choose an actual workspace directory, not a linked directory')
     for (const directory of [...this.directories, this.pagesDirectory, join(this.path, '.serenity'),
-      ...['entities', 'merges/history', 'calendar', 'tasks'].map((name) => join(this.path, 'archive', name))]) {
+      ...['entities', 'merges/history', 'calendar', 'tasks'].map((name) => join(this.path, 'archive', name)), join(this.path, 'trash', 'calendar')]) {
       let current = this.path
       for (const part of relative(this.path, directory).split(sep)) {
         current = join(current, part)
@@ -254,7 +254,8 @@ export class Workspace {
 
   private async verifyDirectories(): Promise<void> {
     for (const directory of [...this.directories, this.pagesDirectory, join(this.path, '.serenity'), join(this.path, 'archive'),
-      ...['entities', 'merges', 'merges/history', 'calendar', 'tasks'].map((name) => join(this.path, 'archive', name))]) {
+      ...['entities', 'merges', 'merges/history', 'calendar', 'tasks'].map((name) => join(this.path, 'archive', name)),
+      join(this.path, 'trash'), join(this.path, 'trash', 'calendar')]) {
       const info = await lstat(directory)
       if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`Workspace directory must be an actual directory: ${directory}`)
     }
@@ -515,6 +516,7 @@ export class Workspace {
     for (const conversation of this.ephemeral.values()) conversations.push(conversation)
     for (const [directory, parse, archived] of [
       [this.directories[5], parseEvent, false], [this.directories[6], parseTask, false],
+      [join(this.path, 'trash', 'calendar'), parseEvent, true],
       [join(this.path, 'archive', 'calendar'), parseEvent, true], [join(this.path, 'archive', 'tasks'), parseTask, true]
     ] as const) {
       for (const name of (await readdir(directory)).filter((entry) => entry.endsWith('.yaml')).sort()) {
@@ -1033,11 +1035,117 @@ export class Workspace {
     return this.snapshot()
   }
 
+  async starConversation(conversationId: string, starred: boolean): Promise<WorkspaceSnapshot> {
+    if (typeof starred !== 'boolean') throw new Error('Invalid star value')
+    const conversation = (await this.snapshot()).conversations.find((item) => item.id === id(conversationId))
+    if (!conversation) throw new Error('Conversation not found')
+    conversation.starred = starred
+    await this.saveConversation(conversation)
+    return this.snapshot()
+  }
+
   async deleteConversation(conversationId: string): Promise<WorkspaceSnapshot> {
-    this.ephemeral.delete(id(conversationId))
-    await unlink(join(this.directories[3], `${conversationId}.yaml`)).catch((error: NodeJS.ErrnoException) => {
-      if (error.code !== 'ENOENT') throw error
+    const target = id(conversationId)
+    const snapshot = await this.snapshot()
+    if (!snapshot.conversations.some((item) => item.id === target)) throw new Error('Conversation not found')
+    const proposals = snapshot.proposals.filter((item) => item.conversationId === target)
+    const selected = new Set<string>()
+    const add = (path: string): void => { selected.add(path) }
+    const claims = new Set<string>()
+    const entities = new Set<string>()
+    const ownedBy = (item: { metadata?: Record<string, unknown> }, proposalId: string): boolean => item.metadata?.proposalId === proposalId
+    const unique = <T>(items: T[], label: string): T | undefined => {
+      if (items.length > 1) throw new Error(`Cannot safely delete this chat: more than one ${label} matches an older proposal.`)
+      return items[0]
+    }
+    for (const proposal of proposals) {
+      add(join(this.directories[4], `${id(proposal.id)}.yaml`))
+      if (proposal.status !== 'accepted') continue
+      if (proposal.kind === 'claim' || (proposal.kind === 'entity' && proposal.resolvedInto)) {
+        const subject = proposal.kind === 'claim' ? proposal.subject : proposal.resolvedInto!
+        const key = proposal.kind === 'claim' ? proposal.key : 'context'
+        const value = proposal.kind === 'claim' ? proposal.value : proposal.body.trim() || `${proposal.title} (${proposal.type})`
+        const exact = snapshot.claims.filter((item) => item.subject === subject && item.key === key && item.value === value && item.source === proposal.source && item.origin === proposal.origin)
+        const claim = unique(snapshot.claims.filter((item) => ownedBy(item, proposal.id)).length ?
+          snapshot.claims.filter((item) => ownedBy(item, proposal.id)) : exact, 'claim')
+        if (claim) claims.add(claim.id)
+      } else if (proposal.kind === 'entity') {
+        if (proposal.createdEntityId && snapshot.archivedEntities.some((item) => item.id === proposal.createdEntityId))
+          throw new Error('Cannot safely delete this chat: an entity it created is archived or merged. Restore it first.')
+        const entity = snapshot.entities.find((item) => item.id === proposal.createdEntityId) ??
+          unique(snapshot.entities.filter((item) => ownedBy(item, proposal.id)), 'entity')
+        if (entity) entities.add(entity.id)
+      } else if (proposal.kind === 'task') {
+        const matches = [...snapshot.tasks, ...snapshot.archivedTasks]
+        const task = matches.find((item) => item.id === proposal.createdResourceId) ?? unique(matches.filter((item) => ownedBy(item, proposal.id)).length ?
+          matches.filter((item) => ownedBy(item, proposal.id)) : matches.filter((item) => item.title === proposal.title && item.source === proposal.source && item.origin === proposal.origin), 'task')
+        if (task) add(join(this.path, snapshot.archivedTasks.some((item) => item.id === task.id) ? 'archive' : '',
+          'tasks', `${id(task.id)}.yaml`))
+      } else if (proposal.kind === 'event') {
+        const matches = [...snapshot.events, ...snapshot.archivedEvents]
+        const event = matches.find((item) => item.id === proposal.createdResourceId) ?? unique(matches.filter((item) => ownedBy(item, proposal.id)).length ?
+          matches.filter((item) => ownedBy(item, proposal.id)) : matches.filter((item) => item.title === proposal.title && item.source === proposal.source && item.origin === proposal.origin), 'event')
+        if (event) {
+          const active = snapshot.events.some((item) => item.id === event.id)
+          const trash = join(this.path, 'trash', 'calendar', `${id(event.id)}.yaml`)
+          const archived = join(this.path, 'archive', 'calendar', `${id(event.id)}.yaml`)
+          add(active ? join(this.directories[5], `${id(event.id)}.yaml`) : await lstat(trash).then(() => trash, () => archived))
+        }
+      }
+    }
+    for (const claim of snapshot.claims) if (claim.metadata?.conversationId === target) claims.add(claim.id)
+    for (const entity of snapshot.entities) if (entity.metadata?.conversationId === target) entities.add(entity.id)
+    for (const task of [...snapshot.tasks, ...snapshot.archivedTasks]) if (task.metadata?.conversationId === target)
+      add(join(this.path, snapshot.archivedTasks.some((item) => item.id === task.id) ? 'archive' : '', 'tasks', `${id(task.id)}.yaml`))
+    for (const event of [...snapshot.events, ...snapshot.archivedEvents]) if (event.metadata?.conversationId === target) {
+      const file = `${id(event.id)}.yaml`
+      const trash = join(this.path, 'trash', 'calendar', file)
+      add(snapshot.events.some((item) => item.id === event.id) ? join(this.directories[5], file) : await lstat(trash).then(() => trash, () => join(this.path, 'archive', 'calendar', file)))
+    }
+    for (const entityId of entities) {
+      const dependencies = snapshot.claims.some((claim) => (claim.subject === entityId || claim.value === entityId) && !claims.has(claim.id)) ||
+        snapshot.tasks.some((task) => task.relatedEntityIds.includes(entityId) && task.metadata?.conversationId !== target) ||
+        snapshot.events.some((event) => event.relatedEntityIds.includes(entityId) && event.metadata?.conversationId !== target) ||
+        snapshot.merges.some((merge) => merge.target === entityId) ||
+        snapshot.identityDecisions.some((decision) => decision.left === entityId || decision.right === entityId)
+      if (dependencies) throw new Error('Cannot safely delete this chat: an entity it created is used by knowledge from another source.')
+      add(join(this.directories[0], `${id(entityId)}.md`))
+    }
+    for (const claimId of claims) add(join(this.directories[1], `${id(claimId)}.yaml`))
+    for (const resolution of snapshot.resolutions) if (resolution.currentClaimId && claims.has(resolution.currentClaimId))
+      add(join(this.directories[7], `${id(resolution.id)}.yaml`))
+    const withinTurn = (conversation: Conversation, activity: ProviderActivity): boolean => {
+      const started = Date.parse(activity.startedAt)
+      if (!Number.isFinite(started)) return false
+      return conversation.messages.some((message, index) => {
+        if (message.role !== 'user' || (message.provider && message.provider !== activity.provider)) return false
+        const next = conversation.messages.slice(index + 1).find((item) => item.role === 'assistant')
+        if (!next) return false
+        const from = Date.parse(message.recordedAt)
+        const to = Date.parse(next.recordedAt)
+        return Number.isFinite(from) && Number.isFinite(to) && started >= from - 2000 && started <= to + 2000
+      })
+    }
+    const conversation = snapshot.conversations.find((item) => item.id === target)!
+    for (const activity of snapshot.providerActivity) {
+      if (activity.conversationId === target) { add(join(this.directories[8], `${id(activity.id)}.yaml`)); continue }
+      if (activity.conversationId || !['conversation', 'document-analysis'].includes(activity.operation) || !withinTurn(conversation, activity)) continue
+      if (snapshot.conversations.some((other) => other.id !== target && withinTurn(other, activity)))
+        throw new Error('Cannot safely identify an older Activity entry shared by overlapping chats.')
+      add(join(this.directories[8], `${id(activity.id)}.yaml`))
+    }
+    add(join(this.directories[3], `${target}.yaml`))
+    // Verify every file before removing any, so a stale or linked record never causes partial deletion.
+    for (const path of selected) await this.readOwnedText(path).catch((error: NodeJS.ErrnoException) => {
+      if (path === join(this.directories[3], `${target}.yaml`) && error.code === 'ENOENT') return
+      throw error
     })
+    for (const path of selected) await unlink(path).catch((error: NodeJS.ErrnoException) => {
+      if (path === join(this.directories[3], `${target}.yaml`) && error.code === 'ENOENT') return
+      throw error
+    })
+    this.ephemeral.delete(target)
+    this.markDirty()
     return this.snapshot()
   }
 
@@ -1058,23 +1166,30 @@ export class Workspace {
         const claim: Claim = {
           id: randomUUID(), subject: entity.id, key: requiredText(proposal.key, 'Key'),
           value: requiredText(proposal.value, 'Value'), source: requiredText(proposal.source, 'Source'),
-          origin: proposal.origin, confidence: proposal.confidence, status: 'confirmed', recordedAt: new Date().toISOString()
+          origin: proposal.origin, confidence: proposal.confidence, status: 'confirmed', recordedAt: new Date().toISOString(),
+          metadata: { proposalId: proposal.id, conversationId: proposal.conversationId }
         }
         await writeFile(join(this.directories[1], `${claim.id}.yaml`), YAML.stringify(claim), { flag: 'wx' })
         this.markDirty()
       } else if (proposal.kind === 'entity') {
         const priorIds = new Set((await this.snapshot()).entities.map((entity) => entity.id))
         const saved = await this.saveEntity({ id: '', title: proposal.title, type: proposal.type, body: proposal.body,
-          source: proposal.source, origin: proposal.origin })
+          source: proposal.source, origin: proposal.origin, metadata: { proposalId: proposal.id, conversationId: proposal.conversationId } })
         const created = saved.entities.find((entity) => !priorIds.has(entity.id))
         if (!created) throw new Error('New entity was not readable after creation')
         proposal.createdEntityId = created.id
       } else if (proposal.kind === 'task') {
-        await this.saveTask({ id: '', title: proposal.title, due: proposal.due, notes: proposal.notes,
-          completed: false, relatedEntityIds: proposal.relatedEntityIds, source: proposal.source, origin: proposal.origin })
+        const priorIds = new Set((await this.snapshot()).tasks.map((item) => item.id))
+        const saved = await this.saveTask({ id: '', title: proposal.title, due: proposal.due, notes: proposal.notes,
+          completed: false, relatedEntityIds: proposal.relatedEntityIds, source: proposal.source, origin: proposal.origin,
+          metadata: { proposalId: proposal.id, conversationId: proposal.conversationId } })
+        proposal.createdResourceId = saved.tasks.find((item) => !priorIds.has(item.id))?.id
       } else {
-        await this.saveEvent({ id: '', title: proposal.title, start: proposal.start, end: proposal.end,
-          notes: proposal.notes, relatedEntityIds: proposal.relatedEntityIds, source: proposal.source, origin: proposal.origin })
+        const priorIds = new Set((await this.snapshot()).events.map((item) => item.id))
+        const saved = await this.saveEvent({ id: '', title: proposal.title, start: proposal.start, end: proposal.end,
+          notes: proposal.notes, relatedEntityIds: proposal.relatedEntityIds, source: proposal.source, origin: proposal.origin,
+          metadata: { proposalId: proposal.id, conversationId: proposal.conversationId } })
+        proposal.createdResourceId = saved.events.find((item) => !priorIds.has(item.id))?.id
       }
     }
     proposal.status = accept ? 'accepted' : 'rejected'
@@ -1101,7 +1216,8 @@ export class Workspace {
       claim.value === value && claim.source === source && claim.status === 'confirmed')
     const claim: Claim = {
       id: randomUUID(), subject, key: 'context', value, source,
-      origin: data.origin, status: 'confirmed', recordedAt: new Date().toISOString()
+      origin: data.origin, status: 'confirmed', recordedAt: new Date().toISOString(),
+      metadata: { proposalId, conversationId: data.conversationId }
     }
     const claimPath = join(this.directories[1], `${claim.id}.yaml`)
     if (!existing) await writeFile(claimPath, YAML.stringify(claim), { flag: 'wx' })
@@ -1206,12 +1322,37 @@ export class Workspace {
     })
   }
 
-  async archiveEvent(id: string, revision: string): Promise<WorkspaceSnapshot> {
-    return this.archiveModuleRecord(this.directories[5], 'calendar', id, revision)
+  async archiveEvent(recordId: string, revision: string): Promise<WorkspaceSnapshot> {
+    const file = `${id(recordId)}.yaml`
+    const source = join(this.directories[5], file)
+    const destination = join(this.path, 'trash', 'calendar', file)
+    return this.withFileMutation(source, async () => {
+      if (checksum(await this.readOwnedText(source)) !== revision) throw new Error('This event changed on disk. Refresh before moving it to Trash.')
+      try { await lstat(destination); throw new Error('This event is already in Trash.') }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+      await rename(source, destination)
+      this.markDirty()
+      return this.snapshot()
+    })
   }
 
-  async restoreEvent(id: string): Promise<WorkspaceSnapshot> {
-    return this.restoreModuleRecord(this.directories[5], 'calendar', id)
+  async restoreEvent(recordId: string): Promise<WorkspaceSnapshot> {
+    const file = `${id(recordId)}.yaml`
+    const trashed = join(this.path, 'trash', 'calendar', file)
+    try { await lstat(trashed) }
+    catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return this.restoreModuleRecord(this.directories[5], 'calendar', recordId)
+      throw error
+    }
+    const destination = join(this.directories[5], file)
+    return this.withFileMutation(destination, async () => {
+      if (!(await this.snapshot()).modules.calendar) throw new Error('Calendar module is disabled')
+      try { await lstat(destination); throw new Error('An active event already uses this ID.') }
+      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
+      await rename(trashed, destination)
+      this.markDirty()
+      return this.snapshot()
+    })
   }
 
   /**

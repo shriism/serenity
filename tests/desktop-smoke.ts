@@ -9,6 +9,7 @@ import assert from 'node:assert/strict'
 import { PDFDocument } from 'pdf-lib'
 import JSZip from 'jszip'
 import YAML from 'yaml'
+import type { WorkspaceSnapshot } from '../src/shared/types'
 import { helpers, launch } from './electron-harness'
 
 const require = createRequire(import.meta.url)
@@ -130,9 +131,11 @@ try {
   assert.ok(shell.explorer.includes('My Home') && shell.explorer.includes('research.pdf'), `Explorer: ${shell.explorer}`)
   assert.equal(shell.toggles, 1, 'Exactly one control shows or hides the assistant')
   assert.ok(shell.ribbon.includes('Calendar') && shell.ribbon.includes('Settings'), `Ribbon: ${shell.ribbon}`)
-  const hidden = await run(`if ($('button[aria-label="Show assistant"]')) { click($('button[aria-label="Show assistant"]')); await waitFor(() => $('.right-sidebar')) }
-    click($('button[aria-label="Hide assistant"]')); await waitFor(() => !$('.right-sidebar')); const shown = Boolean($('button[aria-label="Show assistant"]'));
-    click($('button[aria-label="Show assistant"]')); await waitFor(() => $('.right-sidebar')); return shown && $$('button[aria-label="Hide assistant"]').length === 1`)
+  const hidden = await run(`if ($('button[aria-label="Show assistant"]')) { click($('button[aria-label="Show assistant"]')); await waitFor(() => $('.right-sidebar[aria-hidden="false"]')) }
+    const before = $('.assistant-edge-toggle').getBoundingClientRect().x;
+    click($('button[aria-label="Hide assistant"]')); await waitFor(() => $('.right-sidebar[aria-hidden="true"]')); const shown = Boolean($('button[aria-label="Show assistant"]'));
+    click($('button[aria-label="Show assistant"]')); await waitFor(() => $('.right-sidebar[aria-hidden="false"]'));
+    return shown && $$('button[aria-label="Hide assistant"]').length === 1 && Math.abs($('.assistant-edge-toggle').getBoundingClientRect().x - before) < 1`)
   assert.equal(hidden, true, 'The same single toggle hides and shows the assistant')
   const contextMenu = await run<string[]>(`await showSidebar(); const row = byText('.tree-row', 'research.pdf'); const rect = row.getBoundingClientRect();
     row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: rect.left + 10, clientY: rect.top + 5 }));
@@ -184,6 +187,29 @@ try {
     return { split, moved, closed: $$('.pane').length }`)
   assert.deepEqual(panes, { split: 2, moved: true, closed: 1 })
   assert.ok((await stat(join(workspace, 'documents', 'research.pdf'))).isFile(), 'Closing a pane leaves files alone')
+  // Releasing a dragged divider must restore ordinary clicks and typing, even after the pointer moved far away.
+  await run(`click($('[aria-label^="Pane actions"]')); await sleep(80); click(byText('.menu-item', 'Split right')); await waitFor(() => $$('.pane').length === 2)`)
+  const divider = await run<{ x: number; y: number }>(`const rect = $('.pane-divider.row').getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }`)
+  await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: divider.x, y: divider.y, button: 'left', clickCount: 1 })
+  await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: divider.x + 50, y: divider.y, button: 'left', buttons: 1 })
+  await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: divider.x + 130, y: divider.y, button: 'left', clickCount: 1 })
+  const narrowAfterResize = await run<boolean>(`return $('.app').classList.contains('narrow')`)
+  if (narrowAfterResize) { await key('j', mod | 8); await run(`await waitFor(() => $('.chat-main .composer textarea'))`) }
+  const composerSelector = narrowAfterResize ? '.chat-main .composer textarea' : '.assistant-panel .composer textarea'
+  const composerPoint = await run<{ x: number; y: number }>(`const rect = $('${composerSelector}').getBoundingClientRect(); return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }`)
+  await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: composerPoint.x, y: composerPoint.y, button: 'left', clickCount: 1 })
+  await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: composerPoint.x, y: composerPoint.y, button: 'left', clickCount: 1 })
+  await type('Typing works after resize')
+  assert.equal(await run(`return $('${composerSelector}').value`), 'Typing works after resize')
+  await run(`setValue($('${composerSelector}'), ''); ${narrowAfterResize ? "click($('.chat-header [aria-label=\"Return chat to sidebar\"]')); await waitFor(() => $('.pane'));" : ''}
+    click($$('.pane')[1].querySelector('.tab-close')); await waitFor(() => $$('.pane').length === 1)`)
+
+  await key('o', mod)
+  const fileSearch = await run(`await waitFor(() => $('.command-palette[aria-label="Open file in workspace"]'));
+    setValue($('.palette-input input'), 'research.pdf'); await sleep(50);
+    return $$('.palette-results button').map((item) => item.textContent)`)
+  assert.ok(fileSearch.some((item: string) => item.includes('research.pdf')), 'Mod+O finds files in the workspace')
+  await key('Escape')
 
   // Search: PDF and DOCX text, excerpts, and keeping results in a pane.
   await key('k', mod)
@@ -218,13 +244,44 @@ try {
   const board = await run(`click(byText('.task-view-toggle button', 'Board')); await waitFor(() => $$('.task-board-column').length === 5);
     return $$('.task-board-card').some((card) => card.textContent.includes('Buy Sam a gift'))`)
   assert.equal(board, true)
-  await run(`click(byText('.ribbon-btn', 'Calendar')); await waitFor(() => $('.calendar-grid') || $('.calendar-agenda'));
-    click(byText('.module-aside button', '+ Add event')); await waitFor(() => $('.module-aside .module-form'));
-    setValue($('.module-aside .module-form input'), 'Lunch with Sam'); await sleep(50); $('.module-aside .module-form').requestSubmit();
-    await waitFor(() => $$('.module-record').some((item) => item.textContent.includes('Lunch with Sam')))`)
+  await run(`click(byText('.ribbon-btn', 'Calendar')); await waitFor(() => $('.fc-daygrid') || $('.calendar-agenda'));
+    click($('.calendar-add')); await waitFor(() => $('.calendar-event-dialog .module-form'))`)
+  await run(`await Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined)))`)
+  await shot('serenity-calendar-event-dialog')
+  await run(`
+    setValue($('.calendar-event-dialog .module-form input'), 'Lunch with Sam'); await sleep(50); $('.calendar-event-dialog .module-form').requestSubmit();
+    await waitFor(() => $$('.fc-event').some((item) => item.textContent.includes('Lunch with Sam')))`)
+  const calendarViews = await run<string[]>(`const seen = [];
+    for (const [name, selector] of [['Week', '.fc-timegrid'], ['Day', '.fc-timegrid'], ['Month', '.fc-daygrid']]) {
+      click(byText('.task-view-toggle button', name)); await waitFor(() => $(selector)); seen.push(name + ':' + Boolean($$('.fc-event').some((item) => item.textContent.includes('Lunch with Sam')))) }
+    return seen`)
+  assert.deepEqual(calendarViews, ['Week:true', 'Day:true', 'Month:true'], 'Calendar keeps workspace events in each FullCalendar view')
+  const editedEvent = await run(`click($$('.fc-event').find((item) => item.textContent.includes('Lunch with Sam')));
+    await waitFor(() => $('.calendar-event-dialog .module-form input')?.value === 'Lunch with Sam');
+    setValue($('.calendar-event-dialog .module-form input'), 'Lunch with Sam at noon'); await sleep(50); $('.calendar-event-dialog .module-form').requestSubmit();
+    return Boolean(await waitFor(() => $$('.fc-event').some((item) => item.textContent.includes('Lunch with Sam at noon'))))`)
+  assert.equal(editedEvent, true, 'Editing a FullCalendar event saves through Serenity')
+  if (!(await run<boolean>(`return $('.app').classList.contains('narrow')`))) {
+    const tomorrow = futureDate(1)
+    const eventDrag = await run<{ from: { x: number; y: number }; to: { x: number; y: number } }>(`const event = $$('.fc-event').find((item) => item.textContent.includes('Lunch with Sam at noon')).getBoundingClientRect();
+      const day = $('.fc-daygrid-day[data-date="${tomorrow}"]').getBoundingClientRect();
+      return { from: { x: event.x + event.width / 2, y: event.y + event.height / 2 }, to: { x: day.x + day.width / 2, y: day.y + day.height / 2 } }`)
+    await app.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...eventDrag.from, button: 'left', clickCount: 1 })
+    for (let step = 1; step <= 5; step++) await app.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: eventDrag.from.x + (eventDrag.to.x - eventDrag.from.x) * step / 5,
+      y: eventDrag.from.y + (eventDrag.to.y - eventDrag.from.y) * step / 5, button: 'left', buttons: 1 })
+    await app.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...eventDrag.to, button: 'left', clickCount: 1 })
+    await until('the dragged calendar event to save', async () => (await app.evaluate<WorkspaceSnapshot>('window.serenity.refresh()')).events.some((item) => item.title === 'Lunch with Sam at noon' && item.start === tomorrow))
+  }
+  await shot('serenity-calendar')
   const agenda = await run(`click(byText('.task-view-toggle button', 'Agenda')); await waitFor(() => $('.calendar-agenda'));
     return $$('.calendar-agenda button').map((item) => item.textContent).join(' | ')`)
   assert.match(String(agenda), /Lunch with Sam/)
+  await run(`click($$('.calendar-agenda button').find((item) => item.textContent.includes('Lunch with Sam at noon'))); await waitFor(() => $('.calendar-event-dialog'));
+    click(byText('.calendar-event-dialog button', 'Move to Trash')); await waitFor(() => $('.calendar-archive summary')?.textContent.includes('Trash (1)'))`)
+  const trashedEvent = (await app.evaluate<WorkspaceSnapshot>('window.serenity.refresh()')).archivedEvents.find((item) => item.title === 'Lunch with Sam at noon')
+  assert.ok(trashedEvent)
+  assert.ok((await stat(join(workspace, 'trash', 'calendar', `${trashedEvent.id}.yaml`))).isFile(), 'Deleted event is in workspace Trash')
+  await run(`$('.calendar-archive').open = true; click(byText('.calendar-archive button', 'Restore')); await waitFor(() => $$('.calendar-agenda button').some((item) => item.textContent.includes('Lunch with Sam at noon')))`)
 
   // Review: an AI-suggested entity can be created after review.
   const reviewed = await run(`click($('.ribbon-btn[aria-label^="Review"]')); await waitFor(() => $$('.review-card').length);
@@ -248,14 +305,16 @@ try {
   assert.deepEqual({ ...settings, rows: true }, { rows: true, light: true, calendarHidden: true, calendarBack: true, scrollbarToggle: true })
 
   // Chat mode, and conversation settings for a read scope limited to chosen knowledge.
-  const chat = await run<{ composer: boolean; scope: string; suggestions: string }>(`click(byText('.ribbon-mode button', 'Chat')); await waitFor(() => $('.chat-main .composer'));
+  if (await run<boolean>(`return $('.app').classList.contains('narrow')`)) await key('j', mod | 8)
+  else await run(`click($('.assistant-panel [aria-label="Open this chat full window"]'))`)
+  const chat = await run<{ composer: boolean; scope: string; suggestions: string }>(`await waitFor(() => $('.chat-main .composer'));
     click($('.chat-main .composer button[aria-label^="Read scope"]')); await waitFor(() => $('[role="radiogroup"][aria-label="AI read scope"]'));
     click(byText('[role="radio"]', 'Selected knowledge')); await sleep(80); const scope = $('.chat-main .composer button[aria-label^="Read scope"]').textContent;
     click(byText('[role="radio"]', 'Whole workspace')); click(byText('.dialog button', 'Done') ?? byText('.dialog button', 'Save')); await sleep(80);
-    await showSidebar(); if (!byText('.conversation-row', 'Robotics club notes')) throw new Error('Conversations listed: ' + $$('.conversation-row').map((row) => row.textContent).join(', ') + ' | sidebar: ' + $('.app').className);
-    click(byText('.conversation-row', 'Robotics club notes')); await waitFor(() => $('.chat-suggestions'));
+    await showSidebar(); if (!byText('.conversation-select', 'Robotics club notes')) throw new Error('Conversations listed: ' + $$('.conversation-row').map((row) => row.textContent).join(', ') + ' | sidebar: ' + $('.app').className);
+    click(byText('.conversation-select', 'Robotics club notes')); await waitFor(() => $('.chat-suggestions'));
     const suggestions = $('.chat-suggestions').textContent;
-    const composer = Boolean($('.chat-main textarea[aria-label="Message"]')); click(byText('.ribbon-mode button', 'Workspace')); await waitFor(() => $('.pane'));
+    const composer = Boolean($('.chat-main textarea[aria-label="Message"]')); click($('.chat-header [aria-label="Return chat to sidebar"]')); await waitFor(() => $('.pane'));
     return { composer, scope, suggestions }`)
   assert.equal(chat.composer, true)
   assert.match(chat.suggestions, /1 decided suggestion/, 'A conversation shows the changes it suggested')
@@ -286,11 +345,11 @@ try {
     ['Tasks', `click(byText('.ribbon-btn', 'Tasks'))`], ['Activity', `click(byText('.ribbon-btn', 'Activity'))`],
     ['Entity', `await showSidebar(); click(byText('.tree-row', 'Sam Rivera'))`], ['Timeline', `click(byText('.presentation-switcher button', 'Timeline'))`],
     ['New tab', `click($('.pane.focused .new-tab') ?? $('.new-tab'))`], ['Settings', `click($('.ribbon-btn[aria-label="Settings"]'))`],
-    ['Chat', `click($('.dialog-close')); click(byText('.ribbon-mode button', 'Chat'))`]
+    ['Chat', `click($('.dialog-close')); if ($('.assistant-panel [aria-label="Open this chat full window"]')) click($('.assistant-panel [aria-label="Open this chat full window"]')); else document.dispatchEvent(new KeyboardEvent('keydown', { key: 'J', code: 'KeyJ', shiftKey: true, metaKey: navigator.platform.includes('Mac'), ctrlKey: !navigator.platform.includes('Mac'), bubbles: true }))`]
   ]
   const accessibility: string[] = []
   for (const theme of ['dark', 'light']) {
-    await run(`if ($('.dialog-close')) click($('.dialog-close')); if (byText('.ribbon-mode button', 'Workspace')) click(byText('.ribbon-mode button', 'Workspace')); await sleep(150)`)
+    await run(`if ($('.dialog-close')) click($('.dialog-close')); if ($('.chat-header [aria-label="Return chat to sidebar"]')) click($('.chat-header [aria-label="Return chat to sidebar"]')); await sleep(150)`)
     for (const [view, setup] of views) {
       const found = await run<string[]>(`document.documentElement.setAttribute('data-theme', '${theme}'); ${setup}; await sleep(400);
         await Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined)));
@@ -300,6 +359,14 @@ try {
     }
   }
   assert.deepEqual(accessibility, [], 'Main views should have no serious or critical accessibility violations')
+
+  await run(`await showSidebar(); click($('[aria-label="Star Robotics club notes"]'));
+    await waitFor(() => $('.conversation-list .sidebar-heading')?.textContent === 'Starred');
+    const row = byText('.conversation-select', 'Robotics club notes'); const rect = row.getBoundingClientRect();
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: rect.left + 10, clientY: rect.top + 5 }));
+    await waitFor(() => $('.menu.context')); window.confirm = () => true; click(byText('.menu.context .menu-item', 'Delete chat'));
+    await waitFor(() => !byText('.conversation-select', 'Robotics club notes'))`)
+  assert.equal((await app.evaluate<WorkspaceSnapshot>('window.serenity.refresh()')).proposals.filter((item) => item.conversationId === '123e4567-e89b-42d3-a456-426614174093').length, 0)
 
   // Crash the renderer on purpose: the window should reload itself with a working bridge and the same workspace.
   await app.send('Page.crash').catch(() => undefined)

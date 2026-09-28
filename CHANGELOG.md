@@ -4,11 +4,21 @@ Serenity's notable changes, newest first. The workspace format stays readable Ma
 
 ## Unreleased
 
+## 2.0.1 (2026-09-28)
+
 - Escape leaves page, note, and text-document editing; Enter in a page title moves into its body, while Escape cancels a title change.
 - Scrollbars can be hidden without leaving a gutter, or shown again in Settings. The editor and tab-number shortcuts have their own switches.
 - Command shortcuts, including the tab shortcuts, can be changed or cleared per workspace in Settings.
 - Markdown and plain-text documents can be created and edited in place with autosave and revision checks.
 - Arrow keys can move into a live query to edit its YAML directly; clicking the preview's open space does the same without a separate Edit button.
+- Calendar now offers Day, Week, Month, and Agenda in that order, with click-to-edit events and tasks shown beside events. A + beside Agenda opens the event form in a popup; deleting an event moves its YAML file to `trash/calendar/` for restoration.
+- ⌘O / Ctrl+O searches openable files in the current workspace, and ⌘⇧O / Ctrl+Shift+O opens another workspace. Both commands can be rebound in Settings.
+- Empty split panes close when their last tab is closed or moved. Sidebar resize handles no longer cover the composer or intercept typing.
+- Text fields no longer show manual resize grips, and the title-bar divider continues across the window controls.
+- Chat rows have a star control and a Starred section. Right-click a chat to delete its transcript, proposals, identifiable accepted records, and linked Activity entries from the workspace.
+- The assistant expand control now also returns a full-window chat to the sidebar. The separate Workspace/Chat buttons are gone, and the sidebar toggle moves to the far left in macOS full screen.
+- The assistant sidebar slides beneath one fixed toggle; the title-bar divider aligns with the ribbon in full screen. Calendar puts Today before its date arrows.
+- The sidebar title bar names Serenity, its edge dividers run continuously into the window chrome, and crowded tabs scroll horizontally with a mouse wheel or trackpad. New tab stays beside the pane menu while the tabs scroll.
 
 ## 2.0.0 (2026-09-28)
 
@@ -26,7 +36,7 @@ A rebuilt interface that looks and behaves like a native desktop app. The worksp
 - The assistant has a single control to show or hide it (**⌘J** / **Ctrl+J**), where there used to be two.
 - Calendar, Tasks, Review, Documents, Knowledge, Activity, and Search open as tabs like any file. An empty tab offers quick actions. Closing a tab shows the one beside it.
 - Settings is a dialog with sections, and new entities are named in a short dialog that points out possible duplicates.
-- An application menu lists every action with its shortcut. New tab (**⌘T**), Close tab (**⌘W**, which no longer closes the window), Next and Previous tab (**⌘⇧]** / **⌘⇧[**), Settings (**⌘,**), New page (**⌘N**), and Open another workspace (**⌘O**) are new. The menu no longer includes developer tools in release builds.
+- An application menu lists every action with its shortcut. New tab (**⌘T**), Close tab (**⌘W**, which no longer closes the window), Next and Previous tab (**⌘⇧]** / **⌘⇧[**), Settings (**⌘,**), and New page (**⌘N**) are new. The menu no longer includes developer tools in release builds.
 - Pages, entities, and documents can be moved to the archive from their right-click, tab, or pane menu; nothing is deleted. Pages go to `archive/pages/`, documents to `archive/documents/`, and an entity with the facts about it to `archive/removed/`, where other notes still show its name. An entity that others were merged into, and the Home page, cannot be archived.
 - Changes the assistant suggests in a conversation (tasks, events, entities, facts) appear under its answer with Accept and Dismiss, as well as in Review. The assistant knows today's date, so "add a task for tomorrow" gets the right day, and it proposes what you ask it to create rather than only describing it.
 - Segmented switches (List/Board, Profile/Timeline, and others) show the selected option clearly, and resize handles no longer stay highlighted after a drag.

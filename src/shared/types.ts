@@ -97,6 +97,7 @@ export interface WorkspacePage {
 
 export interface ProviderActivity {
   id: string
+  conversationId?: string
   provider: string
   operation: 'conversation' | 'semantic-search' | 'background-index' | 'document-analysis'
   refs: string[]
@@ -200,6 +201,7 @@ export interface Conversation {
   title: string
   messages: Message[]
   retained: boolean
+  starred?: boolean
   autonomy?: Autonomy
   permissions?: WorkflowPermissions
   readScope?: ReadScope
@@ -215,6 +217,7 @@ export interface ProposalBase {
   reviewReason?: string
   resolvedInto?: string
   createdEntityId?: string
+  createdResourceId?: string
 }
 
 export type Proposal = ProposalBase & (
@@ -254,6 +257,8 @@ export interface SerenityAPI {
   forgetRecentWorkspace(path: string): Promise<{ path: string; name: string; available: boolean }[]>
   /** Matches the system-drawn title bar controls to the app's appearance. */
   setWindowTheme(theme: 'dark' | 'light'): void
+  isFullScreen(): Promise<boolean>
+  onFullScreenChange(callback: (fullScreen: boolean) => void): () => void
   copyText(text: string): void
   /** Runs when a command is chosen from the application menu. */
   onMenuCommand(callback: (id: string) => void): () => void
@@ -293,6 +298,7 @@ export interface SerenityAPI {
   resolveProposal(id: string, accept: boolean): Promise<WorkspaceSnapshot>
   attachEntityProposal(proposalId: string, entityId: string): Promise<WorkspaceSnapshot>
   deleteConversation(id: string): Promise<WorkspaceSnapshot>
+  starConversation(id: string, starred: boolean): Promise<WorkspaceSnapshot>
   credentialStatus(): Promise<Record<Provider, boolean>>
   saveCredential(provider: Provider, key: string): Promise<Record<Provider, boolean>>
   setModule(id: ModuleId, enabled: boolean): Promise<WorkspaceSnapshot>

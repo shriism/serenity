@@ -4,13 +4,13 @@ import { join } from 'node:path'
 import YAML from 'yaml'
 import type { Provider, ProviderActivity } from '../shared/types'
 
-export type ActivityRequest = { operation: ProviderActivity['operation']; refs: string[] }
+export type ActivityRequest = { operation: ProviderActivity['operation']; refs: string[]; conversationId?: string }
 
 export async function trackProviderCall<T>(
   workspacePath: string, provider: Provider, prompt: string, activity: ActivityRequest, run: () => Promise<T>
 ): Promise<T> {
   const entry: ProviderActivity = {
-    id: randomUUID(), provider, operation: activity.operation, refs: activity.refs,
+    id: randomUUID(), provider, operation: activity.operation, refs: activity.refs, conversationId: activity.conversationId,
     promptCharacters: prompt.length, promptChecksum: createHash('sha256').update(prompt).digest('hex'),
     startedAt: new Date().toISOString(), status: 'running'
   }

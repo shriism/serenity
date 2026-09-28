@@ -51,7 +51,8 @@ my-workspace/
   calendar/                    # internal events, if enabled
   tasks/                       # internal tasks, if enabled
   activity/                    # provider request metadata, not duplicate raw prompts
-  archive/                     # reversible merges; archived entities, events, tasks
+  archive/                     # reversible merges; archived entities and tasks, legacy archived events
+  trash/calendar/              # deleted events, available to restore
   .serenity/
     workbench.yaml              # Home page ID and navigation groups / command IDs
     session.yaml                # pane layout, each pane's tabs and views, assistant selection
@@ -122,7 +123,7 @@ Serenity 2.0 is a finished, hardened desktop workbench for the agreed initial sc
 - **Pages.** An editable `pages/Home.md` and more pages, always editable in live preview and saved as you type, with inline titles; `[[wikilinks]]` with suggestions, backlinks, and rename updates; resource, command, web, and email links; bounded live `serenity-query` lists, tables, and counts; Home and navigation configured in workspace YAML; empty lists explain how things arrive.
 - **Documents.** Imports copied into the workspace; text, outline, and "knowledge from it" views; PDF/DOCX extracted off the main process; unsupported formats open natively.
 - **Workbench.** Everything is a tab, views included; Obsidian-style panes (split, resize, drag tabs, directional focus, narrow fallback) and per-tab views, restored with the workspace; tab shortcuts (new, close, next, previous); a command registry with per-workspace keybindings and commands for views, layout, and appearance; a search pane that keeps results open.
-- **Calendar and tasks.** Internal modules with month/agenda and list/board views, archive and restore, and on/off switches that keep data.
+- **Calendar and tasks.** Internal modules with day/week/month/agenda and list/board views, event Trash and restore, task archive and restore, and on/off switches that keep data.
 - **Assistant.** Copilot or Codex, switchable within a conversation, in the sidebar or full-window; read scope and autonomy per conversation (including "ask about these search results"); focused and visible panes as context; disclosed context and provider activity; cancellable requests; checked citations; proposals reviewed by source and beside their document; structured document analysis and "suggest connections"; optional background analysis and semantic indexing.
 - **Reliability.** Revision-checked, serialized writes; ordered snapshots; damaged settings preserved beside a fresh start; per-pane error boundaries and bounded crash recovery; a watcher that scales to large workspaces; background search indexing.
 - **Verification.** Unit tests, a desktop smoke test with an axe-core gate over every main view in both themes, performance budgets, and CI that smoke-tests packaged builds on all three platforms. Live Copilot and Codex turns were tested from the packaged macOS app; CI makes no live provider calls.

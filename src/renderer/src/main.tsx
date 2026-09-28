@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { AlertTriangle, Archive, ChevronDown, Columns2, FolderOpen, History, Maximize2, MessageSquarePlus, MoreHorizontal, MoveRight, PanelLeft, PanelRight, RotateCw, Settings2, Trash2, X } from 'lucide-react'
+import { AlertTriangle, Archive, ChevronDown, Columns2, FolderOpen, History, Maximize2, Minimize2, MessageSquarePlus, MoreHorizontal, MoveRight, PanelLeft, PanelRight, RotateCw, Settings2, Trash2, X } from 'lucide-react'
 import type { Conversation, SearchResult, WorkspaceSnapshot } from '../../shared/types'
 import { useAssistant } from './use-assistant'
 import { ErrorBoundary } from './error-boundary'
@@ -14,7 +14,7 @@ import { preferences, usePreferences } from './preferences'
 import type { View } from './views'
 import { isResourceTab, routeResource, tabKey, tabPath, tabTitle, tabViewOf, viewTab, type TabRef } from './resource-routing'
 import { PresentationSwitcher, presentationFor, presentations } from './presentations'
-import { activeTabOf, closeGroup, emptyGroup, findGroup, focusedGroup, homeWorkbench, initialWorkbench, moveTab, nextGroupId, orderedGroups, presentTab, presentView,
+import { activeTabOf, closeEmptyGroups, closeGroup, emptyGroup, findGroup, focusedGroup, homeWorkbench, initialWorkbench, moveTab, nextGroupId, orderedGroups, presentTab, presentView,
   pruneWorkbench, removeTab, restoreWorkbench, showTab, showView, shownUri, splitWorkbench, updateGroup, workbenchSession, type EditorGroup, type Workbench } from './workbench-groups'
 import { layoutGeometry, maxEditorGroups, neighborGroup, resizeSplit, type PaneDirection, type SplitDirection } from '../../shared/layout'
 import { PaneDivider, dropZoneAt, percentRect, tabDragType, type DropZone } from './pane-layout'
@@ -50,11 +50,13 @@ function useStored<T extends string | number | boolean>(key: string, fallback: T
 /** A handle on a sidebar's inner edge that resizes it. */
 function SidebarResizer({ side, width, min, max, onResize }: { side: 'left' | 'right'; width: number; min: number; max: number; onResize(width: number): void }) {
   const start = useRef<{ x: number; width: number } | null>(null)
+  const finish = (): void => { start.current = null; document.body.classList.remove('resizing') }
   return <div className={`sidebar-resizer ${side}`} role="separator" aria-orientation="vertical" aria-label={`Resize ${side} sidebar`} tabIndex={0}
     aria-valuemin={min} aria-valuemax={max} aria-valuenow={width}
-    onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); start.current = { x: event.clientX, width }; document.body.classList.add('resizing') }}
-    onPointerMove={(event) => { if (!start.current) return; const delta = (event.clientX - start.current.x) * (side === 'left' ? 1 : -1); onResize(Math.min(max, Math.max(min, start.current.width + delta))) }}
-    onPointerUp={() => { start.current = null; document.body.classList.remove('resizing') }}
+    onPointerDown={(event: ReactPointerEvent<HTMLDivElement>) => { if (event.button !== 0) return; event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); start.current = { x: event.clientX, width }; document.body.classList.add('resizing') }}
+    onPointerMove={(event) => { if (!start.current || !event.currentTarget.hasPointerCapture(event.pointerId)) return; const delta = (event.clientX - start.current.x) * (side === 'left' ? 1 : -1); onResize(Math.min(max, Math.max(min, start.current.width + delta))) }}
+    onPointerUp={(event) => { if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId); finish() }}
+    onPointerCancel={finish} onLostPointerCapture={finish}
     // A drag should not leave the handle focused, or the next key press would light up its focus ring.
     onMouseDown={(event) => event.preventDefault()}
     onKeyDown={(event) => { const step = event.shiftKey ? 40 : 12; if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); const grow = (event.key === 'ArrowRight') === (side === 'left'); onResize(Math.min(max, Math.max(min, width + (grow ? step : -step)))) } }}/>
@@ -93,11 +95,13 @@ function App() {
   const [leftWidth, setLeftWidth] = useStored<number>('serenity.left-width', 260)
   const [rightWidth, setRightWidth] = useStored<number>('serenity.right-width', 360)
   const [windowWidth, setWindowWidth] = useState(window.innerWidth)
+  const [fullScreen, setFullScreen] = useState(false)
   const [sessionReadyPath, setSessionReadyPath] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResult[] | null>(null)
   const [searching, setSearching] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [paletteMode, setPaletteMode] = useState<'all' | 'files'>('all')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [newEntityOpen, setNewEntityOpen] = useState(false)
   const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false)
@@ -125,6 +129,10 @@ function App() {
   const clearErrors = useCallback(() => setErrors([]), [])
 
   useEffect(() => { window.serenity.setWindowTheme(resolvedTheme) }, [resolvedTheme])
+  useEffect(() => {
+    void window.serenity.isFullScreen().then(setFullScreen)
+    return window.serenity.onFullScreenChange(setFullScreen)
+  }, [])
   const prefs = usePreferences()
   // This device preference hides the scrollbar gutter while keeping content scrollable.
   useEffect(() => {
@@ -289,7 +297,7 @@ function App() {
   async function searchText(value: string) {
     setQuery(value)
     const request = ++searchSequence.current
-    if (!value.trim()) { setResults(null); return }
+    if (!value.trim() || paletteMode === 'files') { setResults(null); return }
     try {
       const matches = await window.serenity.search(value)
       if (request === searchSequence.current) setResults(matches)
@@ -419,7 +427,7 @@ function App() {
   }
 
   function closeTab(key: string, groupId: string): void {
-    setWorkbench((current) => updateGroup(current, groupId, (group) => removeTab(group, key)))
+    setWorkbench((current) => closeEmptyGroups(updateGroup(current, groupId, (group) => removeTab(group, key))))
   }
 
   function changePresentation(groupId: string, tab: TabRef, presentation: string): void {
@@ -509,7 +517,8 @@ function App() {
     chooseWorkspace: () => { void chooseWorkspace() },
     openWorkspaceFolder: () => { void window.serenity.openWorkspaceFolder().catch((cause) => setError(String(cause))) },
     newConversation: () => startConversation(),
-    toggleSearch: () => { if (paletteOpen) closePalette(); else setPaletteOpen(true) },
+    toggleSearch: () => { if (paletteOpen && paletteMode === 'all') closePalette(); else { setPaletteMode('all'); setPaletteOpen(true); void searchText('') } },
+    openFileSearch: () => { setPaletteMode('files'); setPaletteOpen(true); void searchText('') },
     toggleNavigation: () => setLeftOpen((open) => !open),
     toggleAssistant: () => { if (mode === 'chat') setMode('workspace'); else setRightOpen((open) => !open) },
     toggleAssistantExpansion: () => setMode((current) => current === 'chat' ? 'workspace' : 'chat'),
@@ -598,7 +607,7 @@ function App() {
       onAnalyze: (name) => { openDocumentTab(name, group.id); startConversation(documentAnalysisPrompt(name)) },
       taskPresentation: group.viewPresentations.tasks === 'board' ? 'board' : 'list',
       onTaskPresentationChange: (presentation) => setWorkbench((current) => updateGroup(current, group.id, (item) => presentView(item, 'tasks', presentation))),
-      calendarPresentation: group.viewPresentations.calendar === 'agenda' ? 'agenda' : 'month',
+      calendarPresentation: (['month', 'week', 'day', 'agenda'] as const).find((item) => item === group.viewPresentations.calendar) ?? 'month',
       onCalendarPresentationChange: (presentation) => setWorkbench((current) => updateGroup(current, group.id, (item) => presentView(item, 'calendar', presentation))),
       onOpenEntity: (id) => { openEntity(id, group.id) }, onNewEntity: () => setNewEntityOpen(true), onDiscuss: (question) => startConversation(question),
       onAsk: (prompt, scope) => startConversation(prompt, scope), searchQuery: searchSeeds[group.id] ?? ''
@@ -613,14 +622,14 @@ function App() {
     } catch { return null }
   }
 
-  const assistantToggle = <button type="button" className="icon-btn" onClick={() => runCommand('assistant.toggle')} aria-pressed={rightOpen} aria-keyshortcuts={ariaShortcut('assistant.toggle')}
+  const assistantToggle = <button type="button" className="icon-btn assistant-edge-toggle" onClick={() => runCommand('assistant.toggle')} aria-pressed={rightOpen} aria-keyshortcuts={ariaShortcut('assistant.toggle')}
     aria-label={rightOpen ? 'Hide assistant' : 'Show assistant'} title={withShortcut(rightOpen ? 'Hide assistant' : 'Show assistant', 'assistant.toggle')}><PanelRight size={16}/></button>
 
   function newTabActions(groupId: string) {
     return [
       { id: 'page', label: 'New page', keys: shortcut('page.create'), run: () => { void createPage(groupId) } },
       { id: 'entity', label: 'New entity', keys: shortcut('entity.create'), run: () => setNewEntityOpen(true) },
-      { id: 'search', label: 'Go to or search…', keys: shortcut('workspace.search'), run: () => setPaletteOpen(true) },
+      { id: 'search', label: 'Go to or search…', keys: shortcut('workspace.search'), run: () => { setPaletteMode('all'); setPaletteOpen(true) } },
       ...(workspace?.pages.some((page) => page.id === workspace.workbench.homePage) ? [{ id: 'home', label: 'Open Home', run: () => { navigate('home', groupId) } }] : []),
       { id: 'ask', label: 'Ask Serenity', keys: shortcut('assistant.toggle'), run: () => startConversation() },
       ...(multipleGroups ? [{ id: 'close', label: 'Close pane', run: () => closeEditorGroup(groupId) }] : [])
@@ -669,10 +678,9 @@ function App() {
         menu={[...(tab && multipleGroups ? [{ id: 'move', label: 'Move tab to next pane', icon: <MoveRight size={14}/>, run: () => moveTabToOtherGroup(group.id) }] : []),
           ...(tab ? [{ id: 'close-tab', label: 'Close tab', icon: <X size={14}/>, run: () => closeTab(tabKey(tab), group.id) }] : []),
           ...(tab && isResourceTab(tab) && !(tab.kind === 'page' && tab.id === snapshot.workbench.homePage) ? [{ id: 'archive', label: 'Move to archive…', icon: <Archive size={14}/>, danger: true, separated: true, run: () => void archiveResource(resourceUri(tab)) }] : [])]}
-        trailing={edge.top && edge.right && !rightOpen && mode === 'workspace' ? assistantToggle : undefined}
         tabMenu={(key) => {
           const index = group.tabs.findIndex((item) => tabKey(item) === key)
-          const closeAll = (keys: string[]) => setWorkbench((current) => updateGroup(current, group.id, (item) => keys.reduce(removeTab, item)))
+          const closeAll = (keys: string[]) => setWorkbench((current) => closeEmptyGroups(updateGroup(current, group.id, (item) => keys.reduce(removeTab, item))))
           return [
             { id: 'close', label: 'Close tab', icon: <X size={14}/>, detail: shortcut('tab.close'), run: () => closeTab(key, group.id) },
             { id: 'others', label: 'Close other tabs', disabled: group.tabs.length < 2, run: () => closeAll(group.tabs.map(tabKey).filter((item) => item !== key)) },
@@ -723,22 +731,25 @@ function App() {
   const showLeft = leftOpen && Boolean(workspace)
   const showRight = workspace && mode === 'workspace' && rightOpen
 
-  return <div className={`app mode-${mode} ${switchingMode ? 'switching-mode' : ''} ${showLeft ? 'left-open' : 'left-closed'} ${showRight ? 'right-open' : 'right-closed'} ${narrow ? 'narrow' : ''} ${workspace ? '' : 'no-workspace'}`}
+  return <div className={`app mode-${mode} ${switchingMode ? 'switching-mode' : ''} ${showLeft ? 'left-open' : 'left-closed'} ${showRight ? 'right-open' : 'right-closed'} ${narrow ? 'narrow' : ''} ${fullScreen ? 'fullscreen' : ''} ${workspace ? '' : 'no-workspace'}`}
     data-platform={platform} style={{ '--left-width': `${leftWidth}px`, '--right-width': `${rightWidth}px` } as CSSProperties}>
     <header className="titlebar-start">
       {workspace && <>
         <button type="button" className="icon-btn" onClick={() => runCommand('navigation.toggle')} aria-pressed={leftOpen} aria-keyshortcuts={ariaShortcut('navigation.toggle')}
           aria-label={leftOpen ? 'Hide sidebar' : 'Show sidebar'} title={withShortcut(leftOpen ? 'Hide sidebar' : 'Show sidebar', 'navigation.toggle')}><PanelLeft size={16}/></button>
+        {showLeft && <span className="titlebar-brand" aria-hidden="true">Serenity</span>}
       </>}
     </header>
+    {workspace && mode === 'workspace' && assistantToggle}
     {workspace && <Ribbon commands={commands} navigation={workspace.workbench.navigation} activeView={activeView} homeShown={focusedTab?.kind === 'page' && focusedTab.id === workspace.workbench.homePage} pendingCount={pending.length}
-      mode={mode} onMode={setMode} modeShortcut={shortcut('assistant.expand')} shortcutFor={shortcut} onCommand={runCommand}/>}
+      mode={mode} shortcutFor={shortcut} onCommand={runCommand}/>}
     {workspace && <aside className="left-sidebar" aria-label={mode === 'chat' ? 'Chats' : 'Workspace'} inert={!showLeft} aria-hidden={!showLeft}>
       {mode === 'workspace' ? <Explorer workspace={workspace} activeUri={shownUri(focused)} onOpen={(uri, side) => { openResource(uri, { side }) }}
         onNewPage={() => void createPage()} onNewEntity={() => setNewEntityOpen(true)} onImport={() => void importDocuments()} onArchive={(uri) => void archiveResource(uri)}/> :
         <div className="chat-sidebar">
           <button type="button" className="sidebar-action" onClick={newChat}><MessageSquarePlus size={15}/> New chat</button>
-          <ConversationList workspace={workspace} activeId={conversationId} busy={assistant.busy} onSelect={(item: Conversation) => selectConversation(item)}/>
+          <ConversationList workspace={workspace} activeId={conversationId} busy={assistant.busy} onSelect={(item: Conversation) => selectConversation(item)}
+            onDelete={(item) => void assistant.deleteConversation(item.id)} onStar={(item) => { void window.serenity.starConversation(item.id, !item.starred).then(setWorkspace).catch((cause) => setError(String(cause))) }}/>
         </div>}
       <div className="sidebar-footer">
         <MenuButton label="Workspace" className="workspace-switcher" align="start" header={<span className="menu-path">{workspace.path}</span>} items={[
@@ -747,7 +758,7 @@ function App() {
           ...(recent ?? []).filter((item) => item.path !== workspace.path && item.available).slice(0, 5).map((item, index) =>
             ({ id: `recent:${item.path}`, label: item.name, detail: index === 0 ? 'Recent' : undefined, separated: index === 0, run: () => { void chooseWorkspace(item.path) } })),
           { id: 'refresh', label: 'Reload files', icon: <RotateCw size={14}/>, run: () => runCommand('workspace.refresh') }
-        ]}><span className="workspace-avatar" aria-hidden="true">{workspaceName.slice(0, 1).toUpperCase()}</span><span className="workspace-name">{workspaceName}</span><ChevronDown size={13}/></MenuButton>
+        ]}><span className="workspace-name">{workspaceName}</span><ChevronDown size={13}/></MenuButton>
         {issues.length > 0 && <button type="button" className="icon-btn warning" onClick={() => setIssuesOpen(true)} aria-label={`${issues.length} workspace ${issues.length === 1 ? 'issue' : 'issues'}`}
           title={`${issues.length} workspace ${issues.length === 1 ? 'issue' : 'issues'}`}><AlertTriangle size={15}/></button>}
       </div>
@@ -760,6 +771,7 @@ function App() {
           <h1 className="chat-heading" title={assistant.conversation?.title}>{assistant.conversation?.title ?? 'New chat'}</h1>
           <div className="chat-header-actions">
             <button type="button" className="icon-btn" onClick={newChat} aria-label="New chat" title={withShortcut('New chat', 'assistant.new')}><MessageSquarePlus size={16}/></button>
+            <button type="button" className="icon-btn" onClick={() => { setMode('workspace'); setRightOpen(true) }} aria-label="Return chat to sidebar" title={withShortcut('Return chat to sidebar', 'assistant.expand')}><Minimize2 size={15}/></button>
             <MenuButton label="Chat actions" align="end" items={[
               { id: 'settings', label: 'Conversation settings…', icon: <Settings2 size={14}/>, run: () => setConversationSettingsOpen(true) },
               ...(assistant.conversationId ? [{ id: 'delete', label: 'Delete this chat', icon: <Trash2 size={14}/>, danger: true, separated: true, run: () => void assistant.deleteConversation() }] : [])
@@ -776,7 +788,7 @@ function App() {
         </ErrorBoundary>
       </section> : renderPanes(workspace)}
     </main>
-    {showRight && <aside className="right-sidebar assistant-panel" aria-label="Assistant">
+    {workspace && mode === 'workspace' && <aside className="right-sidebar assistant-panel" aria-label="Assistant" inert={!rightOpen} aria-hidden={!rightOpen}>
       {!narrow && <SidebarResizer side="right" width={rightWidth} min={300} max={640} onResize={setRightWidth}/>}
       <header className="assistant-header">
         <h2 className="chat-heading small" title={assistant.conversation?.title}>{assistant.conversation?.title ?? 'New chat'}</h2>
@@ -784,7 +796,6 @@ function App() {
           <MenuButton label="Chat history" title="Chat history" align="end" items={conversationMenu(workspace, assistantState, newChat)}><History size={15}/></MenuButton>
           <button type="button" className="icon-btn" onClick={newChat} aria-label="New chat" title={withShortcut('New chat', 'assistant.new')}><MessageSquarePlus size={16}/></button>
           <button type="button" className="icon-btn" onClick={() => setMode('chat')} aria-label="Open this chat full window" title={withShortcut('Open this chat full window', 'assistant.expand')}><Maximize2 size={15}/></button>
-          {assistantToggle}
         </div>
       </header>
       <ErrorBoundary label="The assistant">
@@ -803,7 +814,11 @@ function App() {
       <button type="button" className="icon-btn" onClick={() => setErrors((current) => current.filter((entry) => entry.id !== item.id))} aria-label="Dismiss"><X size={14}/></button>
     </div>)}</div>}
     {workspace && <CommandPalette open={paletteOpen} query={query} results={results} searching={searching} provider={assistant.provider} savedIndexEnabled={Boolean(workspace.modules.semanticIndex)}
-      commands={commands.filter((command) => !command.hideInPalette)} shortcutFor={shortcut} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult}
+      mode={paletteMode} files={[
+        ...workspace.pages.map((item) => ({ kind: 'page' as const, id: item.id, title: item.title, detail: item.path })),
+        ...workspace.documents.map((item) => ({ kind: 'document' as const, id: item.name, title: item.name, detail: `documents/${item.name}` })),
+        ...workspace.entities.map((item) => ({ kind: 'entity' as const, id: item.id, title: item.title, detail: `entities/${item.id}.md` }))
+      ]} commands={commands.filter((command) => !command.hideInPalette)} shortcutFor={shortcut} onChange={(value) => void searchText(value)} onClose={closePalette} onSelect={openSearchResult}
       onAISearch={() => void searchSemantically()} onSavedSearch={() => void searchSavedConcepts()}
       onKeepInPane={() => { const kept = query; setSearchSeeds((seeds) => ({ ...seeds, [workbench.focused]: kept })); closePalette(); navigate('search') }}
       onAskAboutResults={askScope && (askScope.entityIds.length || askScope.documentNames.length) ? () => { closePalette(); startConversation(`About “${query.trim()}”: `, askScope) } : undefined}

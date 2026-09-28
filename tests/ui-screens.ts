@@ -48,9 +48,9 @@ try {
   await shot('03-split')
   await run(`click(byText('.ribbon-btn', 'Calendar')); await sleep(300)`)
   await shot('04-calendar')
-  await run(`click(byText('.ribbon-mode button', 'Chat')); await sleep(300)`)
+  await run(`click($('.assistant-panel [aria-label="Open this chat full window"]')); await sleep(300)`)
   await shot('05-chat-empty')
-  await run(`click(byText('.conversation-row', 'When is Alex’s birthday?')); await sleep(400)`)
+  await run(`click(byText('.conversation-select', 'When is Alex’s birthday?')); await sleep(400)`)
   await shot('05-chat')
   const views: [string, string][] = [
     ['13-knowledge', `click(byText('.ribbon-btn', 'Knowledge'))`], ['14-graph', `click(byText('.library-mode button', 'Graph'))`],
@@ -64,10 +64,10 @@ try {
     ['24-menu', `click($('.dialog-close')); await sleep(100); click($('[aria-label^="Pane actions"]'))`],
     ['25-conversation-settings', `document.body.click(); await sleep(100); click($('.right-sidebar button[aria-label^="Read scope"]'))`]
   ]
-  await run(`click(byText('.ribbon-mode button', 'Workspace')); await sleep(200)`)
+  await run(`click($('.chat-header [aria-label="Return chat to sidebar"]')); await sleep(200)`)
   for (const [name, script] of views) { await run(`${script}; await sleep(350)`); await shot(`dark-${name}`) }
   await run(`if ($('.dialog-close')) click($('.dialog-close'))`)
-  await run(`click(byText('.ribbon-mode button', 'Workspace')); await sleep(200); click($('.ribbon-btn[aria-label="Settings"]')); await sleep(300)`)
+  await run(`if ($('.chat-header [aria-label="Return chat to sidebar"]')) click($('.chat-header [aria-label="Return chat to sidebar"]')); await sleep(200); click($('.ribbon-btn[aria-label="Settings"]')); await sleep(300)`)
   await shot('06-settings')
   await run(`click(byText('.settings-dialog .segmented button', 'Light')); await sleep(200); click($('.dialog-close')); await sleep(200)`)
   await shot('07-light')

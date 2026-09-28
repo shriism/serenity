@@ -34,8 +34,8 @@ export interface BuiltinViewContext {
   activity: ActivityItem[]
   taskPresentation: 'list' | 'board'
   onTaskPresentationChange(presentation: 'list' | 'board'): void
-  calendarPresentation: 'month' | 'agenda'
-  onCalendarPresentationChange(presentation: 'month' | 'agenda'): void
+  calendarPresentation: 'month' | 'week' | 'day' | 'agenda'
+  onCalendarPresentationChange(presentation: 'month' | 'week' | 'day' | 'agenda'): void
   onUpdate(snapshot: WorkspaceSnapshot): void
   onError(message: string): void
   onOpenResource(uri: string, side?: boolean): void

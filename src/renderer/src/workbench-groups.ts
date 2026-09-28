@@ -124,7 +124,7 @@ export function moveTab(workbench: Workbench, from: string, key: string, to: str
     const shown = presentTab(showTab(group, tab), key, presentation ?? group.presentations[key])
     return { ...shown, tabs: placeBefore(shown.tabs, key, before) }
   })
-  return { ...moved, focused: to }
+  return closeEmptyGroups({ ...moved, focused: to })
 }
 
 /**
@@ -152,6 +152,13 @@ export function closeGroup(workbench: Workbench, id: string): Workbench {
   return { root, groups: workbench.groups.filter((group) => group.id !== id), focused }
 }
 
+/** Remove split panes left with no tabs; the final pane remains as the New tab screen. */
+export function closeEmptyGroups(workbench: Workbench): Workbench {
+  let next = workbench
+  for (const group of workbench.groups) if (next.groups.length > 1 && !findGroup(next, group.id)?.tabs.length) next = closeGroup(next, group.id)
+  return next
+}
+
 /** Drops tabs whose resources no longer open or whose views are unavailable. Unchanged input is returned as-is. */
 export function pruneWorkbench(workbench: Workbench, workspace: WorkspaceSnapshot, available: ViewAvailability): Workbench {
   let changed = false
@@ -164,7 +171,7 @@ export function pruneWorkbench(workbench: Workbench, workspace: WorkspaceSnapsho
     for (const tab of group.tabs) if (!kept.includes(tab)) next = removeTab(next, tabKey(tab))
     return next
   })
-  return changed ? { ...workbench, groups } : workbench
+  return changed ? closeEmptyGroups({ ...workbench, groups }) : workbench
 }
 
 /** Resource shown by a group, as a URI; views are not resources. */
@@ -205,8 +212,8 @@ function restoreGroup(id: string, view: string, openUris: readonly string[], act
 export function restoreWorkbench(session: WorkbenchSession, workspace: WorkspaceSnapshot, available: ViewAvailability): Workbench {
   const layout = session.layout
   if (layout) {
-    return { root: layout.root, focused: layout.focused,
-      groups: layout.groups.map((group) => restoreGroup(group.id, group.view, group.openUris, group.activeUri, workspace, available, group.presentations, group.viewPresentations)) }
+    return closeEmptyGroups({ root: layout.root, focused: layout.focused,
+      groups: layout.groups.map((group) => restoreGroup(group.id, group.view, group.openUris, group.activeUri, workspace, available, group.presentations, group.viewPresentations)) })
   }
   return { ...initialWorkbench, groups: [restoreGroup('main', session.view, session.openUris, session.activeUri, workspace, available)] }
 }
@@ -216,4 +223,3 @@ export function homeWorkbench(workspace: WorkspaceSnapshot): Workbench {
   const home = workspace.pages.some((page) => page.id === workspace.workbench.homePage)
   return home ? updateGroup(initialWorkbench, 'main', (group) => showTab(group, { kind: 'page', id: workspace.workbench.homePage })) : initialWorkbench
 }
-

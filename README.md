@@ -17,7 +17,7 @@ Choose an existing directory or create one when the application opens, or supply
 
 ## Your workspace
 
-The chosen directory is the knowledge source of truth. Serenity writes `pages/`, `entities/`, `claims/`, `resolutions/`, `identity-decisions/`, `conversations/`, `proposals/`, `documents/`, `calendar/`, `tasks/`, `activity/`, and `archive/` there. `.serenity/` holds workspace settings and rebuildable data: the full-text index (`index.sqlite`), module switches (`modules.yaml`), navigation and shortcuts (`workbench.yaml`), and the last open panes and views (`session.yaml`).
+The chosen directory is the knowledge source of truth. Serenity writes `pages/`, `entities/`, `claims/`, `resolutions/`, `identity-decisions/`, `conversations/`, `proposals/`, `documents/`, `calendar/`, `tasks/`, `activity/`, `archive/`, and `trash/` there. `.serenity/` holds workspace settings and rebuildable data: the full-text index (`index.sqlite`), module switches (`modules.yaml`), navigation and shortcuts (`workbench.yaml`), and the last open panes and views (`session.yaml`).
 
 - **Imports are copies.** Files imported from elsewhere are copied into `documents/`. Linked files and linked workspace directories are not treated as part of the workspace; import a copy instead.
 - **Edit anywhere.** You can edit the Markdown and YAML in a text editor; Serenity refreshes when files change, keeps custom YAML fields and comments during app edits, and refuses to overwrite a record changed since you began editing it. Unsaved entity and page edits prompt before you switch workspaces or close the window.
@@ -28,10 +28,12 @@ Use the workspace menu at the bottom of the sidebar to reveal the folder, back i
 
 ## The workbench
 
-Serenity looks and behaves like a native desktop app. Tabs sit in the title bar beside the window controls. On the left are a ribbon of views and a file tree of your workspace. The assistant lives in a sidebar on the right. A switch at the top left moves between two modes:
+Serenity looks and behaves like a native desktop app. Tabs sit in the title bar beside the window controls. On the left are a ribbon of views and a file tree of your workspace. The assistant lives in a sidebar on the right. Its expand button opens a full-window chat; the matching button there returns it to the sidebar:
 
 - **Workspace** is for reading and editing. The ribbon opens Home, Knowledge, Review, Documents, Calendar, Tasks, and Activity, with Settings at the bottom. The explorer lists your pages, your entities grouped by type, and your documents. Click an item to open it, or **⌘/Ctrl-click** to open it in the next pane.
 - **Chat** is a full-window conversation, in the style of the ChatGPT and Claude apps, with your conversations listed on the left.
+
+Star a chat from its row to keep it in the Starred section. Right-click a chat to delete it and the knowledge created from its proposals; deletion refuses when it cannot safely identify a dependent record.
 
 It starts in Dark appearance; Light and Match system are in Settings (**⌘,** / **Ctrl+,**). The app menu lists every action with its shortcut. Common ones:
 
@@ -42,7 +44,8 @@ It starts in Dark appearance; Light and Match system are in Settings (**⌘,** /
 - **⌘T**: new tab
 - **⌘W**: close tab
 - **⌘N**: new page
-- **⌘O**: open another workspace
+- **⌘O**: find a file in this workspace
+- **⌘⇧O**: open another workspace
 
 Elsewhere, use **Ctrl** in place of **⌘**.
 
@@ -71,7 +74,7 @@ A bar under the tabs shows where a file lives (for example *Knowledge › person
   - **Suggest connections between these** asks the assistant for sourced relationships among those entities.
 - **Page:** **Page** or **Links**. Links shows resolved links, names that need disambiguation or have no match, and incoming wikilink mentions.
 - **Tasks:** a list, or a board grouped by due date.
-- **Calendar:** a month grid, or an agenda of the month's events and open tasks.
+- **Calendar:** month, week, and day views of internal events and open tasks, plus a monthly agenda. Click an event to edit it or drag it to reschedule.
 
 ### Writing
 
@@ -163,4 +166,4 @@ To package for the current OS use `npm run dist`; `npm run dist:mac`, `npm run d
 
 ## Scope
 
-This release covers the local desktop workspace, Copilot and Codex, human-reviewed and permission-bounded AI updates, connected knowledge, internal calendar and tasks, document analysis, and hybrid retrieval. Serenity 2.0.0 is the current release; installers for each platform are attached to its GitHub release with a `SHA256SUMS` file. Packaged builds pass smoke tests on macOS, Windows, and Linux, and live Copilot and Codex conversations have been tested from the packaged macOS app; provider sign-in is needed on each device. External calendar sync, cloud sync, local models, mobile access, and installable plugins are future goals.
+This release covers the local desktop workspace, Copilot and Codex, human-reviewed and permission-bounded AI updates, connected knowledge, internal calendar and tasks, document analysis, and hybrid retrieval. Serenity 2.0.1 is the current release; installers for each platform are attached to its GitHub release with a `SHA256SUMS` file. Packaged builds pass smoke tests on macOS, Windows, and Linux, and live Copilot and Codex conversations have been tested from the packaged macOS app; provider sign-in is needed on each device. External calendar sync, cloud sync, local models, mobile access, and installable plugins are future goals.

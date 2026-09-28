@@ -52,8 +52,8 @@ try {
   await timed('Activity', ribbon('Activity'), `$('.activity-row')`)
   await timed('Home', ribbon('Home'), `$('.page-document .cm-content')`)
   await timed('Split right', `click($('[aria-label^="Pane actions"]')); await sleep(0); click(byText('.menu-item', 'Split right'))`, `$$('.pane').length === 2`)
-  await timed('Chat mode', `click(byText('.mode-switch button', 'Chat'))`, `$$('.chat-main .message').length > 10 || $('.chat-main .composer')`)
-  await run(`click(byText('.mode-switch button', 'Workspace')); await waitFor(() => $('.pane'))`)
+  await timed('Chat mode', `click($('.assistant-panel [aria-label="Open this chat full window"]'))`, `$$('.chat-main .message').length > 10 || $('.chat-main .composer')`)
+  await run(`click($('.chat-header [aria-label="Return chat to sidebar"]')); await waitFor(() => $('.pane'))`)
   // Let the background search index settle after opening and the edits above (it warms 4 s after opening), as it would between a person's actions.
   await new Promise((resolve) => setTimeout(resolve, 6000))
   await timed('Search palette', `document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', metaKey: navigator.platform.includes('Mac'), ctrlKey: !navigator.platform.includes('Mac'), bubbles: true }))`, `$('.palette-input input')`)

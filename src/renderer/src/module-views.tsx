@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
+import { Plus } from 'lucide-react'
+import FullCalendar from '@fullcalendar/react'
+import dayGridPlugin from '@fullcalendar/daygrid'
+import timeGridPlugin from '@fullcalendar/timegrid'
+import interactionPlugin from '@fullcalendar/interaction'
+import type { EventDropArg, EventInput } from '@fullcalendar/core'
+import type { EventResizeDoneArg } from '@fullcalendar/interaction'
 import { ResourcePicker } from './resource-picker'
 import type { CalendarEvent, TaskItem, WorkspaceSnapshot } from '../../shared/types'
 import { taskBoard, type TaskBucket } from '../../shared/task-board'
 import { calendarAgenda } from '../../shared/calendar-agenda'
 import { resourceUri } from '../../shared/resources'
+import { Dialog } from './dialog'
 
 type Props = {
   workspace: WorkspaceSnapshot
@@ -14,8 +22,8 @@ type Props = {
   focusVersion?: number
   taskPresentation?: 'list' | 'board'
   onTaskPresentationChange?(presentation: 'list' | 'board'): void
-  calendarPresentation?: 'month' | 'agenda'
-  onCalendarPresentationChange?(presentation: 'month' | 'agenda'): void
+  calendarPresentation?: 'month' | 'week' | 'day' | 'agenda'
+  onCalendarPresentationChange?(presentation: 'month' | 'week' | 'day' | 'agenda'): void
   onOpenResource?(uri: string, side: boolean): void
 }
 
@@ -45,8 +53,8 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
   const [time, setTime] = useState('')
   const [endTime, setEndTime] = useState('')
   const [busy, setBusy] = useState(false)
-  // The day's form stays folded away until someone adds or edits an event.
-  const [adding, setAdding] = useState(false)
+  const calendar = useRef<FullCalendar>(null)
+  const [editorOpen, setEditorOpen] = useState(false)
   useEffect(() => {
     const event = workspace.events.find((item) => item.id === focusEventId)
     if (!event) return
@@ -55,14 +63,33 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
     setDraft(event)
     setTime(event.start.slice(11, 16))
     setEndTime(event.end?.slice(11, 16) ?? '')
+    setEditorOpen(true)
+    calendar.current?.getApi().gotoDate(event.start.slice(0, 10))
   }, [focusEventId, focusVersion])
   const [year, number] = month.split('-').map(Number)
-  const firstDay = new Date(year, number - 1, 1).getDay()
-  const dayCount = new Date(year, number, 0).getDate()
-  const cells = Math.ceil((firstDay + dayCount) / 7) * 7
-  const days = Array.from({ length: cells }, (_, index) =>
-    index < firstDay || index >= firstDay + dayCount ? null : `${month}-${String(index - firstDay + 1).padStart(2, '0')}`)
   const agenda = calendarAgenda(workspace, month)
+  const calendarEvents = useMemo<EventInput[]>(() => [
+    ...workspace.events.map((event) => ({ id: `event:${event.id}`, title: event.title, start: event.start, end: event.end,
+      allDay: !event.start.includes('T'), classNames: ['serenity-calendar-event'] })),
+    ...(workspace.modules.tasks ? workspace.tasks.filter((task) => task.due && !task.completed).map((task) => ({
+      id: `task:${task.id}`, title: `☐ ${task.title}`, start: task.due, allDay: true, editable: false,
+      classNames: ['serenity-calendar-task'] })) : [])
+  ], [workspace.events, workspace.tasks, workspace.modules.tasks])
+
+  useEffect(() => {
+    if (calendarPresentation !== 'agenda') calendar.current?.getApi().changeView({ month: 'dayGridMonth', week: 'timeGridWeek', day: 'timeGridDay' }[calendarPresentation])
+  }, [calendarPresentation])
+
+  async function moveEvent(info: EventDropArg | EventResizeDoneArg): Promise<void> {
+    const original = workspace.events.find((item) => `event:${item.id}` === info.event.id)
+    if (!original) { info.revert(); return }
+    try {
+      const start = info.event.startStr.slice(0, original.start.includes('T') || !info.event.allDay ? 16 : 10)
+      const end = original.end ? info.event.endStr.slice(0, original.end.includes('T') || !info.event.allDay ? 16 : 10) : undefined
+      onUpdate(await window.serenity.saveEvent({ ...original, start, end }))
+      setSelectedDay(start.slice(0, 10))
+    } catch (cause) { info.revert(); onError(String(cause)) }
+  }
 
   function changeMonth(offset: number): void {
     const next = new Date(year, number - 1 + offset, 1)
@@ -75,7 +102,7 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
     setDraft({ id: '', title: '', start: day, notes: '', relatedEntityIds: [] })
     setTime('')
     setEndTime('')
-    setAdding(false)
+    setEditorOpen(false)
   }
 
   async function save(event: FormEvent): Promise<void> {
@@ -93,7 +120,7 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
   }
 
   async function archive(): Promise<void> {
-    if (!draft.id || !draft.revision || !window.confirm(`Archive ${draft.title}? You can restore it later.`)) return
+    if (!draft.id || !draft.revision || !window.confirm(`Move “${draft.title}” to Trash? You can restore it later.`)) return
     try { onUpdate(await window.serenity.archiveEvent(draft.id, draft.revision)); clearDraft(selectedDay) }
     catch (cause) { onError(String(cause)) }
   }
@@ -109,16 +136,19 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
   return <section className="page wide module-page">
     <header className="view-header"><div><h1>Calendar</h1></div><div className="view-actions">
     <div className="segmented task-view-toggle" role="group" aria-label="Calendar view">
-      <button type="button" aria-pressed={calendarPresentation === 'month'} className={calendarPresentation === 'month' ? 'active' : ''} onClick={() => onCalendarPresentationChange?.('month')}>Month</button>
-      <button type="button" aria-pressed={calendarPresentation === 'agenda'} className={calendarPresentation === 'agenda' ? 'active' : ''} onClick={() => onCalendarPresentationChange?.('agenda')}>Agenda</button>
-    </div></div></header>
+      {(['day', 'week', 'month', 'agenda'] as const).map((view) => <button key={view} type="button" aria-pressed={calendarPresentation === view}
+        className={calendarPresentation === view ? 'active' : ''} onClick={() => onCalendarPresentationChange?.(view)}>{view[0].toUpperCase() + view.slice(1)}</button>)}
+    </div>
+    <button type="button" className="icon-btn calendar-add" aria-label="Add event" title="Add event" onClick={() => {
+      clearDraft(selectedDay); setEditorOpen(true)
+    }}><Plus size={18}/></button></div></header>
     <div className="calendar-layout">
       <div>
-        <div className="calendar-toolbar">
+        {calendarPresentation === 'agenda' && <div className="calendar-toolbar">
           <button className="icon-btn" aria-label="Previous month" onClick={() => changeMonth(-1)}>‹</button>
           <h2>{new Date(year, number - 1).toLocaleString(undefined, { month: 'long', year: 'numeric' })}</h2>
           <button className="icon-btn" aria-label="Next month" onClick={() => changeMonth(1)}>›</button>
-        </div>
+        </div>}
         {calendarPresentation === 'agenda' ? <div className="calendar-agenda">
           {agenda.length === 0 && <p className="hint">No events or open tasks due this month.</p>}
           <ol>{agenda.map((item, index) => <li key={`${item.kind}:${item.id}`}>
@@ -127,48 +157,49 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
               if (item.kind === 'task') onOpenResource?.(resourceUri({ kind: 'task', id: item.id }), event.metaKey || event.ctrlKey)
               else {
                 const selected = workspace.events.find((entry) => entry.id === item.id)
-                if (selected) { setSelectedDay(item.day); setDraft(selected); setTime(selected.start.slice(11, 16)); setEndTime(selected.end?.slice(11, 16) ?? '') }
+                if (selected) { setSelectedDay(item.day); setDraft(selected); setTime(selected.start.slice(11, 16)); setEndTime(selected.end?.slice(11, 16) ?? ''); setEditorOpen(true) }
               }
             }}><span><strong>{item.title}</strong><small>{item.kind === 'task' ? 'Task due' : item.time || 'All day'}</small></span>
               {item.detail && <small className="agenda-detail">{item.detail}</small>}</button>
           </li>)}</ol>
-        </div> : <div className="calendar-grid">
-          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => <span className="weekday" key={day}>{day}</span>)}
-          {days.map((day, index) => day ? <button key={day} className={day === selectedDay ? 'selected' : ''}
-            onClick={() => { setSelectedDay(day); if (!draft.id) clearDraft(day) }}>
-            <strong>{Number(day.slice(-2))}</strong>
-            {workspace.events.filter((item) => item.start.slice(0, 10) === day).map((item) => <small key={item.id}>{item.title}</small>)}
-            {workspace.modules.tasks && workspace.tasks.filter((item) => item.due === day && !item.completed).map((item) => <small key={item.id}>☐ {item.title}</small>)}
-          </button> : <span key={`empty-${index}`}/>)}
+        </div> : <div className="calendar-surface">
+          <FullCalendar ref={calendar} plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
+            initialView={{ month: 'dayGridMonth', week: 'timeGridWeek', day: 'timeGridDay' }[calendarPresentation]}
+            initialDate={selectedDay} headerToolbar={{ left: 'title', center: '', right: 'today prev,next' }}
+            buttonIcons={false} buttonText={{ prev: '‹', next: '›', today: 'Today' }}
+            height="auto" dayMaxEvents={3} nowIndicator editable events={calendarEvents}
+            dayCellClassNames={(info) => `${info.date.getFullYear()}-${String(info.date.getMonth() + 1).padStart(2, '0')}-${String(info.date.getDate()).padStart(2, '0')}` === selectedDay ? ['selected-day'] : []}
+            datesSet={(info) => setMonth(`${info.view.currentStart.getFullYear()}-${String(info.view.currentStart.getMonth() + 1).padStart(2, '0')}`)}
+            dateClick={(info) => { const day = info.dateStr.slice(0, 10); setSelectedDay(day); clearDraft(day); if (!info.allDay) setTime(info.dateStr.slice(11, 16)) }}
+            eventClick={(info) => {
+              if (info.event.id.startsWith('task:')) { onOpenResource?.(resourceUri({ kind: 'task', id: info.event.id.slice(5) }), info.jsEvent.metaKey || info.jsEvent.ctrlKey); return }
+              const selected = workspace.events.find((item) => `event:${item.id}` === info.event.id)
+              if (selected) { setSelectedDay(selected.start.slice(0, 10)); setDraft(selected); setTime(selected.start.slice(11, 16)); setEndTime(selected.end?.slice(11, 16) ?? ''); setEditorOpen(true) }
+            }}
+            eventDrop={(info) => void moveEvent(info)} eventResize={(info) => void moveEvent(info)}/>
         </div>}
       </div>
-      <aside className="module-aside">
-        <h2>{new Date(`${selectedDay}T12:00`).toLocaleDateString(undefined, { dateStyle: 'full' })}</h2>
-        {workspace.events.filter((item) => item.start.slice(0, 10) === selectedDay).map((item) => <button key={item.id}
-          className="module-record" onClick={() => { setDraft(item); setTime(item.start.slice(11, 16)); setEndTime(item.end?.slice(11, 16) ?? '') }}>
-          <strong>{item.title}</strong><small>{item.start.slice(11) || 'All day'} · {item.relatedEntityIds.map((id) => workspace.entities.find((entity) => entity.id === id)?.title).filter(Boolean).join(', ')}</small>
-        </button>)}
-        {workspace.events.every((item) => item.start.slice(0, 10) !== selectedDay) && <p className="hint">No events on this day.</p>}
-        {!draft.id && !adding && <button className="secondary add-event" type="button" onClick={() => setAdding(true)}>+ Add event</button>}
-        {(draft.id || adding) && <form className="module-form" onSubmit={(event) => void save(event)}>
-          <h3>{draft.id ? 'Edit event' : 'New event'}</h3>
-          <label>Title<input required value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })}/></label>
-          <label>Date<input type="date" required value={draft.start.slice(0, 10)} onChange={(event) => setDraft({ ...draft, start: event.target.value })}/></label>
+    </div>
+    {workspace.archivedEvents.length > 0 && <details className="archived-items calendar-archive"><summary>Trash ({workspace.archivedEvents.length})</summary>
+      {workspace.archivedEvents.map((item) => <div key={item.id}><span>{item.title}</span><button onClick={() => void restore(item)}>Restore</button></div>)}
+    </details>}
+    {editorOpen && <Dialog title={draft.id ? 'Edit event' : 'New event'} className="calendar-event-dialog" onClose={() => clearDraft(selectedDay)}>
+      <form className="module-form" onSubmit={(event) => void save(event)}>
+        <label>Title<input required value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })}/></label>
+        <label>Date<input type="date" required value={draft.start.slice(0, 10)} onChange={(event) => setDraft({ ...draft, start: event.target.value })}/></label>
+        <div className="event-times">
           <label>Start time (optional)<input type="time" value={time} onChange={(event) => setTime(event.target.value)}/></label>
           <label>End time (optional)<input type="time" value={endTime} onChange={(event) => setEndTime(event.target.value)}/></label>
-          <EntityLinks workspace={workspace} selected={draft.relatedEntityIds} onChange={(relatedEntityIds) => setDraft({ ...draft, relatedEntityIds })}/>
-          <label>Notes<textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })}/></label>
-          <div className="form-buttons">
-            {draft.id && <button className="secondary" type="button" onClick={() => void archive()}>Archive</button>}
-            <button className="secondary" type="button" onClick={() => clearDraft(selectedDay)}>Cancel</button>
-            <button className="primary" type="submit" disabled={busy}>Save</button>
-          </div>
-        </form>}
-        {workspace.archivedEvents.length > 0 && <details className="archived-items"><summary>Archived events ({workspace.archivedEvents.length})</summary>
-          {workspace.archivedEvents.map((item) => <div key={item.id}><span>{item.title}</span><button onClick={() => void restore(item)}>Restore</button></div>)}
-        </details>}
-      </aside>
-    </div>
+        </div>
+        <EntityLinks workspace={workspace} selected={draft.relatedEntityIds} onChange={(relatedEntityIds) => setDraft({ ...draft, relatedEntityIds })}/>
+        <label>Notes<textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })}/></label>
+        <div className="form-buttons">
+          {draft.id && <button className="secondary" type="button" onClick={() => void archive()}>Move to Trash</button>}
+          <button className="secondary" type="button" onClick={() => clearDraft(selectedDay)}>Cancel</button>
+          <button className="primary" type="submit" disabled={busy}>Save</button>
+        </div>
+      </form>
+    </Dialog>}
   </section>
 }
 

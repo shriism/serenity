@@ -792,8 +792,8 @@ function App() {
       <header className="assistant-header">
         <h2 className="chat-heading small" title={assistant.conversation?.title}>{assistant.conversation?.title ?? 'New chat'}</h2>
         <div className="assistant-actions">
-          <MenuButton label="Chat history" title="Chat history" align="end" items={conversationMenu(workspace, assistantState, newChat)}><History size={15}/></MenuButton>
           <button type="button" className="icon-btn" onClick={newChat} aria-label="New chat" title={withShortcut('New chat', 'assistant.new')}><MessageSquarePlus size={16}/></button>
+          <MenuButton label="Chat history" title="Chat history" align="end" items={conversationMenu(workspace, assistantState)}><History size={15}/></MenuButton>
           <button type="button" className="icon-btn" onClick={() => setMode('chat')} aria-label="Open this chat full window" title={withShortcut('Open this chat full window', 'assistant.expand')}><Maximize2 size={15}/></button>
         </div>
       </header>

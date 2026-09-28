@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import { AlertTriangle, ArrowUp, ChevronDown, FileText, Lock, MessageSquarePlus, Search, Square, Star, Trash2 } from 'lucide-react'
+import { AlertTriangle, ArrowUp, ChevronDown, FileText, Lock, Search, Square, Star, Trash2 } from 'lucide-react'
 import type { Autonomy, Conversation, Message, Provider, ReadScope, WorkflowPermissions, WorkspaceSnapshot } from '../../shared/types'
 import { answerSegments, citationUri, type Citation } from '../../shared/citations'
 import { MenuButton, useContextMenu } from './menu'
@@ -254,13 +254,12 @@ export function ConversationList({ workspace, activeId, busy, onSelect, onStar, 
   </div>
 }
 
-/** The conversation's actions: switch to another, start a new one, delete this one. */
-export function conversationMenu(workspace: WorkspaceSnapshot, assistant: AssistantState, onNew: () => void) {
+/** The conversation's actions: switch to another or delete this one. */
+export function conversationMenu(workspace: WorkspaceSnapshot, assistant: AssistantState) {
   return [
-    { id: 'new', label: 'New chat', icon: <MessageSquarePlus size={14}/>, run: onNew },
-    ...[...workspace.conversations].reverse().slice(0, 15).map((item, index) => ({ id: item.id, label: item.title, checked: item.id === assistant.conversationId,
-      separated: index === 0, run: () => assistant.selectConversation(item) })),
-    ...(workspace.conversations.length ? [] : [{ id: 'none', label: 'No earlier chats yet', disabled: true, separated: true, run: () => undefined }]),
+    ...[...workspace.conversations].reverse().slice(0, 15).map((item) => ({ id: item.id, label: item.title, checked: item.id === assistant.conversationId,
+      run: () => assistant.selectConversation(item) })),
+    ...(workspace.conversations.length ? [] : [{ id: 'none', label: 'No earlier chats yet', disabled: true, run: () => undefined }]),
     ...(assistant.conversationId ? [{ id: 'delete', label: 'Delete this chat', icon: <Trash2 size={14}/>, danger: true, separated: true, run: () => void assistant.deleteConversation() }] : [])
   ]
 }

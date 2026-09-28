@@ -22,16 +22,16 @@ Every workflow begins in read-and-propose mode. People can choose ask-first or b
 
 Explicit document analysis happens on request by default. Automatic document analysis and background semantic indexing are opt-in because they can send workspace content to a provider. On-device text search, browsing, and connected knowledge remain usable without an AI connection. Large workspaces keep all permitted records eligible for later retrieval rather than silently shrinking the read boundary.
 
-## Workbench and modules
+## Workspace and modules
 
-Serenity is an installed Electron application for macOS, Windows, and Linux. Its center is an editable workbench: addressable resources open as tabs, panes can split and resize, and the arrangement restores with the workspace. Authored Home and other pages can contain links and bounded live queries. Commands have stable IDs; workspace settings control navigation and shortcuts. The interface uses restrained dark, light, and system appearances and keeps the active content more prominent than navigation or assistant controls.
+Serenity is an installed desktop application for macOS, Windows, and Linux. Addressable resources, authored pages, bounded live queries, and stable command IDs let people organize and work with knowledge without making the source files executable. Workspace settings control navigation and shortcuts. Work can be resumed with its open resources and arrangement intact.
 
-The left side provides views and files. The assistant works beside the content or expands into a full-window conversation with history. One active workspace is supported at a time. Conversations are retained in the workspace by default, with controls to stop retention or delete them. Calendar and Tasks are internal modules that connect to knowledge through stable IDs. Turning a module off hides its interface and stops new writes while preserving its files. External calendar accounts and sync are separate future integrations.
+One active workspace is supported at a time. Conversations are retained in the workspace by default, with controls to stop retention or delete them. Calendar and Tasks are internal modules that connect to knowledge through stable IDs. Turning a module off stops its writes and AI context while preserving its files. External calendar accounts and sync are separate future integrations.
 
 External file edits are part of the workflow. Serenity should validate changed records, report issues, and refuse to overwrite a newer disk version without a choice. Imports are copies inside the selected workspace; paths outside it and symlinked content cannot masquerade as workspace records. Archiving and deletion should preserve enough context to understand and, where supported, reverse the action.
 
 ## Product boundary
 
-Serenity 1.0 established the desktop workbench; 2.0 refined it into the current native-feeling interface. The shipped scope includes connected knowledge, internal calendar and tasks, document understanding, local and optional AI-assisted retrieval, and reviewed or permission-bounded assistant changes. Installable plugins, arbitrary external actions, built-in cloud or device sync, local models, mobile access, and simultaneous workspaces require separate designs and are not current features.
+The current scope includes connected knowledge, internal calendar and tasks, document understanding, local and optional AI-assisted retrieval, and reviewed or permission-bounded assistant changes. Installable plugins, arbitrary external actions, built-in cloud or device sync, local models, mobile access, and simultaneous workspaces require separate designs and are not current features.
 
 When extending the knowledge model, memory rules, autonomy boundary, or extension trust model, present the problem, viable approaches, tradeoffs, and a recommendation to the owner before making a durable decision. Prefer changes that preserve readable data, provenance, explicit permissions, and reversible correction.

@@ -1,57 +1,34 @@
 # Serenity
 
-Serenity is a desktop workspace for notes, documents, connected knowledge, plans, and AI conversations. Choose a folder for your data; Serenity keeps your authored knowledge in readable Markdown and YAML files. Its assistant can find evidence and suggest changes, while you control what it reads and saves.
+Serenity is a desktop knowledge workspace for notes, documents, people, projects, plans, and AI-assisted research. You choose a folder for your data. Authored knowledge remains readable Markdown and YAML, while Serenity connects records, preserves their sources, and helps you work with them.
 
-[Download the latest release](https://github.com/shriism/serenity/releases/latest) · [Product principles](SERENITY.md) · [Architecture](ARCHITECTURE.md) · [Changelog](CHANGELOG.md) · [Project status](CONTEXT.md)
+[Download Serenity](https://github.com/shriism/serenity/releases/latest) · [Product principles](SERENITY.md) · [Architecture](ARCHITECTURE.md) · [Changelog](CHANGELOG.md) · [Project context](CONTEXT.md)
 
-## Install
+## Get started
 
-Download the macOS Apple silicon DMG or ZIP, Windows x64 installer, or Linux x64 AppImage from the release page. The assets include `SHA256SUMS`. Builds are unsigned; macOS may ask you to approve the app on first launch. Provider sign-in is required for AI features, but local files and search work without it.
+Download the macOS Apple silicon, Windows x64, or Linux x64 build from the latest release. The release includes SHA-256 checksums. Builds are currently unsigned, so your operating system may request approval on first launch.
 
-On first launch, choose an existing folder or create a workspace. You can also launch with `--workspace=/path/to/folder`. Serenity remembers recently opened folders and offers to reopen the last one. Use the workspace menu at the foot of the left sidebar to change folders.
+Choose an existing folder or create a workspace when Serenity opens. You can also supply `--workspace=/path/to/folder` at launch. The workspace can be backed up or inspected with ordinary file tools. Provider sign-in is needed for AI requests; local browsing, editing, and search work without it.
 
-## Work in Serenity
+## What you can do
 
-The left ribbon opens Home, Knowledge, Review, Documents, Calendar, Tasks, and Activity. The explorer lists pages, entities, and imported documents. Open any resource in a tab; split panes horizontally or vertically, resize them, and drag tabs between them. Serenity restores the layout and each tab's view when you reopen the workspace. In a narrow window, panes switch one at a time and sidebars float over the content.
+**Organize connected knowledge.** Write pages and entity notes in Markdown, link them by name, and browse relationships among people, places, projects, and concepts. Entity types and relationship names are flexible. A claim records its source and status; corrections and competing claims remain visible. You can select a current answer, compare possible duplicate entities, reverse a merge, or record that two similar identities are distinct.
 
-Pages and entity notes use a live-preview Markdown editor. Type `[[` to link to a page, entity, or document; links with ambiguous names are flagged rather than guessed. Changes save as you work. If another program changes a file during editing, Serenity asks which version to keep. Right-click a page, entity, or document to move it to the archive without deleting its files.
+**Work with documents.** Import files as copies into your workspace. Serenity searches text, Markdown, CSV, JSON, YAML, PDF, and DOCX, while other file types remain available in their native applications. A document can be traced to the claims, entities, plans, and suggestions attributed to it. The review workflow lets you compare an AI suggestion with its source before accepting it.
 
-Entities have stable IDs and sourced claims. Their Profile, Timeline, and Connections views show what is known, where it came from, and how it changed. Review lets you compare suggested knowledge with its source, resolve possible duplicate identities, and keep competing claims visible. A merge can be undone; marking two entities as distinct is also reversible.
+**Find and reuse information.** Local full-text search indexes workspace records and provides relevant excerpts. Pages can include `[[wikilinks]]` and bounded `serenity-query` blocks that show live lists, tables, or counts from workspace data. These queries cannot execute code or read outside the workspace. Optional AI-assisted retrieval and background indexing extend search when enabled.
 
-Import documents as copies into `documents/`. Text, Markdown, CSV, JSON, YAML, PDF, and DOCX can be searched; unsupported formats remain in the workspace and open in their native app. Documents can show extracted text, a Markdown outline where headings exist, and knowledge attributed to the document. Calendar and Tasks are internal, optional modules. Disabling either hides its view and stops its writes while keeping its files.
+**Plan work.** Internal Calendar and Tasks records can link to the same entities and sources as the rest of your knowledge. Their modules can be disabled without deleting their files. External calendar sync is not built in.
 
-Search uses a local, rebuildable full-text index. From search, **Keep results in a pane** preserves a result set beside the file you open. Pages can include bounded `serenity-query` blocks for live lists, tables, or counts. For example:
+**Collaborate with an assistant.** Choose GitHub Copilot or OpenAI Codex. Each conversation has a read scope and change permissions; the selected workspace is the default read boundary, and you can restrict it further. Serenity records which resources were sent to the provider, checks cited sources, and keeps suggested changes reviewable. Automatic saving is limited to the record types you explicitly permit. Optional document analysis and semantic indexing are off by default because they may send workspace content to a provider.
 
-````markdown
-```serenity-query
-from: tasks
-where:
-  status: open
-limit: 10
-```
-````
+## Data and privacy
 
-Queries read this workspace only; they cannot execute code. Navigation order, Home, and shortcut overrides live in `.serenity/workbench.yaml`.
+Workspace records live in the folder you select: pages, entities, claims, decisions, documents, conversations, proposals, tasks, events, activity, and archives. `.serenity/` holds workspace settings and derived indexes. The SQLite search index can be rebuilt from the readable records. Imports are copies; symlinked files and directories are excluded from workspace content.
 
-## Assistant and chat
+Edits made outside Serenity are detected. Saves use revisions so a newer disk change is not silently overwritten. Credentials stay outside the workspace in OS-protected storage when available or in current-session memory. Provider activity records operations and referenced resources without storing a second copy of the prompt.
 
-Choose GitHub Copilot or OpenAI Codex in the assistant. The right sidebar works alongside your panes; its expand control opens the conversation full-window, and the return control restores the sidebar. **New chat** sits beside **Chat history**. In full-window chat, the left sidebar lists conversations, which can be starred. The history menu contains earlier chats and the current chat's delete action.
-
-The focused pane is the assistant's primary context. Other visible panes can add context within the conversation's read scope. A conversation can read the whole workspace or only selected entities and documents; separate permissions cover other conversations, calendar, and tasks. The inspector lists what was actually sent to the provider. Responses link to their sources and flag citations that cannot be verified against transmitted records.
-
-A conversation can ask before acting, propose changes for review, or automatically save explicitly permitted kinds of changes. New autonomous workflows initially allow only sourced claims; entity, task, and event permissions are granted separately. New categories and ambiguous identities still require review. Suggested records appear beneath the answer and in Review with **Accept** and **Dismiss**. Optional document analysis and semantic indexing can send workspace content to the selected provider and are off by default.
-
-Conversations are retained in the workspace by default. You can opt out of retention for a conversation or delete one. Switching providers can continue the visible conversation, though provider-private session state does not transfer.
-
-## Files and privacy
-
-The chosen folder contains `pages/`, `entities/`, `claims/`, `resolutions/`, `identity-decisions/`, `conversations/`, `proposals/`, `documents/`, `calendar/`, `tasks/`, `activity/`, `archive/`, and `trash/` as needed. `.serenity/` holds workspace configuration, session state, and derived indexes. The Markdown and YAML records are the source of truth; the SQLite search index can be rebuilt. Imported files are copied. Symlinked workspace content is excluded. Provider credentials stay in OS-protected storage when available or in session memory, outside the workspace.
-
-Activity records provider operations, referenced records, prompt size and checksum, and outcome; it does not save a second copy of the prompt. Back up or sync the workspace folder with a tool of your choice. Serenity does not yet provide its own cloud sync.
-
-## Shortcuts
-
-The application menu and Settings show available commands and their current shortcuts. Defaults include **⌘/Ctrl+K** for search, **⌘/Ctrl+B** for the left sidebar, **⌘/Ctrl+J** for the assistant, **⌘/Ctrl+Shift+J** for full-window chat, **⌘/Ctrl+T** for a new tab, **⌘/Ctrl+W** to close a tab, **⌘/Ctrl+N** for a page, **⌘/Ctrl+O** to find a workspace file, and **⌘/Ctrl+Shift+O** to open another workspace. Settings lets you change or clear shortcuts per workspace.
+The application does not provide its own cloud sync, local AI model, mobile client, or installable plugin system. See [SERENITY.md](SERENITY.md) for enduring product boundaries and [CONTEXT.md](CONTEXT.md) for future work.
 
 ## Develop
 
@@ -65,6 +42,6 @@ npm test
 npm run build
 ```
 
-`npm run smoke:desktop` exercises the installed app path with a temporary workspace and profile; `npm run perf:desktop` checks a large synthetic workspace. Both need a graphical desktop. `SERENITY_SMOKE_VISIBLE=1` displays the smoke-test window; `SERENITY_SMOKE_EXECUTABLE` selects a packaged executable. `SERENITY_SMOKE_PROVIDER=copilot` or `codex` enables an authenticated live turn and uses provider quota. Unset `ELECTRON_RUN_AS_NODE` if your terminal exports it.
+`npm run smoke:desktop` exercises the application with a temporary workspace and profile. `npm run perf:desktop` checks a large synthetic workspace. Both need a graphical desktop. Set `SERENITY_SMOKE_VISIBLE=1` to display the test window or `SERENITY_SMOKE_EXECUTABLE` to test a packaged executable. `SERENITY_SMOKE_PROVIDER=copilot` or `codex` opts into an authenticated live turn and uses provider quota. Unset `ELECTRON_RUN_AS_NODE` if your terminal exports it.
 
-Run `npm run dist` to package for the current OS, or `npm run dist:mac`, `npm run dist:win`, or `npm run dist:linux` for a specific target when its tooling is available. CI typechecks, tests, packages, and smoke-tests macOS, Windows, and Linux builds. See [ARCHITECTURE.md](ARCHITECTURE.md) for process boundaries and [CONTEXT.md](CONTEXT.md) for planned work.
+Run `npm run dist` to package for the current OS. Platform-specific scripts are `npm run dist:mac`, `npm run dist:win`, and `npm run dist:linux`, subject to available tooling. CI typechecks, tests, packages, and smoke-tests the supported desktop platforms. [ARCHITECTURE.md](ARCHITECTURE.md) explains the runtime and storage boundaries.

@@ -4,8 +4,11 @@ Notable user-visible changes are listed newest first. Workspace files remain rea
 
 ## Unreleased
 
+## 2.0.3 — 2026-09-28
+
 - Put **New chat** before **Chat history** in the assistant sidebar and removed the duplicate New chat action from the history menu.
 - Removed the short horizontal divider beneath the left sidebar toggle.
+- Updated the desktop package version and refreshed the product, architecture, and developer documentation.
 
 ## 2.0.2 — 2026-09-28
 

@@ -41,11 +41,11 @@ Editors autosave after a pause, on blur, and when a tab closes. Each save includ
 
 SQLite FTS5 indexes pages, entities, active claims, documents, and enabled task and event records. It rebuilds in the background and returns ranked excerpts. Text formats are read directly; PDF and DOCX extraction runs in a worker with a time limit so large documents do not block edits. An optional generated topic index adds local AI-assisted terms, while on-demand provider retrieval is a separate operation. Neither index changes the underlying read permissions.
 
-## Workbench composition
+## Resource composition
 
-`src/renderer/src/main.tsx` owns the window layout. A left ribbon and explorer, tabbed center panes, and a right assistant share the workspace. The assistant expands to full-window chat and can return to the sidebar. On narrow windows, panes switch one at a time and sidebars overlay the content. The window uses native controls with titlebar tabs; Settings and creation flows use dialogs.
+`src/renderer/src/main.tsx` composes the desktop workspace and restores its session. Layout adapts to the available window size while preserving open resources and work in progress.
 
-`src/shared/resources.ts` assigns stable `serenity:kind/id` addresses. `resource-routing.ts` sends each address to its appropriate tab, module, subject, or native application. Built-in views register through `builtin-views.tsx` and `view-registry.ts`, which also enforces module availability. Resource presentations include entity Profile/Timeline/Connections, document Text/Outline/Knowledge from it, and page Page/Links. Each pane has an error boundary. The command registry supplies menu, palette, and shortcut actions; workspace bindings and ribbon order are stored in `.serenity/workbench.yaml`.
+`src/shared/resources.ts` assigns stable `serenity:kind/id` addresses. `resource-routing.ts` sends each address to an appropriate presentation, module, related record, or native application. Built-in views register through `builtin-views.tsx` and `view-registry.ts`, which also enforces module availability. A resource can have multiple presentations, and each rendered work area has an error boundary. The command registry supplies actions throughout the application; workspace bindings and navigation order are stored in `.serenity/workbench.yaml`.
 
 Authored pages may contain `[[wikilinks]]`, resource links, named command links, and bounded `serenity-query` YAML blocks. Queries read registered workspace sources with a maximum limit of 100; they are not executable scripts. The Home page is an editable page, not a separate dashboard implementation.
 

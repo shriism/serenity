@@ -169,6 +169,7 @@ let windowTheme: keyof typeof windowColors = 'dark'
 
 // `--background` runs without taking focus or showing a window, e.g. for automated checks while someone keeps working.
 const background = process.argv.includes('--background')
+const requestedSize = /^--window-size=(\d{3,4})x(\d{3,4})$/.exec(process.argv.find((argument) => argument.startsWith('--window-size=')) ?? '')?.slice(1).map(Number)
 
 /**
  * The application menu. Workbench items run renderer commands; their shortcuts are shown here but handled by the
@@ -208,8 +209,9 @@ function createWindow(): void {
   closeApproved = false
   window = new BrowserWindow({
     show: !background,
-    width: 1280,
-    height: 820,
+    // `--window-size=WIDTHxHEIGHT` opens at a given size, e.g. to check a small window in automated tests.
+    width: requestedSize?.[0] ?? 1280,
+    height: requestedSize?.[1] ?? 820,
     minWidth: 720,
     minHeight: 520,
     title: 'Serenity',

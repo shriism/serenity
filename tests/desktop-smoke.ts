@@ -55,7 +55,8 @@ await writeFile(join(workspace, 'documents', 'notes.md'), `# Intro\n${'x'.repeat
 await writeFile(join(workspace, 'documents', 'unreadable.bin'), 'Not a supported document type')
 
 const provider = process.env.SERENITY_SMOKE_PROVIDER
-const app = await launch(workspace, { executable, keepProfile: Boolean(provider), width: 1400, height: 880 })
+// SERENITY_SMOKE_WINDOW (e.g. 900x640) runs everything in a small window, as CI machines with small screens do.
+const app = await launch(workspace, { executable, keepProfile: Boolean(provider), windowSize: process.env.SERENITY_SMOKE_WINDOW })
 const screenshots = process.env.SERENITY_SMOKE_SCREENSHOT_DIR
 const run = <T = unknown>(script: string, timeout?: number) => app.evaluate<T>(`(async () => { ${helpers} ${script} })()`, timeout)
 const shot = async (name: string) => { if (screenshots) await writeFile(join(screenshots, `${name}.png`), await app.screenshot()) }
@@ -98,22 +99,23 @@ try {
   await until('the title to save', async () => /title: My Home/.test(await readFile(join(workspace, 'pages', 'Home.md'), 'utf8')))
 
   // The explorer lists the workspace; the ribbon opens views as tabs; the assistant has one toggle.
-  const shell = await run<{ explorer: string[]; toggles: number; ribbon: string[] }>(`return { explorer: $$('.tree-row .tree-label').map((item) => item.textContent),
+  const shell = await run<{ explorer: string[]; toggles: number; ribbon: string[] }>(`await showSidebar(); return { explorer: $$('.tree-row .tree-label').map((item) => item.textContent),
     toggles: $$('button[aria-label="Hide assistant"], button[aria-label="Show assistant"]').length, ribbon: $$('.ribbon-btn').map((item) => item.getAttribute('aria-label')) }`)
   assert.ok(shell.explorer.includes('My Home') && shell.explorer.includes('research.pdf'), `Explorer: ${shell.explorer}`)
   assert.equal(shell.toggles, 1, 'Exactly one control shows or hides the assistant')
   assert.ok(shell.ribbon.includes('Calendar') && shell.ribbon.includes('Settings'), `Ribbon: ${shell.ribbon}`)
-  const hidden = await run(`click($('button[aria-label="Hide assistant"]')); await waitFor(() => !$('.right-sidebar')); const shown = Boolean($('button[aria-label="Show assistant"]'));
+  const hidden = await run(`if ($('button[aria-label="Show assistant"]')) { click($('button[aria-label="Show assistant"]')); await waitFor(() => $('.right-sidebar')) }
+    click($('button[aria-label="Hide assistant"]')); await waitFor(() => !$('.right-sidebar')); const shown = Boolean($('button[aria-label="Show assistant"]'));
     click($('button[aria-label="Show assistant"]')); await waitFor(() => $('.right-sidebar')); return shown && $$('button[aria-label="Hide assistant"]').length === 1`)
   assert.equal(hidden, true, 'The same single toggle hides and shows the assistant')
-  const contextMenu = await run<string[]>(`const row = byText('.tree-row', 'research.pdf'); const rect = row.getBoundingClientRect();
+  const contextMenu = await run<string[]>(`await showSidebar(); const row = byText('.tree-row', 'research.pdf'); const rect = row.getBoundingClientRect();
     row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: rect.left + 10, clientY: rect.top + 5 }));
     await waitFor(() => $('.menu.context')); const labels = $$('.menu.context .menu-label').map((item) => item.textContent);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); $('.menu.context')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await sleep(50); return labels`)
   assert.deepEqual(contextMenu, ['Open', 'Open in next pane', 'Copy link'], 'Files have a right-click menu')
 
   // New entity dialog, notes with a wikilink, a sourced fact, and other views of the entity.
-  await run(`click(byText('.sidebar-actions button', 'New entity')); await waitFor(() => $('#new-entity-title'));
+  await run(`await showSidebar(); click(byText('.sidebar-actions button', 'New entity')); await waitFor(() => $('#new-entity-title'));
     setValue($('#new-entity-title'), 'Sam Rivera'); setValue($('#new-entity-type'), 'person'); await sleep(50); click(byText('.dialog button', 'Create'));
     await waitFor(() => $('.entity-document') && $('.inline-title')?.value === 'Sam Rivera')`)
   const entityId = await app.evaluate<string>(`window.serenity.refresh().then((snapshot) => snapshot.entities.find((entity) => entity.title === 'Sam Rivera').id)`)
@@ -134,7 +136,7 @@ try {
   // Panes: split, open beside, move a tab, and close a pane without losing files.
   const panes = await run<{ split: number; moved: boolean; closed: number }>(`click($('[aria-label^="Pane actions"]')); await sleep(80); click(byText('.menu-item', 'Split right'));
     await waitFor(() => $$('.pane').length === 2); const split = $$('.pane').length;
-    click(byText('.tree-row', 'research.pdf')); await waitFor(() => $('.pane.focused .document-text'));
+    await showSidebar(); click(byText('.tree-row', 'research.pdf')); await waitFor(() => $('.pane.focused .document-text'));
     click($$('[aria-label^="Pane actions"]')[1]); await sleep(80); click(byText('.menu-item', 'Move tab to next pane')); await sleep(200);
     const moved = $$('.pane')[0].textContent.includes('research.pdf');
     click($$('[aria-label^="Pane actions"]')[1]); await sleep(80); click(byText('.menu-item', 'Close pane')); await waitFor(() => $$('.pane').length === 1);
@@ -178,7 +180,7 @@ try {
 
   // Review: an AI-suggested entity can be created after review.
   const reviewed = await run(`click($('.ribbon-btn[aria-label^="Review"]')); await waitFor(() => $$('.review-card').length);
-    click(byText('.review-card button', 'Create entity')); return Boolean(await waitFor(() => $$('.tree-row').some((row) => row.textContent === 'Alex')))`)
+    click(byText('.review-card button', 'Create entity')); await sleep(200); await showSidebar(); return Boolean(await waitFor(() => $$('.tree-row').some((row) => row.textContent === 'Alex')))`)
   assert.equal(reviewed, true)
 
   // Settings is a dialog: shortcuts, appearance, and module switches.
@@ -227,7 +229,7 @@ try {
     ['Graph', `click(byText('.library-mode button', 'Graph'))`], ['Review', `click($('.ribbon-btn[aria-label^="Review"]'))`],
     ['Documents', `click(byText('.ribbon-btn', 'Documents'))`], ['Calendar', `click(byText('.ribbon-btn', 'Calendar'))`],
     ['Tasks', `click(byText('.ribbon-btn', 'Tasks'))`], ['Activity', `click(byText('.ribbon-btn', 'Activity'))`],
-    ['Entity', `click(byText('.tree-row', 'Sam Rivera'))`], ['Timeline', `click(byText('.presentation-switcher button', 'Timeline'))`],
+    ['Entity', `await showSidebar(); click(byText('.tree-row', 'Sam Rivera'))`], ['Timeline', `click(byText('.presentation-switcher button', 'Timeline'))`],
     ['New tab', `click($('.pane.focused .new-tab') ?? $('.new-tab'))`], ['Settings', `click($('.ribbon-btn[aria-label="Settings"]'))`],
     ['Chat', `click($('.dialog-close')); click(byText('.ribbon-mode button', 'Chat'))`]
   ]

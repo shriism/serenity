@@ -77,10 +77,19 @@ try {
   await shot('09-palette-light')
   await run(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); click(byText('.tree-row', 'Alex Rivera')); await sleep(300)`)
   await shot('10-entity-light')
-  await app.send('Emulation.setDeviceMetricsOverride', { width: 820, height: 700, deviceScaleFactor: 2, mobile: false })
-  await run(`window.dispatchEvent(new Event('resize')); await sleep(400)`)
-  await shot('11-narrow')
-  await run(`click($('button[aria-label="Show sidebar"]')); await sleep(300)`)
-  await shot('12-narrow-sidebar')
 } catch (error) { console.error(error); console.error(app.logs().slice(-3000)) }
 finally { await app.close() }
+
+// A small window: sidebars start closed and float over the panes when opened.
+const small = await launch(workspace, { windowSize: '860x640' })
+const runSmall = (script: string) => small.evaluate(`(async () => { ${helpers} ${script} })()`)
+const shotSmall = async (name: string) => { await runSmall('await sleep(400)'); await writeFile(join(output, `${name}.png`), await small.screenshot()); console.log(join(output, `${name}.png`)) }
+try {
+  await runSmall(`await waitFor(() => $('.pane'))`)
+  await shotSmall('11-small')
+  await runSmall(`click($('button[aria-label="Show sidebar"]'))`)
+  await shotSmall('12-small-sidebar')
+  await runSmall(`click(byText('.tree-row', 'Alex Rivera')); await sleep(300); click($('button[aria-label="Show assistant"]'))`)
+  await shotSmall('13-small-assistant')
+} catch (error) { console.error(error) }
+finally { await small.close() }

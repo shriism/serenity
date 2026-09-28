@@ -23,14 +23,14 @@ export interface Harness {
  * Launches Serenity on `workspace` (or, given an empty string, with none chosen yet) in a temporary browser profile, in the background (no window, no focus) unless
  * `SERENITY_SMOKE_VISIBLE` is set, and waits until its preload bridge is ready.
  */
-export async function launch(workspace: string, options: { executable?: string; keepProfile?: boolean; profile?: string; width?: number; height?: number } = {}): Promise<Harness> {
+export async function launch(workspace: string, options: { executable?: string; keepProfile?: boolean; profile?: string; width?: number; height?: number; windowSize?: string } = {}): Promise<Harness> {
   const electron = options.executable ?? require('electron') as string
   const profile = options.keepProfile ? null : options.profile ?? await mkdtemp(join(tmpdir(), 'serenity-profile-'))
   // A profile passed in belongs to the caller, who may launch again with it.
   const ownsProfile = !options.keepProfile && !options.profile
   const port = 20000 + Math.floor(Math.random() * 30000)
   const child = spawn(electron, [`--remote-debugging-port=${port}`, ...(profile ? [`--user-data-dir=${profile}`] : []),
-    ...(process.env.SERENITY_SMOKE_VISIBLE ? [] : ['--background']), ...(options.executable ? [] : ['.']), ...(workspace ? [`--workspace=${workspace}`] : [])],
+    ...(process.env.SERENITY_SMOKE_VISIBLE ? [] : ['--background']), ...(options.windowSize ? [`--window-size=${options.windowSize}`] : []), ...(options.executable ? [] : ['.']), ...(workspace ? [`--workspace=${workspace}`] : [])],
   { stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env } })
   let output = ''
   child.stdout?.on('data', (chunk: Buffer) => { output += chunk.toString() })
@@ -97,6 +97,8 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const waitFor = async (check, ms = 5000) => { const end = Date.now() + ms; while (Date.now() < end) { const value = check(); if (value) return value; await sleep(50) } return null };
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
+// In a small window the sidebar starts closed and floats over the panes; open it as a person would before using it.
+const showSidebar = async () => { if (!$('.app').classList.contains('left-open')) { click($('button[aria-label="Show sidebar"]')); await sleep(300) } };
 const byText = (selector, text) => $$(selector).find((element) => element.textContent.trim() === text || element.getAttribute('aria-label') === text);
 const click = (element) => { if (!element) throw new Error('Nothing to click'); element.click() };
 const setValue = (element, value) => { const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype; Object.getOwnPropertyDescriptor(prototype, 'value').set.call(element, value); element.dispatchEvent(new Event('input', { bubbles: true })) };

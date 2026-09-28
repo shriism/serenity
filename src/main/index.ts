@@ -10,6 +10,7 @@ import { buildSemanticIndex, rankSemanticIndex } from './semantic-index'
 import { askProvider } from './providers'
 import { analyzeChangedDocument } from './document-analysis'
 import { extractDocument } from './documents'
+import { RecentWorkspaces } from './recent-workspaces'
 import { stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { Autonomy, CalendarEvent, Claim, Entity, Provider, ReadScope, TaskItem, WorkflowPermissions, WorkbenchSession, WorkspacePage, WorkspaceSnapshot } from '../shared/types'
@@ -119,6 +120,9 @@ function queueDocumentAnalysis(target: Workspace, filename: string): void {
   }, 1200)
 }
 
+// Kept in the app's settings folder, never in a workspace; created once the app is ready and its paths are known.
+let recentWorkspaces: RecentWorkspaces | null = null
+
 async function openWorkspace(path: string): Promise<WorkspaceSnapshot> {
   if (searchWarmTimer) clearTimeout(searchWarmTimer)
   if (indexTimer) clearTimeout(indexTimer)
@@ -155,6 +159,7 @@ async function openWorkspace(path: string): Promise<WorkspaceSnapshot> {
   scheduleSemanticIndex(next)
   // Early enough to be ready for a first search, late enough not to compete with opening the window.
   warmSearchIndex(next, 4000)
+  await recentWorkspaces?.add(next.path).catch((error) => console.error('Could not remember this workspace:', error))
   return next.snapshot()
 }
 
@@ -289,15 +294,31 @@ app.whenReady().then(async () => {
     target.setBackgroundColor(windowColors[theme].background)
     if (process.platform !== 'darwin') target.setTitleBarOverlay({ color: windowColors[theme].background, symbolColor: windowColors[theme].symbol, height: 40 })
   })
-  ipcMain.handle('workspace:choose', async () => {
+  /** Whether the current workspace may be left: no AI request running, and any unsaved edits knowingly discarded. */
+  async function mayLeaveWorkspace(): Promise<boolean> {
     if (activeRequests) throw new Error('Wait for the current AI request before switching workspaces.')
-    if (editorDirty && window) {
-      const { response } = await dialog.showMessageBox(window, {
-        type: 'question', title: 'Unsaved changes', message: 'Discard unsaved entity edits before changing workspaces?',
-        buttons: ['Keep editing', 'Discard changes'], defaultId: 0, cancelId: 0
-      })
-      if (response !== 1) return null
-    }
+    if (!editorDirty || !window) return true
+    const { response } = await dialog.showMessageBox(window, {
+      type: 'question', title: 'Unsaved changes', message: 'Discard unsaved edits before changing workspaces?',
+      buttons: ['Keep editing', 'Discard changes'], defaultId: 0, cancelId: 0
+    })
+    return response === 1
+  }
+  ipcMain.handle('workspace:recent', () => recentWorkspaces?.list() ?? [])
+  ipcMain.handle('workspace:open-recent', async (_event, path: unknown) => {
+    // Only a folder the person chose before can be reopened this way.
+    if (typeof path !== 'string' || !recentWorkspaces || !await recentWorkspaces.includes(path)) throw new Error('That workspace is not in the recent list')
+    if (!await mayLeaveWorkspace()) return null
+    const snapshot = await openWorkspace(path)
+    editorDirty = false
+    return snapshot
+  })
+  ipcMain.handle('workspace:forget-recent', async (_event, path: unknown) => {
+    if (typeof path === 'string') await recentWorkspaces?.remove(path)
+    return recentWorkspaces?.list() ?? []
+  })
+  ipcMain.handle('workspace:choose', async () => {
+    if (!await mayLeaveWorkspace()) return null
     const result = await dialog.showOpenDialog(window!, {
       title: 'Choose a Serenity workspace',
       properties: ['openDirectory', 'createDirectory']
@@ -406,6 +427,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('entity:unmerge', (_event, source: string, reason: string) => currentWorkspace().unmergeEntities(source, reason))
   ipcMain.handle('identity:distinct', (_event, left: string, right: string) => currentWorkspace().markDistinctEntities(left, right))
   ipcMain.handle('identity:undo', (_event, id: string) => currentWorkspace().undoIdentityDecision(id))
+  recentWorkspaces = new RecentWorkspaces(join(app.getPath('userData'), 'recent-workspaces.json'))
   if (background && process.platform === 'darwin') app.setActivationPolicy('accessory')
   const selected = process.argv.find((argument) => argument.startsWith('--workspace='))?.slice('--workspace='.length)
   if (selected) {

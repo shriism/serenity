@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import { FolderOpen, Settings2 } from 'lucide-react'
+import { FolderOpen, Settings2, X } from 'lucide-react'
 import type { WorkbenchConfig, WorkspaceSnapshot } from '../../shared/types'
 import { identityCandidates } from '../../shared/identity'
 import type { CommandContribution } from './commands'
@@ -90,15 +90,40 @@ export function NewEntityDialog({ workspace, onCreate, onOpen, onClose }: {
   </Dialog>
 }
 
-/** Shown before a workspace is chosen. */
-export function Welcome({ onChoose }: { onChoose(): void }) {
+export interface RecentWorkspace { path: string; name: string; available: boolean }
+
+/** Shown before a workspace is open: offers the last one used, other recent ones, and any other folder. */
+export function Welcome({ recent, onChoose, onOpenRecent, onForget }: {
+  recent: RecentWorkspace[] | null
+  onChoose(): void
+  onOpenRecent(path: string): void
+  onForget(path: string): void
+}) {
+  const last = recent?.find((item) => item.available)
+  const others = recent?.filter((item) => item !== last) ?? []
   return <div className="welcome">
     <div className="welcome-card">
       <img src={serenityIcon} alt="" className="welcome-icon"/>
-      <h1>Serenity</h1>
-      <p>A private workspace for what you know, the people and projects in your life, and the plans in between, with AI that suggests and never overwrites.</p>
-      <button type="button" className="primary large" onClick={onChoose}><FolderOpen size={16}/> Open or create a workspace…</button>
-      <small>Pick any folder. Your knowledge is stored there as Markdown and YAML files you own.</small>
+      <h1>{last ? 'Welcome back' : 'Serenity'}</h1>
+      <p>{last ? 'Pick up where you left off, or open another workspace.' :
+        'A private workspace for what you know, the people and projects in your life, and the plans in between, with AI that suggests and never overwrites.'}</p>
+      {recent === null ? null : last ? <>
+        <button type="button" className="primary large" onClick={() => onOpenRecent(last.path)} autoFocus>Open “{last.name}”</button>
+        <small className="welcome-path" title={last.path}>{last.path}</small>
+        <button type="button" className="secondary" onClick={onChoose}><FolderOpen size={15}/> Open another folder…</button>
+      </> : <>
+        <button type="button" className="primary large" onClick={onChoose} autoFocus><FolderOpen size={16}/> Open or create a workspace…</button>
+        <small>Pick any folder. Your knowledge is stored there as Markdown and YAML files you own.</small>
+      </>}
+      {others.length > 0 && <section className="welcome-recent" aria-label="Recent workspaces">
+        <h2>Recent</h2>
+        <ul>{others.map((item) => <li key={item.path}>
+          <button type="button" className="welcome-recent-open" disabled={!item.available} onClick={() => onOpenRecent(item.path)} title={item.path}>
+            <strong>{item.name}</strong><small>{item.available ? item.path : 'Not found — moved, renamed, or on a disconnected drive'}</small>
+          </button>
+          <button type="button" className="icon-btn" onClick={() => onForget(item.path)} aria-label={`Remove ${item.name} from recent workspaces`} title="Remove from list"><X size={14}/></button>
+        </li>)}</ul>
+      </section>}
     </div>
   </div>
 }

@@ -23,9 +23,11 @@ export interface Harness {
  * Launches Serenity on `workspace` (or, given an empty string, with none chosen yet) in a temporary browser profile, in the background (no window, no focus) unless
  * `SERENITY_SMOKE_VISIBLE` is set, and waits until its preload bridge is ready.
  */
-export async function launch(workspace: string, options: { executable?: string; keepProfile?: boolean; width?: number; height?: number } = {}): Promise<Harness> {
+export async function launch(workspace: string, options: { executable?: string; keepProfile?: boolean; profile?: string; width?: number; height?: number } = {}): Promise<Harness> {
   const electron = options.executable ?? require('electron') as string
-  const profile = options.keepProfile ? null : await mkdtemp(join(tmpdir(), 'serenity-profile-'))
+  const profile = options.keepProfile ? null : options.profile ?? await mkdtemp(join(tmpdir(), 'serenity-profile-'))
+  // A profile passed in belongs to the caller, who may launch again with it.
+  const ownsProfile = !options.keepProfile && !options.profile
   const port = 20000 + Math.floor(Math.random() * 30000)
   const child = spawn(electron, [`--remote-debugging-port=${port}`, ...(profile ? [`--user-data-dir=${profile}`] : []),
     ...(process.env.SERENITY_SMOKE_VISIBLE ? [] : ['--background']), ...(options.executable ? [] : ['.']), ...(workspace ? [`--workspace=${workspace}`] : [])],
@@ -84,7 +86,7 @@ export async function launch(workspace: string, options: { executable?: string; 
         await Promise.race([new Promise((resolve) => child.once('exit', resolve)), delay(3000)])
         if (child.exitCode === null) child.kill('SIGKILL')
       }
-      if (profile) await rm(profile, { recursive: true, force: true }).catch(() => undefined)
+      if (profile && ownsProfile) await rm(profile, { recursive: true, force: true }).catch(() => undefined)
     }
   }
 }

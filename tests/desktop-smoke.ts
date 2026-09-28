@@ -73,6 +73,10 @@ const until = async (label: string, check: () => Promise<boolean>, ms = 8000) =>
 
 try {
   assert.equal(await app.evaluate('window.serenity.refresh().then((snapshot) => snapshot?.path)'), workspace)
+  // The workspace is remembered for the next launch, and only remembered folders can be reopened from the list.
+  const remembered = await app.evaluate<{ path: string }[]>('window.serenity.recentWorkspaces()')
+  assert.equal(remembered[0]?.path, workspace)
+  assert.match(await app.evaluate<string>(`window.serenity.openRecentWorkspace('/').then(() => 'opened', (error) => String(error))`), /not in the recent list/)
 
   // A new workspace opens on its Home page: an editable Markdown file with live lists.
   const home = await run<{ title: string; review: string }>(`await waitFor(() => $('.page-document .cm-content') && $$('.page-query-list').length);
@@ -223,7 +227,7 @@ try {
   ]
   const accessibility: string[] = []
   for (const theme of ['dark', 'light']) {
-    await run(`if ($('.dialog-close')) click($('.dialog-close')); if ($('.mode-switch button[aria-label="Workspace"]')) click($('.mode-switch button[aria-label="Workspace"]')); await sleep(150)`)
+    await run(`if ($('.dialog-close')) click($('.dialog-close')); if (byText('.mode-switch button', 'Workspace')) click(byText('.mode-switch button', 'Workspace')); await sleep(150)`)
     for (const [view, setup] of views) {
       const found = await run<string[]>(`document.documentElement.setAttribute('data-theme', '${theme}'); ${setup}; await sleep(400);
         await Promise.all(document.getAnimations().map((animation) => animation.finished.catch(() => undefined)));

@@ -1,4 +1,4 @@
-import { X, Layers, Monitor, Moon, Sun, Activity, ArrowDown, ArrowLeft, ArrowLeftRight, ArrowRight, ArrowRightLeft, ArrowUp, CalendarDays, Columns2, Rows2, SquareX, MoveRight, FileText, Files, FolderOpen, House, Inbox, Link2, ListTodo, Maximize2, MessageCircle, PanelLeft, PanelRight, Plus, RotateCw, Search, Settings2 } from 'lucide-react'
+import { Network, X, Layers, Monitor, Moon, Sun, Activity, ArrowDown, ArrowLeft, ArrowLeftRight, ArrowRight, ArrowRightLeft, ArrowUp, CalendarDays, Columns2, Rows2, SquareX, MoveRight, FileText, Files, FolderOpen, House, Inbox, ListTodo, Maximize2, MessageCircle, PanelLeft, PanelRight, Plus, RotateCw, Search, Settings2 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import type { WorkspaceSnapshot } from '../../shared/types'
 import type { ModuleId } from '../../shared/modules'
@@ -57,7 +57,7 @@ const view = (id: View, title: string, icon: LucideIcon, group: CommandContribut
 
 const builtins: CommandContribution[] = [
   view('home', 'Home', House, 'Workspace'),
-  view('knowledge', 'Knowledge', Link2, 'Workspace'),
+  view('knowledge', 'Knowledge', Network, 'Workspace'),
   view('review', 'Review', Inbox, 'Workspace'),
   view('documents', 'Documents', Files, 'Organize'),
   view('calendar', 'Calendar', CalendarDays, 'Organize', 'calendar'),

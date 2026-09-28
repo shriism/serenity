@@ -25,7 +25,7 @@ import { PaneHeader } from './pane-header'
 import { MenuButton } from './menu'
 import { Dialog } from './dialog'
 import { SettingsDialog } from './settings-panel'
-import { NewEntityDialog, NewTabScreen, Ribbon, Welcome } from './shell-parts'
+import { NewEntityDialog, NewTabScreen, Ribbon, Welcome, type RecentWorkspace } from './shell-parts'
 import { Composer, ContextChips, ConversationList, ConversationSettings, ConversationView, conversationMenu, type ActiveContext, type AssistantState } from './assistant'
 import type { EditorContext } from './markdown-editor'
 import './app.css'
@@ -92,6 +92,7 @@ function App() {
   const [newEntityOpen, setNewEntityOpen] = useState(false)
   const [conversationSettingsOpen, setConversationSettingsOpen] = useState(false)
   const [issuesOpen, setIssuesOpen] = useState(false)
+  const [recent, setRecent] = useState<RecentWorkspace[] | null>(null)
   const [focusedEventId, setFocusedEventId] = useState<string | null>(null)
   const [focusedTaskId, setFocusedTaskId] = useState<string | null>(null)
   const [focusVersion, setFocusVersion] = useState(0)
@@ -149,6 +150,8 @@ function App() {
 
   useEffect(() => window.serenity.onWorkspaceChange(() => { void refresh() }), [refresh])
   useEffect(() => { void window.serenity.refresh().then(setWorkspace).catch((cause) => setError(String(cause))) }, [])
+  // The recent list offers the last workspace on the welcome screen and others in the workspace menu.
+  useEffect(() => { void window.serenity.recentWorkspaces().then(setRecent).catch(() => setRecent([])) }, [workspace?.path])
   useEffect(() => window.serenity.onIndexError((message) => setError(`Background AI: ${message}`)), [])
   // Choices from the application menu run the same commands as their shortcuts.
   useEffect(() => window.serenity.onMenuCommand((id) => { const current = commandContext.current; current?.registry?.dispatch(id, current.host) }), [])
@@ -205,9 +208,9 @@ function App() {
     return () => observer.disconnect()
   }, [workspace !== null, mode])
 
-  async function chooseWorkspace() {
+  async function chooseWorkspace(path?: string) {
     try {
-      const next = await window.serenity.chooseWorkspace()
+      const next = path ? await window.serenity.openRecentWorkspace(path) : await window.serenity.chooseWorkspace()
       if (!next) return
       setWorkspace(next)
       setSessionReadyPath(null)
@@ -622,7 +625,8 @@ function App() {
           <span key={index} className={index === all.length - 1 ? 'current' : ''}>{crumb}</span>)}</nav>
         {options && options.length > 1 && presentation && <PresentationSwitcher kind={tab.kind} active={presentation} onChange={(id) => changePresentation(group.id, tab, id)}/>}
       </div>}
-      <div className="pane-body" key={group.activeTab ?? 'empty'}>
+      {/* Focusable so keyboard users can scroll a long view; its label names what it shows. */}
+      <div className="pane-body" key={group.activeTab ?? 'empty'} tabIndex={0} role="region" aria-label={`${groupTitle(group)} content`}>
         <ErrorBoundary label={groupTitle(group)}>{body}</ErrorBoundary>
       </div>
       {zone && <div className={`pane-drop-overlay zone-${zone}`} aria-hidden="true"/>}
@@ -659,8 +663,10 @@ function App() {
         <button type="button" className="icon-btn" onClick={() => runCommand('navigation.toggle')} aria-pressed={leftOpen} aria-keyshortcuts={ariaShortcut('navigation.toggle')}
           aria-label={leftOpen ? 'Hide sidebar' : 'Show sidebar'} title={withShortcut(leftOpen ? 'Hide sidebar' : 'Show sidebar', 'navigation.toggle')}><PanelLeft size={16}/></button>
         <div className="mode-switch" role="radiogroup" aria-label="Mode">
-          <button type="button" role="radio" aria-checked={mode === 'workspace'} className={mode === 'workspace' ? 'active' : ''} onClick={() => setMode('workspace')} title="Workspace" aria-label="Workspace"><LayoutPanelLeft size={15}/></button>
-          <button type="button" role="radio" aria-checked={mode === 'chat'} className={mode === 'chat' ? 'active' : ''} onClick={() => setMode('chat')} title={withShortcut('Chat', 'assistant.expand')} aria-label="Chat"><MessageSquare size={15}/></button>
+          <button type="button" role="radio" aria-checked={mode === 'workspace'} className={mode === 'workspace' ? 'active' : ''} onClick={() => setMode('workspace')}
+            title={withShortcut('Workspace: your files and panes', 'assistant.expand')}><LayoutPanelLeft size={14}/><span>Workspace</span></button>
+          <button type="button" role="radio" aria-checked={mode === 'chat'} className={mode === 'chat' ? 'active' : ''} onClick={() => setMode('chat')}
+            title={withShortcut('Chat: a full-window conversation', 'assistant.expand')}><MessageSquare size={14}/><span>Chat</span></button>
         </div>
       </>}
     </header>
@@ -676,6 +682,8 @@ function App() {
         <MenuButton label="Workspace" className="workspace-switcher" align="start" header={<span className="menu-path">{workspace.path}</span>} items={[
           { id: 'reveal', label: platform === 'mac' ? 'Reveal in Finder' : 'Open folder', icon: <FolderOpen size={14}/>, run: () => runCommand('workspace.open-folder') },
           { id: 'choose', label: 'Open another workspace…', icon: <FolderOpen size={14}/>, run: () => runCommand('workspace.choose') },
+          ...(recent ?? []).filter((item) => item.path !== workspace.path && item.available).slice(0, 5).map((item, index) =>
+            ({ id: `recent:${item.path}`, label: item.name, detail: index === 0 ? 'Recent' : undefined, separated: index === 0, run: () => { void chooseWorkspace(item.path) } })),
           { id: 'refresh', label: 'Reload files', icon: <RotateCw size={14}/>, run: () => runCommand('workspace.refresh') }
         ]}><span className="workspace-avatar" aria-hidden="true">{workspaceName.slice(0, 1).toUpperCase()}</span><span className="workspace-name">{workspaceName}</span><ChevronDown size={13}/></MenuButton>
         {issues.length > 0 && <button type="button" className="icon-btn warning" onClick={() => setIssuesOpen(true)} aria-label={`${issues.length} workspace ${issues.length === 1 ? 'issue' : 'issues'}`}
@@ -684,14 +692,18 @@ function App() {
       {!narrow && <SidebarResizer side="left" width={leftWidth} min={200} max={440} onResize={setLeftWidth}/>}
     </aside>}
     <main className="main" id="workspace-main">
-      {!workspace ? <Welcome onChoose={() => void chooseWorkspace()}/> : mode === 'chat' ? <section className="chat-main" aria-label="Chat">
+      {!workspace ? <Welcome recent={recent} onChoose={() => void chooseWorkspace()} onOpenRecent={(path) => void chooseWorkspace(path)}
+        onForget={(path) => { void window.serenity.forgetRecentWorkspace(path).then(setRecent) }}/> : mode === 'chat' ? <section className="chat-main" aria-label="Chat">
         <header className="chat-header">
           <MenuButton label="Conversation" className="chat-title" items={conversationMenu(workspace, assistantState, newChat)}>
             <span>{assistant.conversation?.title ?? 'New chat'}</span><ChevronDown size={13}/></MenuButton>
+          <div className="chat-header-actions">
+            <button type="button" className="icon-btn" onClick={newChat} aria-label="New chat" title={withShortcut('New chat', 'assistant.new')}><MessageSquarePlus size={16}/></button>
+          </div>
         </header>
         <ErrorBoundary label="The conversation">
           <div className={`chat-body ${assistant.conversation || assistant.busy ? '' : 'empty'}`}>
-            <div className="chat-scroll">
+            <div className="chat-scroll" tabIndex={0} role="region" aria-label="Messages">
               <ConversationView assistant={assistantState} intro={chatIntro('What’s on your mind?')} onOpenResource={(uri, side) => { openResource(uri, { side }) }}/>
             </div>
             <div className="chat-composer"><Composer assistant={assistantState} onOpenSettings={() => setConversationSettingsOpen(true)} autoFocus/></div>
@@ -706,12 +718,12 @@ function App() {
           <span>{assistant.conversation?.title ?? 'New chat'}</span><ChevronDown size={13}/></MenuButton>
         <div className="assistant-actions">
           <button type="button" className="icon-btn" onClick={newChat} aria-label="New chat" title={withShortcut('New chat', 'assistant.new')}><MessageSquarePlus size={16}/></button>
-          <button type="button" className="icon-btn" onClick={() => setMode('chat')} aria-label="Open in Chat mode" title={withShortcut('Open in Chat mode', 'assistant.expand')}><Maximize2 size={15}/></button>
+          <button type="button" className="icon-btn" onClick={() => setMode('chat')} aria-label="Open this chat full window" title={withShortcut('Open this chat full window', 'assistant.expand')}><Maximize2 size={15}/></button>
           {assistantToggle}
         </div>
       </header>
       <ErrorBoundary label="The assistant">
-        <div className="assistant-scroll">
+        <div className="assistant-scroll" tabIndex={0} role="region" aria-label="Messages">
           <ConversationView assistant={assistantState} onOpenResource={(uri, side) => { openResource(uri, { side }) }}
             intro={<div className="chat-intro compact"><h2>{activeFile ? `Ask about ${activeFile.name}` : 'Ask about your workspace'}</h2>
               <p>{activeFile?.allowed ? 'What’s open in your panes can inform the answer.' : 'Answers cite their sources, and suggested changes wait for your review.'}</p></div>}/>

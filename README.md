@@ -13,7 +13,7 @@ npm install
 npm run dev
 ```
 
-Choose an existing directory or create one when the application opens, or supply one at startup with `--workspace=/path/to/directory`. To build an installable app for the current OS, run `npm run dist` (see [Development](#development)). Unsigned macOS builds may require manual permission to open.
+Choose an existing directory or create one when the application opens, or supply one at startup with `--workspace=/path/to/directory`. Serenity remembers the workspaces you open: the next launch offers to reopen the last one, and the workspace menu at the bottom of the sidebar lists recent ones. To build an installable app for the current OS, run `npm run dist` (see [Development](#development)). Unsigned macOS builds may require manual permission to open.
 
 ## Your workspace
 

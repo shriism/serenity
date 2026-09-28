@@ -245,6 +245,11 @@ export interface SerenityAPI {
   /** Versions for bug reports: the app, its Electron and Chromium runtime, and the operating system. */
   appInfo(): Promise<{ version: string; electron: string; chrome: string; platform: string }>
   setEditorDirty(dirty: boolean): void
+  /** Workspaces opened on this device, newest first. */
+  recentWorkspaces(): Promise<{ path: string; name: string; available: boolean }[]>
+  /** Reopens a workspace from the recent list; null if the person chose to keep editing. */
+  openRecentWorkspace(path: string): Promise<WorkspaceSnapshot | null>
+  forgetRecentWorkspace(path: string): Promise<{ path: string; name: string; available: boolean }[]>
   /** Matches the system-drawn title bar controls to the app's appearance. */
   setWindowTheme(theme: 'dark' | 'light'): void
   /** Runs when a command is chosen from the application menu. */

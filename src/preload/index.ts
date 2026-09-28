@@ -3,6 +3,9 @@ import type { SerenityAPI } from '../shared/types'
 
 const api: SerenityAPI = {
   chooseWorkspace: () => ipcRenderer.invoke('workspace:choose'),
+  recentWorkspaces: () => ipcRenderer.invoke('workspace:recent'),
+  openRecentWorkspace: (path) => ipcRenderer.invoke('workspace:open-recent', path),
+  forgetRecentWorkspace: (path) => ipcRenderer.invoke('workspace:forget-recent', path),
   openWorkspaceFolder: () => ipcRenderer.invoke('workspace:open-folder'),
   openExternal: (url) => ipcRenderer.invoke('link:open-external', url),
   appInfo: () => ipcRenderer.invoke('app:info'),

@@ -100,7 +100,7 @@ export function Composer({ assistant, placeholder = 'Ask Serenity…', context, 
       <div className="composer-options">
         <MenuButton label="Provider" className="chip-btn" items={(['copilot', 'codex'] as const).map((provider) =>
           ({ id: provider, label: providerNames[provider], checked: assistant.provider === provider, run: () => assistant.setProvider(provider) }))}>
-          {providerNames[assistant.provider]}<ChevronDown size={12}/></MenuButton>
+          {assistant.provider === 'copilot' ? 'Copilot' : 'Codex'}<ChevronDown size={12}/></MenuButton>
         <MenuButton label="What the assistant may change" title="What the assistant may change" className="chip-btn" items={(['ask', 'propose', 'autonomous'] as const).map((mode) =>
           ({ id: mode, label: autonomyNames[mode], checked: assistant.autonomy === mode, run: () => assistant.setAutonomy(mode) }))}>
           {autonomyNames[assistant.autonomy]}<ChevronDown size={12}/></MenuButton>

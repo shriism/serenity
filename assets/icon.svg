@@ -1,16 +1,21 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Serenity: an S traced through three connected points, knowledge linking into meaning. -->
   <defs>
-    <linearGradient id="background" x1="0" x2="1" y1="0" y2="1">
-      <stop stop-color="#686bb0"/>
-      <stop offset="1" stop-color="#3b3e75"/>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#2c2f68"/>
+      <stop offset="1" stop-color="#0f1126"/>
+    </linearGradient>
+    <linearGradient id="path" x1="1" y1="0" x2="0" y2="1">
+      <stop stop-color="#cbc9ff"/>
+      <stop offset="1" stop-color="#84d9cf"/>
     </linearGradient>
   </defs>
-  <rect x="40" y="40" width="944" height="944" rx="240" fill="url(#background)"/>
-  <circle cx="512" cy="512" r="286" fill="#b5b4ed" opacity=".15"/>
-  <g fill="none" stroke="#f2f1ff" stroke-width="54" stroke-linecap="round">
-    <path d="M512 228v146M512 650v146M228 512h146M650 512h146"/>
-    <path d="M311 311l103 103m196 196 103 103M713 311 610 414M414 610 311 713"/>
+  <rect x="100" y="100" width="824" height="824" rx="186" fill="url(#background)"/>
+  <rect x="100.5" y="100.5" width="823" height="823" rx="185.5" fill="none" stroke="#ffffff" stroke-opacity=".08"/>
+  <g transform="translate(512 512) scale(.86) translate(-512 -506)">
+    <path d="M672 318C640 262 566 238 494 250 402 266 348 334 380 404 408 466 482 488 544 512 622 542 676 590 650 664 624 738 520 772 426 752 382 742 350 718 336 690" fill="none" stroke="url(#path)" stroke-width="54" stroke-linecap="round"/>
+    <circle cx="672" cy="318" r="60" fill="#cbc9ff"/>
+    <circle cx="512" cy="500" r="42" fill="#f6f5ff"/>
+    <circle cx="336" cy="690" r="60" fill="#84d9cf"/>
   </g>
-  <circle cx="512" cy="512" r="112" fill="#f2f1ff"/>
-  <circle cx="512" cy="512" r="50" fill="#6266aa"/>
 </svg>

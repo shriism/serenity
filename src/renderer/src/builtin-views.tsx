@@ -58,6 +58,8 @@ builtinViews.register({ id: 'knowledge', render: (context) => {
   if (!context.entityId) return <KnowledgeView workspace={context.workspace} onOpenEntity={context.onOpenEntity} onNewEntity={context.onNewEntity}
     onOpenInPane={(id, side) => context.onOpenResource(resourceUri({ kind: 'entity', id }), side)}/>
   const entityId = context.entityId
+  // A tab can outlive its file for a moment (deleted elsewhere) before the workbench prunes it.
+  if (!context.workspace.entities.some((entity) => entity.id === entityId)) return null
   const presentation = presentationFor('entity', context.presentation)
   if (presentation === 'timeline') return <EntityTimeline workspace={context.workspace} entityId={entityId} onOpenResource={context.onOpenResource} onOpenSource={context.onOpenSource}/>
   if (presentation === 'connections') return <EntityConnections workspace={context.workspace} entityId={entityId}

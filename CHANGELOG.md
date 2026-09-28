@@ -12,6 +12,9 @@ A rebuilt interface that looks and behaves like a native desktop app. The worksp
 - A switch at the top left moves between **Workspace** and **Chat** modes.
   - Workspace mode has a ribbon of views and a file tree of pages, entities (grouped by type), and documents on the left, tabbed panes in the center, and the assistant on the right.
   - Chat mode is a full-window conversation with your conversations listed beside it.
+- The switch between Workspace and Chat is labeled, and Chat mode has a New chat button beside the conversation title.
+- Serenity remembers the workspaces you open. On launch it offers to reopen the last one, lists other recent ones, and the workspace menu at the bottom of the sidebar can switch to them. The list is kept in the app's own settings, not in any workspace, and only folders you chose before can be reopened from it.
+- A new app icon: an S traced through three connected points.
 - The assistant has a single control to show or hide it (**⌘J** / **Ctrl+J**), where there used to be two.
 - Calendar, Tasks, Review, Documents, Knowledge, Activity, and Search open as tabs like any file. An empty tab offers quick actions. Closing a tab shows the one beside it.
 - Settings is a dialog with sections, and new entities are named in a short dialog that points out possible duplicates.

@@ -4,6 +4,7 @@ Serenity's notable changes, newest first. The workspace format stays readable Ma
 
 ## Unreleased
 
+- PDF and DOCX text is extracted in a background worker, so indexing or reading a large document no longer stalls saving and other actions.
 - Search results show a snippet of where the words matched, with the matches highlighted.
 - Page queries can show a table or a count (`display: table` / `display: count`), and lists say how many more matched.
 - Empty live lists say how things get there, and the new-workspace Home shows the `[[wikilink]]` syntax literally.

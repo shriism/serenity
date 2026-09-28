@@ -37,6 +37,8 @@ A resource can have several presentations (`src/renderer/src/presentations.tsx`)
 
 Pages and entity narratives may use Obsidian-style `[[wikilinks]]`, resolved at render time by exact title (`src/shared/wikilinks.ts`); ambiguous or unknown names are shown as such rather than guessed, and no link targets are stored. Because they name titles, renaming an entity offers to rewrite `[[old]]` links in the notes that resolved to it; the main process rewrites only prose (not frontmatter or code) in the chosen page and entity files, each with an atomic write serialized against editor saves of that file.
 
+PDF and DOCX text is extracted in a worker thread (`src/main/extract-worker.ts`) so parsing never blocks the main process's handling of edits and other requests; plain-text formats are read directly, and if the worker cannot start, extraction falls back to the main process.
+
 Snapshots re-read the workspace, but each file's text and parse are reused while its size, modification and change times, and inode are unchanged; records are copied out of that cache because snapshot assembly adjusts them (for example, resolving merged entities). Files are still checked to be regular files inside the workspace on every read.
 
 Snapshots carry a `generation` that increases in the order reading began; the renderer ignores a snapshot older than the one it has, so an operation's result is never replaced by a slower refresh that started earlier.

@@ -14,7 +14,7 @@ Start with a page or import a document. Open related material side by side, foll
 
 Suppose Alex tells you their birthday is September 7, while an old card says September 8. Both statements can remain in the workspace with their sources. Mark September 7 as current with the reason “Alex told me directly.” If you later change your mind, select another answer or clear the choice. The earlier statements and decisions remain visible.
 
-You can also compare records that might describe the same person, merge them, or record that they are distinct. A merge can be undone. These interactions let you organize information without having to settle every uncertainty when you first encounter it.
+You can also compare records that might describe the same person, merge them, or record that they are distinct. A merge can be undone. User-removed pages, documents, entities, tasks, and events go to your computer’s Trash; merge history remains in the workspace. These interactions let you organize information without having to settle every uncertainty when you first encounter it.
 
 The assistant works alongside this process. Ask about a document, inspect the answer's citations, and review suggested additions beneath the reply or in Review. GitHub Copilot and OpenAI Codex are supported. Local editing and text search work without either.
 

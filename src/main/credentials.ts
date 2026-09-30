@@ -19,12 +19,6 @@ async function stored(): Promise<Partial<Record<Provider, string>>> {
   catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}; throw error }
 }
 
-export async function credentialStatus(): Promise<Record<Provider, boolean>> {
-  const keys = await stored()
-  const status = (provider: Provider): boolean => sessionKeys.has(provider) || Boolean(canStorePersistently() && keys[provider])
-  return { copilot: status('copilot'), codex: status('codex') }
-}
-
 export async function saveCredential(provider: Provider, key: string): Promise<void> {
   if (!['copilot', 'codex'].includes(provider)) throw new Error('Unknown provider')
   const keys = await stored()

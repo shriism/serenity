@@ -1,8 +1,8 @@
-import { useEffect, useState, type FormEvent } from 'react'
-import { Blocks, Info, Keyboard, Palette, PenLine, Sparkles } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
+import { Blocks, Check, ChevronDown, Info, Keyboard, Palette, PenLine, Sparkles } from 'lucide-react'
 import { preferences, usePreferences, type Preferences } from './preferences'
 import { eventKeybinding } from '../../shared/keybindings'
-import type { Provider, WorkspaceSnapshot } from '../../shared/types'
+import type { Provider, ProviderConnectionStatus, WorkspaceSnapshot } from '../../shared/types'
 import { modules, type ModuleId } from '../../shared/modules'
 import type { ThemePreference } from './theme'
 import { Dialog } from './dialog'
@@ -63,13 +63,38 @@ function Toggle({ checked, disabled, label, onChange }: { checked: boolean; disa
 export function SettingsDialog({ workspace, shortcuts, theme, onThemeChange, onChooseWorkspace, onOpenFolder, onUpdate, onError, onClose }: Props) {
   const [section, setSection] = useState<Section>('general')
   const prefs = usePreferences()
-  const [credentials, setCredentials] = useState<Record<Provider, boolean> | null>(null)
-  const [keyProvider, setKeyProvider] = useState<Provider>('copilot')
-  const [key, setKey] = useState('')
+  const [providerStatuses, setProviderStatuses] = useState<Record<Provider, ProviderConnectionStatus> | null>(null)
+  const [checkingProviders, setCheckingProviders] = useState(false)
+  const [providerBridgeNeedsRestart, setProviderBridgeNeedsRestart] = useState(false)
+  const [copiedCommand, setCopiedCommand] = useState<Provider | null>(null)
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const statusRequest = useRef(0)
+  const onErrorRef = useRef(onError)
+  onErrorRef.current = onError
+  const [keys, setKeys] = useState<Record<Provider, string>>({ copilot: '', codex: '' })
+  const [savingProvider, setSavingProvider] = useState<Provider | null>(null)
   const [filter, setFilter] = useState('')
   const [about, setAbout] = useState<Awaited<ReturnType<typeof window.serenity.appInfo>> | null>(null)
   useEffect(() => { void window.serenity.appInfo().then(setAbout).catch(() => setAbout(null)) }, [])
-  useEffect(() => { void window.serenity.credentialStatus().then(setCredentials).catch((error) => onError(String(error))) }, [onError])
+  useEffect(() => () => { if (copyTimer.current) clearTimeout(copyTimer.current) }, [])
+  const refreshProviderStatus = useCallback((): void => {
+    const request = ++statusRequest.current
+    if (typeof window.serenity.providerStatus !== 'function') {
+      setProviderBridgeNeedsRestart(true)
+      setCheckingProviders(false)
+      return
+    }
+    setProviderBridgeNeedsRestart(false)
+    setCheckingProviders(true)
+    void window.serenity.providerStatus().then((statuses) => { if (statusRequest.current === request) setProviderStatuses(statuses) })
+      .catch((error) => { if (statusRequest.current === request) onErrorRef.current(String(error)) })
+      .finally(() => { if (statusRequest.current === request) setCheckingProviders(false) })
+  }, [])
+  useEffect(() => {
+    refreshProviderStatus()
+    window.addEventListener('focus', refreshProviderStatus)
+    return () => { ++statusRequest.current; window.removeEventListener('focus', refreshProviderStatus) }
+  }, [refreshProviderStatus])
 
   async function toggleModule(id: ModuleId, enabled: boolean): Promise<void> {
     try { onUpdate(await window.serenity.setModule(id, enabled)); onError('') }
@@ -79,20 +104,40 @@ export function SettingsDialog({ workspace, shortcuts, theme, onThemeChange, onC
     try { onUpdate(await window.serenity.setSemanticProvider(provider)); onError('') }
     catch (error) { onError(String(error)) }
   }
-  async function saveKey(event: FormEvent): Promise<void> {
+  async function saveKey(event: FormEvent, provider: Provider): Promise<void> {
     event.preventDefault()
-    try { setCredentials(await window.serenity.saveCredential(keyProvider, key)); setKey(''); onError('') }
+    const request = ++statusRequest.current
+    setCheckingProviders(false)
+    setSavingProvider(provider)
+    try { const statuses = await window.serenity.saveCredential(provider, keys[provider]); if (statusRequest.current === request) setProviderStatuses(statuses)
+      setKeys((current) => ({ ...current, [provider]: '' })); onError('') }
     catch (error) { onError(String(error)) }
+    finally { setSavingProvider(null) }
   }
-  async function removeKey(): Promise<void> {
-    try { setCredentials(await window.serenity.saveCredential(keyProvider, '')); onError('') }
+  async function removeKey(provider: Provider): Promise<void> {
+    const request = ++statusRequest.current
+    setCheckingProviders(false)
+    setSavingProvider(provider)
+    try { const statuses = await window.serenity.saveCredential(provider, ''); if (statusRequest.current === request) setProviderStatuses(statuses); onError('') }
     catch (error) { onError(String(error)) }
+    finally { setSavingProvider(null) }
+  }
+  function copyLogin(provider: Provider, command: string): void {
+    window.serenity.copyText(command)
+    setCopiedCommand(provider)
+    if (copyTimer.current) clearTimeout(copyTimer.current)
+    copyTimer.current = setTimeout(() => { setCopiedCommand(null); copyTimer.current = null }, 2000)
   }
 
   const wanted = filter.trim().toLocaleLowerCase()
   const shownShortcuts = [...shortcuts].filter((item) => !wanted || `${item.title} ${item.id}`.toLocaleLowerCase().includes(wanted))
     .sort((a, b) => Number(!a.keys) - Number(!b.keys) || a.title.localeCompare(b.title))
   const name = workspace.path.split(/[\\/]/).filter(Boolean).at(-1) ?? workspace.path
+  const backgroundIndex = workspace.semanticIndex
+  const backgroundIndexText = !workspace.modules.semanticIndex ? 'Background index is off.'
+    : !backgroundIndex ? 'Background index is enabled; no index has completed yet.'
+      : backgroundIndex.provider !== workspace.semanticProvider ? `The last index used ${backgroundIndex.provider === 'copilot' ? 'Copilot' : 'Codex'}; an update with the selected provider is needed.`
+        : `Last completed ${new Date(backgroundIndex.generatedAt).toLocaleString()} · ${backgroundIndex.count} records.`
 
   return <Dialog title="Settings" onClose={onClose} className="settings-dialog" hideTitle>
     <div className="settings-layout">
@@ -132,8 +177,7 @@ export function SettingsDialog({ workspace, shortcuts, theme, onThemeChange, onC
             <Toggle label={item.title} checked={workspace.modules[item.id]} disabled={workspace.backgroundProviderNeedsChoice && (item.id === 'semanticIndex' || item.id === 'documentAnalysis')}
               onChange={(enabled) => void toggleModule(item.id, enabled)}/>
           </div>)}
-          <div className="setting-row"><div><strong>Background AI provider</strong><small>{workspace.semanticIndex ? `Last indexed ${workspace.semanticIndex.count} records on ${new Date(workspace.semanticIndex.generatedAt).toLocaleString()}` :
-            'Used for the index and document analysis.'}</small></div>
+          <div className="setting-row"><div><strong>Background AI provider</strong><small>{backgroundIndexText}</small></div>
             <select id="index-provider" aria-label="Background AI provider" value={workspace.semanticProvider} onChange={(event) => void changeBackgroundProvider(event.target.value as Provider)}>
               <option value="copilot">GitHub Copilot</option><option value="codex">OpenAI Codex</option>
             </select></div>
@@ -142,24 +186,36 @@ export function SettingsDialog({ workspace, shortcuts, theme, onThemeChange, onC
         </section>}
         {section === 'ai' && <section aria-labelledby="settings-ai">
           <h2 id="settings-ai">AI providers</h2>
-          <p className="hint">Use an existing provider sign-in where supported, or set an API key or token. Credentials stay outside the workspace, in the system’s secure storage or only for this session.</p>
-          {(['copilot', 'codex'] as const).map((provider) => <div key={provider} className="setting-row">
-            <div><strong>{provider === 'copilot' ? 'GitHub Copilot' : 'OpenAI Codex'}</strong><small>{credentials?.[provider] ? 'Credential available' : 'Use provider sign-in or add a key'}</small></div>
-            <span className={`status-dot ${credentials?.[provider] ? 'on' : ''}`} aria-hidden="true"/>
-          </div>)}
-          <form className="stacked-form" onSubmit={(event) => void saveKey(event)}>
-            <h3>Set a key or token</h3>
-            <label className="field-label" htmlFor="key-provider">Provider</label>
-            <select id="key-provider" value={keyProvider} onChange={(event) => setKeyProvider(event.target.value as Provider)}>
-              <option value="copilot">GitHub token</option><option value="codex">Codex API key</option>
-            </select>
-            <label className="field-label" htmlFor="provider-key">Credential</label>
-            <input id="provider-key" type="password" autoComplete="off" value={key} onChange={(event) => setKey(event.target.value)} placeholder="Paste a key or token"/>
-            <div className="form-buttons">
-              {credentials?.[keyProvider] && <button className="secondary" type="button" onClick={() => void removeKey()}>Remove credential</button>}
-              <button className="primary" type="submit" disabled={!key.trim()}>Save</button>
-            </div>
-          </form>
+          <div className="provider-intro"><p className="hint">Choose a provider in the assistant. Sign in with its command-line app or add a key here.</p>
+            <button type="button" className="text-button" disabled={checkingProviders || providerBridgeNeedsRestart} onClick={refreshProviderStatus}>{checkingProviders ? 'Checking…' : 'Check again'}</button></div>
+          {providerBridgeNeedsRestart && <p className="hint">Restart Serenity to enable sign-in checks after this update.</p>}
+          {(['copilot', 'codex'] as const).map((provider) => {
+            const label = provider === 'copilot' ? 'GitHub Copilot' : 'OpenAI Codex'
+            const login = provider === 'copilot' ? 'copilot login' : 'codex login'
+            const status = providerStatuses?.[provider]
+            const statusLabel = providerBridgeNeedsRestart ? 'Restart to check' : !status ? 'Checking…' : status.state === 'signed-in' ? (status.account ? `Signed in as ${status.account}` : 'Signed in')
+              : status.state === 'key-saved' ? (provider === 'copilot' ? 'Token saved' : 'API key saved')
+                : status.state === 'signed-out' ? 'Not signed in' : 'Could not check'
+            return <details className="provider-card" key={provider}>
+              <summary className="provider-card-heading"><h3>{label}</h3><span className={status?.state === 'signed-in' || status?.state === 'key-saved' ? 'provider-saved' : 'provider-unchecked'}>
+                {statusLabel}</span><ChevronDown size={16} aria-hidden="true"/></summary>
+              <div className="provider-card-content">
+                <p>{status?.state === 'signed-in' ? 'Your existing sign-in is available to Serenity. Choose this provider in a conversation.' :
+                  `Sign in with the ${label} command-line app, then check again. You can also save a key below.`}</p>
+                <div className="provider-login"><code>{login}</code><button type="button" className="secondary" onClick={() => copyLogin(provider, login)} aria-label={copiedCommand === provider ? `${login} command copied` : `Copy ${login} command`}>
+                  {copiedCommand === provider ? <><Check size={14} aria-hidden="true"/> Copied</> : 'Copy command'}</button></div>
+                <form onSubmit={(event) => void saveKey(event, provider)}>
+                  <label className="field-label" htmlFor={`${provider}-key`}>{provider === 'copilot' ? 'Or add a GitHub Copilot token' : 'Or add an OpenAI API key'}</label>
+                  <div className="provider-key-row"><input id={`${provider}-key`} type="password" autoComplete="off" value={keys[provider]}
+                    onChange={(event) => setKeys((current) => ({ ...current, [provider]: event.target.value }))}
+                    placeholder={provider === 'copilot' ? 'Paste a GitHub token' : 'Paste an API key'}/>
+                    <button type="submit" className="primary" disabled={!keys[provider].trim() || savingProvider !== null || providerBridgeNeedsRestart}>Save</button></div>
+                  {status?.state === 'key-saved' && <button type="button" className="text-button provider-remove" disabled={savingProvider !== null || providerBridgeNeedsRestart}
+                    onClick={() => void removeKey(provider)}>Remove saved credential</button>}
+                </form>
+              </div>
+            </details>
+          })}
         </section>}
         {section === 'shortcuts' && <section className="settings-shortcuts" aria-labelledby="shortcuts-heading">
           <h2 id="shortcuts-heading">Shortcuts</h2>

@@ -154,13 +154,13 @@ try {
     row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: rect.left + 10, clientY: rect.top + 5 }));
     await waitFor(() => $('.menu.context')); const labels = $$('.menu.context .menu-label').map((item) => item.textContent);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); $('.menu.context')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await sleep(50); return labels`)
-  assert.deepEqual(contextMenu, ['Open', 'Open in next pane', 'Copy link', 'Move to archive…'], 'Files have a right-click menu')
-  // Archiving moves a file aside rather than deleting it.
-  await run(`window.confirm = () => true; const row = byText('.tree-row', 'old-draft.txt'); const rect = row.getBoundingClientRect();
+  assert.deepEqual(contextMenu, ['Open', 'Open in next pane', 'Copy link', 'Move to system Trash…'], 'Files have a right-click menu')
+  // Check the removal affordance and confirmation without placing smoke-test files in the real system Trash.
+  await run(`window.confirm = () => false; const row = byText('.tree-row', 'old-draft.txt'); const rect = row.getBoundingClientRect();
     row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: rect.left + 10, clientY: rect.top + 5 }));
-    await waitFor(() => $('.menu.context')); click(byText('.menu.context .menu-item', 'Move to archive…'));
-    await waitFor(() => !$$('.tree-row').some((item) => item.textContent === 'old-draft.txt'))`)
-  assert.ok((await stat(join(workspace, 'archive', 'documents', 'old-draft.txt'))).isFile(), 'An archived document moves to archive/documents')
+    await waitFor(() => $('.menu.context')); click(byText('.menu.context .menu-item', 'Move to system Trash…'));
+    await sleep(100)`)
+  assert.ok((await stat(join(workspace, 'documents', 'old-draft.txt'))).isFile(), 'Cancelling leaves the document in place')
 
   // New entity dialog, notes with a wikilink, a sourced fact, and other views of the entity.
   await run(`await showSidebar(); click(byText('.sidebar-actions button', 'New entity')); await waitFor(() => $('#new-entity-title'));
@@ -288,8 +288,8 @@ try {
   assert.equal(editedEvent, true, 'Editing a FullCalendar event saves through Serenity')
   if (!(await run<boolean>(`return $('.app').classList.contains('narrow')`))) {
     await until('the calendar editor to close', () => run<boolean>(`return !$('.calendar-event-dialog')`))
-    // Keep the event in this month so the following Agenda checks also work on its last day.
-    const dropDate = futureDate(new Date().getDate() === 1 ? 1 : -1)
+    // Keep the dragged event upcoming so the following Agenda checks can find it.
+    const dropDate = futureDate(1)
     const eventDrag = await run<{ from: { x: number; y: number }; to: { x: number; y: number } }>(`const item = $$('.fc-event').find((element) => element.textContent.includes('Lunch with Sam at noon'));
       item.scrollIntoView({ block: 'center', inline: 'nearest' }); await sleep(120);
       const event = item.getBoundingClientRect();
@@ -333,14 +333,14 @@ try {
   }
   await shot('serenity-calendar')
   const agenda = await run(`click(byText('.task-view-toggle button', 'Agenda')); await waitFor(() => $('.calendar-agenda'));
+    if ($('.calendar-toolbar')) throw Error('Agenda should not have month navigation');
+    if ($('.calendar-agenda h2')?.textContent !== 'Upcoming') throw Error('Agenda should show all upcoming items');
     return $$('.calendar-agenda button').map((item) => item.textContent).join(' | ')`)
   assert.match(String(agenda), /Lunch with Sam/)
   await run(`click($$('.calendar-agenda button').find((item) => item.textContent.includes('Lunch with Sam at noon'))); await waitFor(() => $('.calendar-event-dialog'));
-    click(byText('.calendar-event-dialog button', 'Move to Trash')); await waitFor(() => $('.calendar-archive summary')?.textContent.includes('Trash (1)'))`)
-  const trashedEvent = (await app.evaluate<WorkspaceSnapshot>('window.serenity.refresh()')).archivedEvents.find((item) => item.title === 'Lunch with Sam at noon')
-  assert.ok(trashedEvent)
-  assert.ok((await stat(join(workspace, 'trash', 'calendar', `${trashedEvent.id}.yaml`))).isFile(), 'Deleted event is in workspace Trash')
-  await run(`$('.calendar-archive').open = true; click(byText('.calendar-archive button', 'Restore')); await waitFor(() => $$('.calendar-agenda button').some((item) => item.textContent.includes('Lunch with Sam at noon')))`)
+    if (!byText('.calendar-event-dialog button', 'Move to system Trash')) throw Error('Missing system Trash action');
+    click(byText('.calendar-event-dialog button', 'Cancel'))`)
+
 
   // Review: an AI-suggested entity can be created after review.
   const reviewed = await run(`click($('.ribbon-btn[aria-label^="Review"]')); await waitFor(() => $$('.review-card').length);
@@ -362,6 +362,17 @@ try {
     return { rows, light, calendarHidden, calendarBack, scrollbarToggle }`)
   assert.ok(settings.rows > 10, 'Settings lists every command with its shortcut')
   assert.deepEqual({ ...settings, rows: true }, { rows: true, light: true, calendarHidden: true, calendarBack: true, scrollbarToggle: true })
+  const providerSetup = await run<string[]>(`click($('.ribbon-btn[aria-label="Settings"]')); await waitFor(() => $('.settings-dialog'));
+    click(byText('.settings-nav button', 'AI providers')); await waitFor(() => $$('.provider-card').length === 2);
+    if ($$('.provider-card[open]').length) throw Error('Provider setup should start collapsed');
+    click($$('.provider-card summary')[1]); await waitFor(() => $$('.provider-card[open]').length === 1);
+    await waitFor(() => $$('.provider-card-heading span').every((item) => item.textContent !== 'Checking…'), 15000);
+    click(byText('.provider-card[open] .provider-login button', 'Copy command'));
+    await waitFor(() => byText('.provider-card[open] .provider-login button', 'Copied'));
+    return $$('.provider-card[open] .provider-login code').map((item) => item.textContent)`)
+  assert.deepEqual(providerSetup, ['codex login'], 'Only the chosen provider exposes its setup controls')
+  await shot('serenity-ai-providers')
+  await run(`click($('.dialog-close'))`)
 
   // Chat mode, and conversation settings for a read scope limited to chosen knowledge.
   if (await run<boolean>(`return $('.app').classList.contains('narrow')`)) await key('j', mod | 8)

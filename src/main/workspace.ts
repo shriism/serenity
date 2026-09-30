@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { copyFile, lstat, mkdir, readFile, readdir, realpath, rename, unlink, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, readFile, readdir, realpath, rename, rmdir, unlink, writeFile } from 'node:fs/promises'
 import type { Stats } from 'node:fs'
 import { basename, extname, isAbsolute, join, relative, sep } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
@@ -200,8 +200,11 @@ export class Workspace {
   /** Files read since the cache was last swept; anything else is gone or unused and can be forgotten. */
   private readSinceSweep = new Set<string>()
   private extractedText = new Map<string, { version: string; text: string }>()
+  private legacyTrashErrors: string[] = []
 
-  constructor(readonly path: string) {}
+  constructor(readonly path: string, private readonly trashItem: (path: string) => Promise<void> = async () => {
+    throw new Error('System Trash is unavailable outside the desktop application')
+  }) {}
 
   private async withIdentityMutation<T>(work: () => Promise<T>): Promise<T> {
     const previous = this.identityMutation
@@ -235,7 +238,7 @@ export class Workspace {
     await mkdir(this.path, { recursive: true })
     if ((await lstat(this.path)).isSymbolicLink()) throw new Error('Choose an actual workspace directory, not a linked directory')
     for (const directory of [...this.directories, this.pagesDirectory, join(this.path, '.serenity'),
-      ...['entities', 'merges/history', 'calendar', 'tasks'].map((name) => join(this.path, 'archive', name)), join(this.path, 'trash', 'calendar')]) {
+      ...['entities', 'merges/history'].map((name) => join(this.path, 'archive', name))]) {
       let current = this.path
       for (const part of relative(this.path, directory).split(sep)) {
         current = join(current, part)
@@ -252,10 +255,36 @@ export class Workspace {
     catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
   }
 
+  /** Moves removals made by older versions out of the workspace; merge history is deliberately excluded. */
+  async migrateLegacyRemovals(): Promise<void> {
+    const folders = ['trash/calendar', 'archive/calendar', 'archive/tasks', 'archive/pages', 'archive/documents',
+      'archive/removed/entities', 'archive/removed/claims']
+    this.legacyTrashErrors = []
+    for (const folder of folders) {
+      const directory = join(this.path, folder)
+      let names: string[]
+      try {
+        const info = await lstat(directory)
+        if (!info.isDirectory() || info.isSymbolicLink()) throw new Error('Legacy removal folder is not a regular directory')
+        names = await readdir(directory)
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+        this.legacyTrashErrors.push(`${folder}: ${String(error)}`)
+        continue
+      }
+      for (const name of names) {
+        const path = join(directory, name)
+        try { await this.trashItem(await this.ownedFile(path)); this.markDirty() }
+        catch (error) { this.legacyTrashErrors.push(`${folder}/${name}: ${String(error)}`) }
+      }
+      await rmdir(directory).catch(() => undefined)
+    }
+    for (const folder of ['trash', 'archive/removed']) await rmdir(join(this.path, folder)).catch(() => undefined)
+  }
+
   private async verifyDirectories(): Promise<void> {
     for (const directory of [...this.directories, this.pagesDirectory, join(this.path, '.serenity'), join(this.path, 'archive'),
-      ...['entities', 'merges', 'merges/history', 'calendar', 'tasks'].map((name) => join(this.path, 'archive', name)),
-      join(this.path, 'trash'), join(this.path, 'trash', 'calendar')]) {
+      ...['entities', 'merges', 'merges/history'].map((name) => join(this.path, 'archive', name))]) {
       const info = await lstat(directory)
       if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`Workspace directory must be an actual directory: ${directory}`)
     }
@@ -329,7 +358,7 @@ export class Workspace {
     const mergeHistory: MergeRecord[] = []
     const identityDecisions: IdentityDecision[] = []
     const archivedEntities: Entity[] = []
-    const errors: string[] = []
+    const errors: string[] = [...this.legacyTrashErrors]
     for (const name of (await readdir(this.pagesDirectory)).filter((item) => item.endsWith('.md')).sort()) {
       try {
         const path = `pages/${name}`
@@ -387,7 +416,7 @@ export class Workspace {
           !record(entry) || typeof entry.key !== 'string' || typeof entry.fingerprint !== 'string' ||
           !/^[a-f0-9]{64}$/.test(entry.fingerprint) || typeof entry.summary !== 'string' ||
           !Array.isArray(entry.terms) || entry.terms.some((term: unknown) => typeof term !== 'string'))) throw new Error('Invalid semantic index')
-      semanticIndex = { generatedAt: raw.generatedAt, count: raw.entries.length }
+      semanticIndex = { generatedAt: raw.generatedAt, count: raw.entries.length, provider: raw.provider as Provider }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') errors.push(`.serenity/semantic-index.yaml: ${String(error)}`)
     }
@@ -519,7 +548,10 @@ export class Workspace {
       [join(this.path, 'trash', 'calendar'), parseEvent, true],
       [join(this.path, 'archive', 'calendar'), parseEvent, true], [join(this.path, 'archive', 'tasks'), parseTask, true]
     ] as const) {
-      for (const name of (await readdir(directory)).filter((entry) => entry.endsWith('.yaml')).sort()) {
+      for (const name of (await readdir(directory).catch((error: NodeJS.ErrnoException) => {
+        if (error.code === 'ENOENT' && archived) return [] as string[]
+        throw error
+      })).filter((entry) => entry.endsWith('.yaml')).sort()) {
         try {
           const { text, value } = await this.readOwnedParsed<unknown>(join(directory, name), 'yaml', parseYaml)
           const parsed = parse(value)
@@ -1291,16 +1323,13 @@ export class Workspace {
     })
   }
 
-  private async archiveModuleRecord(directory: string, category: 'calendar' | 'tasks', recordId: string, revision: string): Promise<WorkspaceSnapshot> {
+  private async archiveModuleRecord(directory: string, recordId: string, revision: string): Promise<WorkspaceSnapshot> {
     const file = `${id(recordId)}.yaml`
     const source = join(directory, file)
-    const destination = join(this.path, 'archive', category, file)
     return this.withFileMutation(source, async () => {
       const current = await this.readOwnedText(source)
       if (checksum(current) !== revision) throw new Error('This item changed on disk. Refresh before archiving it.')
-      try { await lstat(destination); throw new Error('This item is already archived.') }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-      await rename(source, destination)
+      await this.trashItem(source)
       this.markDirty()
       return this.snapshot()
     })
@@ -1325,12 +1354,9 @@ export class Workspace {
   async archiveEvent(recordId: string, revision: string): Promise<WorkspaceSnapshot> {
     const file = `${id(recordId)}.yaml`
     const source = join(this.directories[5], file)
-    const destination = join(this.path, 'trash', 'calendar', file)
     return this.withFileMutation(source, async () => {
       if (checksum(await this.readOwnedText(source)) !== revision) throw new Error('This event changed on disk. Refresh before moving it to Trash.')
-      try { await lstat(destination); throw new Error('This event is already in Trash.') }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-      await rename(source, destination)
+      await this.trashItem(source)
       this.markDirty()
       return this.snapshot()
     })
@@ -1355,20 +1381,16 @@ export class Workspace {
     })
   }
 
-  /**
-   * Moves a page out of `pages/` into `archive/pages/`, where it stays readable and can be moved back by hand. The Home
-   * page cannot be archived, and a page changed on disk since it was read is left alone.
-   */
+  /** Moves a page to the system Trash after checking its revision. The Home page cannot be removed. */
   async archivePage(pageId: string, revision: string): Promise<WorkspaceSnapshot> {
     const snapshot = await this.snapshot()
     const page = snapshot.pages.find((item) => item.id === pageId)
     if (!page) throw new Error('Page not found in this workspace')
     if (page.id === snapshot.workbench.homePage) throw new Error('The Home page cannot be archived. Choose another Home page in .serenity/workbench.yaml first.')
     const source = await this.ownedFile(join(this.pagesDirectory, basename(page.path)))
-    const archive = await this.archiveDirectory('pages')
     return this.withFileMutation(source, async () => {
       if (checksum(await this.readOwnedText(source)) !== revision) throw new Error('This page changed on disk. Refresh before archiving it.')
-      await rename(source, await freeName(archive, basename(page.path)))
+      await this.trashItem(source)
       this.markDirty()
       return this.snapshot()
     })
@@ -1429,24 +1451,7 @@ export class Workspace {
     })
   }
 
-  /** An archive folder, created on first use and checked to be a real directory inside the workspace. */
-  private async archiveDirectory(...parts: string[]): Promise<string> {
-    let current = join(this.path, 'archive')
-    for (const part of parts) {
-      current = join(current, part)
-      try { await mkdir(current) }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error }
-      const info = await lstat(current)
-      if (!info.isDirectory() || info.isSymbolicLink()) throw new Error(`Workspace directory must be an actual directory: ${current}`)
-    }
-    return current
-  }
-
-  /**
-   * Moves an entity, with the facts recorded about it, to `archive/removed/`. Nothing is deleted: the files are
-   * unchanged there, and its name still resolves where other records mention it. An entity that others were merged
-   * into keeps them pointing somewhere, so those merges must be undone first.
-   */
+  /** Moves an entity and its own claims to the system Trash. Merge history stays in the workspace. */
   async archiveEntity(entityId: string, revision: string): Promise<WorkspaceSnapshot> {
     return this.withIdentityMutation(async () => {
       const subject = id(entityId)
@@ -1457,38 +1462,32 @@ export class Workspace {
         if (!entity) throw new Error('Entity not found in this workspace')
         if (entity.revision !== revision) throw new Error('This entity changed on disk. Refresh before archiving it.')
         if (snapshot.merges.some((merge) => merge.target === subject)) throw new Error('Other entities were merged into this one. Restore them before archiving it.')
-        const entities = await this.archiveDirectory('removed', 'entities')
-        const claims = await this.archiveDirectory('removed', 'claims')
-        const destination = join(entities, `${subject}.md`)
-        try { await lstat(destination); throw new Error('An archived entity with this ID already exists.') }
-        catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error }
-        await rename(await this.ownedFile(source), destination)
         for (const claim of snapshot.claims.filter((item) => item.subject === subject && !item.mergedFrom)) {
           const file = join(this.directories[1], `${id(claim.id)}.yaml`)
-          await rename(await this.ownedFile(file), await freeName(claims, `${id(claim.id)}.yaml`)).catch((error: NodeJS.ErrnoException) => {
+          await this.trashItem(await this.ownedFile(file)).catch((error: NodeJS.ErrnoException) => {
             if (error.code !== 'ENOENT') throw error
           })
         }
+        await this.trashItem(await this.ownedFile(source))
         this.markDirty()
         return this.snapshot()
       })
     })
   }
 
-  /** Moves an imported document to `archive/documents/`; facts citing it keep their source text. */
+  /** Moves a document to the system Trash; facts citing it keep their source text. */
   async archiveDocument(name: string): Promise<WorkspaceSnapshot> {
     if (typeof name !== 'string' || !name || name !== basename(name) || name.startsWith('.')) throw new Error('Invalid document name')
     const source = await this.ownedFile(join(this.directories[2], name))
-    const archive = await this.archiveDirectory('documents')
     return this.withFileMutation(source, async () => {
-      await rename(source, await freeName(archive, name))
+      await this.trashItem(source)
       this.markDirty()
       return this.snapshot()
     })
   }
 
   async archiveTask(id: string, revision: string): Promise<WorkspaceSnapshot> {
-    return this.archiveModuleRecord(this.directories[6], 'tasks', id, revision)
+    return this.archiveModuleRecord(this.directories[6], id, revision)
   }
 
   async restoreTask(id: string): Promise<WorkspaceSnapshot> {

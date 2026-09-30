@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import YAML from 'yaml'
 import { Workspace } from '../src/main/workspace'
+import { testTrash } from './trash-helper'
 import { buildSemanticIndex, rankSemanticIndex, readSemanticIndex } from '../src/main/semantic-index'
 import { analyzeChangedDocument } from '../src/main/document-analysis'
 import { contextRecords, prepareContext } from '../src/main/context'
@@ -396,27 +397,26 @@ test('starred chats persist and deleting one removes its proposals, accepted cla
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
-test('calendar events move to Trash and tasks archive without losing their files', async () => {
+test('calendar events and tasks move to system Trash after revision checks', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
   try {
-    const workspace = new Workspace(directory)
+    const workspace = new Workspace(directory, testTrash(directory))
     await workspace.initialize()
     const event = (await workspace.saveEvent({ id: '', title: 'Meeting', start: '2026-10-04', notes: 'Original note', relatedEntityIds: [] })).events[0]
     const task = (await workspace.saveTask({ id: '', title: 'Prepare', completed: false, notes: 'Original task', relatedEntityIds: [] })).tasks[0]
-    const archived = await workspace.archiveEvent(event.id, event.revision!)
-    assert.equal(archived.events.length, 0)
-    assert.equal(archived.archivedEvents[0].title, 'Meeting')
-    assert.match(await readFile(join(directory, 'trash', 'calendar', `${event.id}.yaml`), 'utf8'), /Original note/)
-    await workspace.setModule('calendar', false)
-    await assert.rejects(workspace.restoreEvent(event.id), /disabled/)
-    await workspace.setModule('calendar', true)
-    assert.equal((await workspace.restoreEvent(event.id)).events.length, 1)
+    await assert.rejects(workspace.archiveEvent(event.id, 'stale'), /changed on disk/)
+    const afterEvent = await workspace.archiveEvent(event.id, event.revision!)
+    assert.equal(afterEvent.events.length, 0)
+    assert.equal(afterEvent.archivedEvents.length, 0)
+    assert.match(await readFile(join(directory, '.test-system-trash', `${event.id}.yaml`), 'utf8'), /Original note/)
     const taskPath = join(directory, 'tasks', `${task.id}.yaml`)
     await writeFile(taskPath, (await readFile(taskPath, 'utf8')).replace('Original task', 'Externally edited task'))
     await assert.rejects(workspace.archiveTask(task.id, task.revision!), /changed on disk/)
     const edited = (await workspace.snapshot()).tasks[0]
-    assert.equal((await workspace.archiveTask(edited.id, edited.revision!)).archivedTasks[0].notes, 'Externally edited task')
-    assert.equal((await workspace.restoreTask(edited.id)).tasks.length, 1)
+    const afterTask = await workspace.archiveTask(edited.id, edited.revision!)
+    assert.equal(afterTask.tasks.length, 0)
+    assert.equal(afterTask.archivedTasks.length, 0)
+    assert.match(await readFile(join(directory, '.test-system-trash', `${edited.id}.yaml`), 'utf8'), /Externally edited task/)
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
@@ -424,7 +424,7 @@ test('calendar events move to Trash and tasks archive without losing their files
 test('archiving and editing a task cannot create both active and archived copies', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-task-archive-race-'))
   try {
-    const workspace = new Workspace(directory)
+    const workspace = new Workspace(directory, testTrash(directory))
     await workspace.initialize()
     const task = (await workspace.saveTask({ id: '', title: 'Prepare', completed: false, notes: 'Original', relatedEntityIds: [] })).tasks[0]
     const [saved, archived] = await Promise.allSettled([
@@ -435,7 +435,7 @@ test('archiving and editing a task cannot create both active and archived copies
     const snapshot = await workspace.snapshot()
     if (archived.status === 'fulfilled') {
       assert.equal(snapshot.tasks.some((item) => item.id === task.id), false)
-      assert.equal(snapshot.archivedTasks.find((item) => item.id === task.id)?.notes, 'Original')
+      assert.match(await readFile(join(directory, '.test-system-trash', `${task.id}.yaml`), 'utf8'), /Original/)
       await assert.rejects(workspace.saveTask({ id: task.id, title: task.title, completed: false, notes: 'Unexpected', relatedEntityIds: [] }),
         /Create a new item without an ID/)
     } else {
@@ -503,6 +503,7 @@ test('opt-in semantic indexing sends changed records only and retains a rebuilda
     await buildSemanticIndex(workspace, ask)
     assert.equal(sent, 3)
     assert.equal((await workspace.snapshot()).semanticIndex?.count, 2)
+    assert.equal((await workspace.snapshot()).semanticIndex?.provider, 'copilot')
     const expanded = (await workspace.snapshot()).entities[0]
     await workspace.saveEntity({ ...expanded, body: 'Robotics '.repeat(11000) })
     await buildSemanticIndex(workspace, ask)

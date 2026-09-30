@@ -1,5 +1,5 @@
 import { memo, useMemo, useState, type MouseEvent } from 'react'
-import { Archive, ChevronRight, Columns2, Copy, ExternalLink, FilePlus2, FileText, FileUp, Search, UserPlus, X } from 'lucide-react'
+import { ChevronRight, Columns2, Copy, ExternalLink, FilePlus2, FileText, FileUp, Search, Trash2, UserPlus, X } from 'lucide-react'
 import { useContextMenu } from './menu'
 import type { WorkspaceSnapshot } from '../../shared/types'
 import { parseResourceUri, resourceUri } from '../../shared/resources'
@@ -29,7 +29,7 @@ export const Explorer = memo(function Explorer({ workspace, activeUri, onOpen, o
   onNewPage(): void
   onNewEntity(): void
   onImport(): void
-  /** Moves a page, entity, or document to the workspace archive, after asking. */
+  /** Moves a page, entity, or document to the system Trash, after asking. */
   onArchive(uri: string): void
 }) {
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => stored('serenity.explorer-collapsed'))
@@ -71,7 +71,7 @@ export const Explorer = memo(function Explorer({ workspace, activeUri, onOpen, o
   const archivable = (uri: string) => {
     const ref = parseResourceUri(uri)
     return ref && !(ref.kind === 'page' && ref.id === workspace.workbench.homePage)
-      ? [{ id: 'archive', label: 'Move to archive…', icon: <Archive size={14}/>, danger: true, separated: true, run: () => onArchive(uri) }] : []
+      ? [{ id: 'archive', label: 'Move to system Trash…', icon: <Trash2 size={14}/>, danger: true, separated: true, run: () => onArchive(uri) }] : []
   }
   const entityFolders = shown.filter((folder) => folder.id.startsWith('type:'))
   const renderFolder = (folder: Folder, depth: number) => {

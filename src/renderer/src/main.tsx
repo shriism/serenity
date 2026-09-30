@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
-import { createRoot } from 'react-dom/client'
-import { AlertTriangle, Archive, ChevronDown, Columns2, FolderOpen, History, Maximize2, Minimize2, MessageSquarePlus, MoreHorizontal, MoveRight, PanelLeft, PanelRight, RotateCw, Settings2, Trash2, X } from 'lucide-react'
+import { createRoot, type Root } from 'react-dom/client'
+import { AlertTriangle, ChevronDown, Columns2, FolderOpen, History, Maximize2, Minimize2, MessageSquarePlus, MoreHorizontal, MoveRight, PanelLeft, PanelRight, RotateCw, Settings2, Trash2, X } from 'lucide-react'
 import type { Conversation, SearchResult, WorkspaceSnapshot } from '../../shared/types'
 import { useAssistant } from './use-assistant'
 import { ErrorBoundary } from './error-boundary'
@@ -405,22 +405,22 @@ function App() {
     return openTab({ kind: 'document', id: name }, groupId)
   }
 
-  /** Moves a page, entity, or document to the workspace archive after asking; nothing is deleted. */
+  /** Moves a page, entity, or document to the system Trash after asking. */
   async function archiveResource(uri: string): Promise<void> {
     const ref = parseResourceUri(uri)
     if (!workspace || !ref) return
     try {
       if (ref.kind === 'page') {
         const page = workspace.pages.find((item) => item.id === ref.id)
-        if (!page || !window.confirm(`Move “${page.title}” to the archive?\n\nIts file moves to archive/pages, where you can still open it or move it back.`)) return
+        if (!page || !window.confirm(`Move “${page.title}” to your system Trash?\n\nRestore its file from your computer's Trash if needed.`)) return
         setWorkspace(await window.serenity.archivePage(page.id, page.revision))
       } else if (ref.kind === 'entity') {
         const entity = workspace.entities.find((item) => item.id === ref.id)
         const facts = workspace.claims.filter((claim) => claim.subject === ref.id).length
-        if (!entity?.revision || !window.confirm(`Move “${entity.title}” to the archive?\n\nIts file${facts ? ` and ${facts} ${facts === 1 ? 'fact' : 'facts'}` : ''} move to archive/removed. Other notes that mention it keep its name.`)) return
+        if (!entity?.revision || !window.confirm(`Move “${entity.title}” to your system Trash?\n\nIts file${facts ? ` and ${facts} ${facts === 1 ? 'fact' : 'facts'}` : ''} will leave the workspace. Restore them from your computer's Trash if needed.`)) return
         setWorkspace(await window.serenity.archiveEntity(entity.id, entity.revision))
       } else if (ref.kind === 'document') {
-        if (!window.confirm(`Move “${ref.id}” to the archive?\n\nThe file moves to archive/documents. Facts that cite it keep their source.`)) return
+        if (!window.confirm(`Move “${ref.id}” to your system Trash?\n\nFacts that cite it keep their source text.`)) return
         setWorkspace(await window.serenity.archiveDocument(ref.id))
       }
     } catch (cause) { setError(String(cause)) }
@@ -677,7 +677,7 @@ function App() {
         onSplit={(direction) => splitPane(direction, group.id)} onClosePane={() => closeEditorGroup(group.id)}
         menu={[...(tab && multipleGroups ? [{ id: 'move', label: 'Move tab to next pane', icon: <MoveRight size={14}/>, run: () => moveTabToOtherGroup(group.id) }] : []),
           ...(tab ? [{ id: 'close-tab', label: 'Close tab', icon: <X size={14}/>, run: () => closeTab(tabKey(tab), group.id) }] : []),
-          ...(tab && isResourceTab(tab) && !(tab.kind === 'page' && tab.id === snapshot.workbench.homePage) ? [{ id: 'archive', label: 'Move to archive…', icon: <Archive size={14}/>, danger: true, separated: true, run: () => void archiveResource(resourceUri(tab)) }] : [])]}
+          ...(tab && isResourceTab(tab) && !(tab.kind === 'page' && tab.id === snapshot.workbench.homePage) ? [{ id: 'archive', label: 'Move to system Trash…', icon: <Trash2 size={14}/>, danger: true, separated: true, run: () => void archiveResource(resourceUri(tab)) }] : [])]}
         tabMenu={(key) => {
           const index = group.tabs.findIndex((item) => tabKey(item) === key)
           const closeAll = (keys: string[]) => setWorkbench((current) => closeEmptyGroups(updateGroup(current, group.id, (item) => keys.reduce(removeTab, item))))
@@ -689,7 +689,7 @@ function App() {
               run: () => dropTab(group.id, key, group.id, 'right') },
             ...(multipleGroups ? [{ id: 'move', label: 'Move to next pane', icon: <MoveRight size={14}/>, run: () => { const target = nextGroupId(workbench, group.id); if (target) setWorkbench((current) => moveTab(current, group.id, key, target)) } }] : []),
             ...((() => { const item = group.tabs[index]; return item && isResourceTab(item) && !(item.kind === 'page' && item.id === snapshot.workbench.homePage)
-              ? [{ id: 'archive', label: 'Move to archive…', icon: <Archive size={14}/>, danger: true, separated: true, run: () => void archiveResource(resourceUri(item)) }] : [] })())
+              ? [{ id: 'archive', label: 'Move to system Trash…', icon: <Trash2 size={14}/>, danger: true, separated: true, run: () => void archiveResource(resourceUri(item)) }] : [] })())
           ]
         }}/>
       {tab && isResourceTab(tab) && <div className="view-bar">
@@ -837,4 +837,7 @@ function App() {
 }
 
 
-createRoot(document.getElementById('root')!).render(<ErrorBoundary label="Serenity" fullScreen><App /></ErrorBoundary>)
+// Keep one React root when Vite replaces this module during development.
+const rootHost = window as Window & { __serenityReactRoot?: Root }
+const reactRoot = rootHost.__serenityReactRoot ??= createRoot(document.getElementById('root')!)
+reactRoot.render(<ErrorBoundary label="Serenity" fullScreen><App /></ErrorBoundary>)

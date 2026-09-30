@@ -65,9 +65,14 @@ export interface WorkspaceSnapshot {
   archivedEntities: Entity[]
   semanticProvider: Provider
   backgroundProviderNeedsChoice: boolean
-  semanticIndex: { generatedAt: string; count: number } | null
+  semanticIndex: { generatedAt: string; count: number; provider: Provider } | null
   providerActivity: ProviderActivity[]
   errors: string[]
+}
+
+export interface ProviderConnectionStatus {
+  state: 'signed-in' | 'key-saved' | 'signed-out' | 'unavailable'
+  account?: string
 }
 
 export interface WorkbenchConfig {
@@ -299,8 +304,8 @@ export interface SerenityAPI {
   attachEntityProposal(proposalId: string, entityId: string): Promise<WorkspaceSnapshot>
   deleteConversation(id: string): Promise<WorkspaceSnapshot>
   starConversation(id: string, starred: boolean): Promise<WorkspaceSnapshot>
-  credentialStatus(): Promise<Record<Provider, boolean>>
-  saveCredential(provider: Provider, key: string): Promise<Record<Provider, boolean>>
+  providerStatus(): Promise<Record<Provider, ProviderConnectionStatus>>
+  saveCredential(provider: Provider, key: string): Promise<Record<Provider, ProviderConnectionStatus>>
   setModule(id: ModuleId, enabled: boolean): Promise<WorkspaceSnapshot>
   saveEvent(event: CalendarEvent): Promise<WorkspaceSnapshot>
   saveTask(task: TaskItem): Promise<WorkspaceSnapshot>

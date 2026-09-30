@@ -7,6 +7,7 @@ import { Workspace } from '../src/main/workspace'
 import YAML from 'yaml'
 import { evaluateWorkspaceQuery } from '../src/shared/query'
 import { parseResourceUri, resourceUri, workspaceResources } from '../src/shared/resources'
+import { testTrash } from './trash-helper'
 
 test('authored pages remain inside the workspace and reject stale or unrelated edits', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-pages-'))
@@ -216,10 +217,10 @@ test('page queries can show a count or a table and report how many matched in to
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 
-test('pages move to the archive intact, never the Home page, and never over a newer edit', async () => {
+test('pages move to system Trash intact, never the Home page, and never over a newer edit', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'serenity-archive-page-'))
   try {
-    const workspace = new Workspace(directory)
+    const workspace = new Workspace(directory, testTrash(directory))
     await workspace.initialize()
     const created = (await workspace.createPage()).pages.find((page) => page.id !== 'home')!
     const home = (await workspace.snapshot()).pages.find((page) => page.id === 'home')!
@@ -227,14 +228,14 @@ test('pages move to the archive intact, never the Home page, and never over a ne
     await assert.rejects(workspace.archivePage(created.id, 'stale'), /changed on disk/)
     const after = await workspace.archivePage(created.id, created.revision)
     assert.equal(after.pages.some((page) => page.id === created.id), false)
-    const archived = await readdir(join(directory, 'archive', 'pages'))
+    const archived = await readdir(join(directory, '.test-system-trash'))
     assert.equal(archived.length, 1)
-    assert.equal(await readFile(join(directory, 'archive', 'pages', archived[0]), 'utf8'), created.text, 'the archived file is unchanged')
+    assert.equal(await readFile(join(directory, '.test-system-trash', archived[0]), 'utf8'), created.text, 'the trashed file is unchanged')
     await writeFile(join(directory, 'pages', archived[0]), created.text)
     workspace.markDirty()
     const again = (await workspace.snapshot()).pages.find((page) => page.id === created.id)!
     await workspace.archivePage(again.id, again.revision)
-    assert.equal((await readdir(join(directory, 'archive', 'pages'))).length, 2, 'a second archive of the same name is kept beside the first')
+    assert.equal((await readdir(join(directory, '.test-system-trash'))).length, 2, 'a second removal of the same name is kept beside the first')
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

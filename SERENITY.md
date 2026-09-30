@@ -64,7 +64,7 @@ Markdown and YAML make that separation practical. You can read the material with
 
 There are costs to this choice. Structured files have a schema to preserve, other applications may not interpret their relationships, and backups are the user's responsibility. Readability helps recovery; it does not make every operation reversible.
 
-History is retained for current-answer decisions, retractions, merges, and identity judgments. Ordinary page edits replace text rather than keeping every version. Archiving keeps files, with restoration controls for tasks and calendar events. **Deleting a chat can permanently remove its attributable knowledge as well as its transcript**, subject to dependency checks. These different meanings of removal need a more consistent product treatment.
+History is retained for current-answer decisions, retractions, merges, and identity judgments. Ordinary page edits replace text rather than keeping every version. User-removed records move to the system Trash; restoration uses your computer’s file manager. Merge history stays in the workspace because it is needed to undo a merge. **Deleting a chat can permanently remove its attributable knowledge as well as its transcript**, subject to dependency checks. These different meanings of removal need a more consistent product treatment.
 
 ## Open questions and direction
 

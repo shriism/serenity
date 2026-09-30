@@ -9,7 +9,7 @@ import type { EventResizeDoneArg } from '@fullcalendar/interaction'
 import { ResourcePicker } from './resource-picker'
 import type { CalendarEvent, TaskItem, WorkspaceSnapshot } from '../../shared/types'
 import { taskBoard, type TaskBucket } from '../../shared/task-board'
-import { calendarAgenda } from '../../shared/calendar-agenda'
+import { calendarUpcoming, calendarUpcomingAll } from '../../shared/calendar-agenda'
 import { resourceUri } from '../../shared/resources'
 import { Dialog } from './dialog'
 
@@ -55,7 +55,6 @@ const InteractiveCalendar = memo(function InteractiveCalendar({ calendarRef, int
 
 export function CalendarModule({ workspace, onUpdate, onError, focusEventId, focusVersion,
   calendarPresentation = 'month', onCalendarPresentationChange, onOpenResource }: Props) {
-  const [month, setMonth] = useState(today().slice(0, 7))
   const [selectedDay, setSelectedDay] = useState(today())
   const [draft, setDraft] = useState<CalendarEvent>({ id: '', title: '', start: today(), notes: '', relatedEntityIds: [] })
   const [time, setTime] = useState('')
@@ -74,7 +73,6 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
   useEffect(() => {
     const event = workspace.events.find((item) => item.id === focusEventId)
     if (!event) return
-    setMonth(event.start.slice(0, 7))
     setSelectedDay(event.start.slice(0, 10))
     setDraft(event)
     setTime(event.start.slice(11, 16))
@@ -82,8 +80,8 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
     setEditorOpen(true)
     calendar.current?.getApi().gotoDate(event.start.slice(0, 10))
   }, [focusEventId, focusVersion])
-  const [year, number] = month.split('-').map(Number)
-  const agenda = calendarAgenda(workspace, month)
+  const agenda = calendarUpcomingAll(workspace, today())
+  const upcoming = calendarUpcoming(workspace, today()).slice(0, 12)
   const calendarEvents = useMemo<EventInput[]>(() => [
     ...workspace.events.map((event) => ({ id: `event:${event.id}`, title: event.title, start: event.start, end: event.end,
       allDay: !event.start.includes('T'), classNames: ['serenity-calendar-event'] })),
@@ -105,13 +103,6 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
       onUpdate(await window.serenity.saveEvent({ ...original, start, end }))
       setSelectedDay(start.slice(0, 10))
     } catch (cause) { info.revert(); onError(String(cause)) }
-  }
-
-  function changeMonth(offset: number): void {
-    const next = new Date(year, number - 1 + offset, 1)
-    const value = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
-    setMonth(value)
-    setSelectedDay(`${value}-01`)
   }
 
   function clearDraft(day: string): void {
@@ -136,20 +127,12 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
   }
 
   async function archive(): Promise<void> {
-    if (!draft.id || !draft.revision || !window.confirm(`Move “${draft.title}” to Trash? You can restore it later.`)) return
+    if (!draft.id || !draft.revision || !window.confirm(`Move “${draft.title}” to your system Trash? Restore it from your computer's Trash if needed.`)) return
     try { onUpdate(await window.serenity.archiveEvent(draft.id, draft.revision)); clearDraft(selectedDay) }
     catch (cause) { onError(String(cause)) }
   }
 
-  async function restore(event: CalendarEvent): Promise<void> {
-    try {
-      onUpdate(await window.serenity.restoreEvent(event.id))
-      setSelectedDay(event.start.slice(0, 10))
-      setMonth(event.start.slice(0, 7))
-    } catch (cause) { onError(String(cause)) }
-  }
-
-  return <section className="page wide module-page">
+  return <section className="page wide module-page calendar-page">
     <header className="view-header"><div><h1>Calendar</h1></div><div className="view-actions">
     <div className="segmented task-view-toggle" role="group" aria-label="Calendar view">
       {(['day', 'week', 'month', 'agenda'] as const).map((view) => <button key={view} type="button" aria-pressed={calendarPresentation === view}
@@ -160,13 +143,9 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
     }}><Plus size={18}/></button></div></header>
     <div className="calendar-layout">
       <div>
-        {calendarPresentation === 'agenda' && <div className="calendar-toolbar">
-          <button className="icon-btn" aria-label="Previous month" onClick={() => changeMonth(-1)}>‹</button>
-          <h2>{new Date(year, number - 1).toLocaleString(undefined, { month: 'long', year: 'numeric' })}</h2>
-          <button className="icon-btn" aria-label="Next month" onClick={() => changeMonth(1)}>›</button>
-        </div>}
         {calendarPresentation === 'agenda' ? <div className="calendar-agenda">
-          {agenda.length === 0 && <p className="hint">No events or open tasks due this month.</p>}
+          <h2>Upcoming</h2>
+          {agenda.length === 0 && <p className="hint">No upcoming events or open tasks with due dates.</p>}
           <ol>{agenda.map((item, index) => <li key={`${item.kind}:${item.id}`}>
             {(index === 0 || agenda[index - 1].day !== item.day) && <h3>{new Date(`${item.day}T12:00:00`).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</h3>}
             <button type="button" onClick={(event) => {
@@ -183,9 +162,9 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
             initialView={{ month: 'dayGridMonth', week: 'timeGridWeek', day: 'timeGridDay' }[calendarPresentation]}
             initialDate={selectedDay} headerToolbar={{ left: 'title', center: '', right: 'today prev,next' }}
             buttonIcons={false} buttonText={{ prev: '‹', next: '›', today: 'Today' }}
-            height="auto" dayMaxEvents={3} nowIndicator editable events={calendarEvents}
+            height="auto" fixedWeekCount={false} dayMaxEvents={3} nowIndicator editable events={calendarEvents}
+            eventDidMount={(info) => { info.el.title = info.event.title }}
             dayCellClassNames={(info) => `${info.date.getFullYear()}-${String(info.date.getMonth() + 1).padStart(2, '0')}-${String(info.date.getDate()).padStart(2, '0')}` === selectedDay ? ['selected-day'] : []}
-            datesSet={(info) => setMonth(`${info.view.currentStart.getFullYear()}-${String(info.view.currentStart.getMonth() + 1).padStart(2, '0')}`)}
             dateClick={(info) => { const day = info.dateStr.slice(0, 10); setSelectedDay(day); clearDraft(day); if (!info.allDay) setTime(info.dateStr.slice(11, 16)) }}
             eventClick={(info) => {
               if (info.event.id.startsWith('task:')) { onOpenResource?.(resourceUri({ kind: 'task', id: info.event.id.slice(5) }), info.jsEvent.metaKey || info.jsEvent.ctrlKey); return }
@@ -198,9 +177,19 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
         </div>}
       </div>
     </div>
-    {workspace.archivedEvents.length > 0 && <details className="archived-items calendar-archive"><summary>Trash ({workspace.archivedEvents.length})</summary>
-      {workspace.archivedEvents.map((item) => <div key={item.id}><span>{item.title}</span><button onClick={() => void restore(item)}>Restore</button></div>)}
-    </details>}
+    {calendarPresentation === 'month' && <section className="calendar-upcoming" aria-labelledby="calendar-upcoming-heading">
+      <div className="calendar-upcoming-heading"><h2 id="calendar-upcoming-heading">Coming up</h2><span>Next 30 days</span></div>
+      {upcoming.length === 0 ? <p className="hint">Nothing scheduled in the next 30 days.</p> : <ol>
+        {upcoming.map((item) => <li key={`${item.kind}:${item.id}`}><button type="button" onClick={(event) => {
+          if (item.kind === 'task') onOpenResource?.(resourceUri({ kind: 'task', id: item.id }), event.metaKey || event.ctrlKey)
+          else {
+            const selected = workspace.events.find((entry) => entry.id === item.id)
+            if (selected) { setSelectedDay(item.day); setDraft(selected); setTime(selected.start.slice(11, 16)); setEndTime(selected.end?.slice(11, 16) ?? ''); setEditorOpen(true) }
+          }
+        }}><time dateTime={item.day}>{new Date(`${item.day}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</time>
+          <span><strong>{item.title}</strong><small>{item.kind === 'task' ? 'Task due' : item.time || 'All day'}</small></span></button></li>)}
+      </ol>}
+    </section>}
     {editorOpen && <Dialog title={draft.id ? 'Edit event' : 'New event'} className="calendar-event-dialog" onClose={() => clearDraft(selectedDay)}>
       <form className="module-form" onSubmit={(event) => void save(event)}>
         <label>Title<input required value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })}/></label>
@@ -212,7 +201,7 @@ export function CalendarModule({ workspace, onUpdate, onError, focusEventId, foc
         <EntityLinks workspace={workspace} selected={draft.relatedEntityIds} onChange={(relatedEntityIds) => setDraft({ ...draft, relatedEntityIds })}/>
         <label>Notes<textarea value={draft.notes} onChange={(event) => setDraft({ ...draft, notes: event.target.value })}/></label>
         <div className="form-buttons">
-          {draft.id && <button className="secondary" type="button" onClick={() => void archive()}>Move to Trash</button>}
+          {draft.id && <button className="secondary" type="button" onClick={() => void archive()}>Move to system Trash</button>}
           <button className="secondary" type="button" onClick={() => clearDraft(selectedDay)}>Cancel</button>
           <button className="primary" type="submit" disabled={busy}>Save</button>
         </div>
@@ -264,7 +253,7 @@ export function TasksModule({ workspace, onUpdate, onError, focusTaskId, focusVe
   }
 
   async function archive(task: TaskItem): Promise<void> {
-    if (!task.revision || !window.confirm(`Archive ${task.title}? You can restore it later.`)) return
+    if (!task.revision || !window.confirm(`Move “${task.title}” to your system Trash? Restore it from your computer's Trash if needed.`)) return
     try { onUpdate(await window.serenity.archiveTask(task.id, task.revision)); if (draft.id === task.id) clearDraft() }
     catch (cause) { onError(String(cause)) }
   }
@@ -298,7 +287,7 @@ export function TasksModule({ workspace, onUpdate, onError, focusTaskId, focusVe
               <div className="task-board-actions">
                 <button type="button" onClick={() => void changeCompletion(item)}>{item.completed ? 'Reopen' : 'Complete'}</button>
                 <button type="button" onClick={() => edit(item)}>Edit</button>
-                <button type="button" onClick={() => void archive(item)}>Archive</button>
+                <button type="button" onClick={() => void archive(item)}>Move to Trash</button>
               </div>
             </article>)}
           </section>)}
@@ -310,18 +299,15 @@ export function TasksModule({ workspace, onUpdate, onError, focusTaskId, focusVe
             <input type="checkbox" checked={false} aria-label={`Complete ${item.title}`} onChange={() => void changeCompletion(item)}/>
             <div><strong>{item.title}</strong><small>{item.due ? `Due ${item.due} · ` : ''}{item.relatedEntityIds.map((id) => workspace.entities.find((entity) => entity.id === id)?.title).filter(Boolean).join(', ')}</small></div>
             <button className="text-button" onClick={() => edit(item)}>Edit</button>
-            <button className="text-button" onClick={() => void archive(item)}>Archive</button>
+            <button className="text-button" onClick={() => void archive(item)}>Move to Trash</button>
           </div>)}
         {workspace.tasks.some((item) => item.completed) && <h2>Completed</h2>}
         {workspace.tasks.filter((item) => item.completed).map((item) => <div key={item.id} className="task-row complete">
           <input type="checkbox" checked aria-label={`Reopen ${item.title}`} onChange={() => void changeCompletion(item)}/><strong>{item.title}</strong>
           <button className="text-button" onClick={() => edit(item)}>Edit</button>
-          <button className="text-button" onClick={() => void archive(item)}>Archive</button>
+          <button className="text-button" onClick={() => void archive(item)}>Move to Trash</button>
         </div>)}
         </>}
-        {workspace.archivedTasks.length > 0 && <details className="archived-items"><summary>Archived tasks ({workspace.archivedTasks.length})</summary>
-          {workspace.archivedTasks.map((item) => <div key={item.id}><span>{item.title}</span><button onClick={() => void window.serenity.restoreTask(item.id).then(onUpdate).catch((cause) => onError(String(cause)))}>Restore</button></div>)}
-        </details>}
       </div>
       {draft.id && <aside className="module-aside">
         <form className="module-form" onSubmit={(event) => void save(event)}>

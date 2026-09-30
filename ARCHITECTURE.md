@@ -30,7 +30,7 @@ These checks protect application file operations. They are distinct from the pro
 | `conversations/`, `proposals/` | Retained messages and suggestions with acceptance/rejection state. |
 | `tasks/`, `calendar/` | Internal planning records and related entity IDs. |
 | `activity/` | Provider operation metadata, references, timing, and status. |
-| `archive/`, `trash/` | Operation-specific archives, merge history, and removed planning records. |
+| `archive/entities/`, `archive/merges/` | Merge history needed to reverse identity decisions. |
 | `.serenity/` | Settings, workbench/session state, analysis tracking, and derived indexes. |
 
 The directory is the source of truth for stored records. SQLite FTS5 in `.serenity/index.sqlite` is a rebuildable search projection. `.serenity/semantic-index.yaml` contains generated summaries, terms, and input fingerprints; regeneration can require provider calls and produce different output. Settings and history are not derived indexes. Backups should include the complete workspace.
@@ -59,7 +59,7 @@ Multi-file operations use operation-specific checks and rollback paths. There is
 
 Malformed records appear as workspace issues. Several damaged settings and index files are preserved with a `.corrupt-<id>` suffix before replacement or rebuilding. Other invalid state, such as document-analysis tracking, raises an error requiring repair. Permission errors are surfaced rather than treated as empty data.
 
-Recovery is specific to each operation. Task and event restoration is implemented; some other archives require file-level restoration. Conversation deletion identifies dependent records, refuses certain cross-source dependencies, then unlinks the selected files. It is permanent and is not an all-or-nothing transaction. See [`tests/archive.test.ts`](tests/archive.test.ts) and [`tests/workspace.test.ts`](tests/workspace.test.ts).
+User removal sends pages, documents, entities and their own claims, tasks, and events to the operating system Trash through Electron. At workspace open, older user-removal files in Serenity archive and trash folders are migrated there; merge history is excluded. Restoring a user-removed item now means restoring its file through the system file manager. Conversation deletion identifies dependent records, refuses certain cross-source dependencies, then unlinks the selected files. It is permanent and is not an all-or-nothing transaction. See [`tests/archive.test.ts`](tests/archive.test.ts) and [`tests/workspace.test.ts`](tests/workspace.test.ts).
 
 ## Retrieval and document flow
 

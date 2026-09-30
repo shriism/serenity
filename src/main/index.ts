@@ -4,10 +4,10 @@ import { fileURLToPath } from 'node:url'
 import { watchWorkspace } from './workspace-watcher'
 import { Workspace } from './workspace'
 import { sendMessage } from './conversation'
-import { credentialStatus, saveCredential } from './credentials'
+import { saveCredential } from './credentials'
 import { semanticSearch } from './semantic'
 import { buildSemanticIndex, rankSemanticIndex } from './semantic-index'
-import { askProvider } from './providers'
+import { askProvider, checkProviders } from './providers'
 import { analyzeChangedDocument } from './document-analysis'
 import { extractDocument } from './documents'
 import { RecentWorkspaces } from './recent-workspaces'
@@ -130,8 +130,9 @@ async function openWorkspace(path: string): Promise<WorkspaceSnapshot> {
   pendingDocuments.clear()
   await watcher?.close()
   workspace?.close()
-  const next = new Workspace(path)
+  const next = new Workspace(path, (item) => shell.trashItem(item))
   await next.initialize()
+  await next.migrateLegacyRemovals()
   workspace = next
   const settingsDirectory = '.serenity'
   watcher = watchWorkspace(next.path, (paths) => {
@@ -148,7 +149,11 @@ async function openWorkspace(path: string): Promise<WorkspaceSnapshot> {
         if (parts[0] === 'documents' && parts.length === 2) void stat(join(next.path, path)).then((info) => { if (info.isFile() && workspace === next) queueDocumentAnalysis(next, parts[1]) }, () => undefined)
       }
     }
-    if (!settings.some((name) => name !== 'workbench.yaml')) { window?.webContents.send('workspace:changed'); return }
+    // Derived index writes update the view, but must not schedule another index build.
+    if (!settings.some((name) => name === 'modules.yaml' || name === 'semantic-provider.yaml')) {
+      window?.webContents.send('workspace:changed')
+      return
+    }
     void next.snapshot().then((snapshot) => {
       if (settings.includes('semantic-provider.yaml') || !snapshot.modules.semanticIndex) pauseBackgroundIndex()
       if (snapshot.modules.semanticIndex) scheduleSemanticIndex(next)
@@ -410,10 +415,22 @@ app.whenReady().then(async () => {
   ipcMain.handle('proposal:attach-entity', (_event, proposalId: string, entityId: string) => currentWorkspace().attachEntityProposal(proposalId, entityId))
   ipcMain.handle('conversation:delete', (_event, id: string) => currentWorkspace().deleteConversation(id))
   ipcMain.handle('conversation:star', (_event, id: string, starred: boolean) => currentWorkspace().starConversation(id, starred))
-  ipcMain.handle('credential:status', () => credentialStatus())
+  ipcMain.handle('provider:status', async () => {
+    const selected = currentWorkspace()
+    const statuses = await checkProviders(selected.path)
+    const snapshot = await selected.snapshot()
+    const state = statuses[snapshot.semanticProvider].state
+    if (snapshot.modules.semanticIndex && (state === 'signed-in' || state === 'key-saved')) scheduleSemanticIndex(selected)
+    return statuses
+  })
   ipcMain.handle('credential:save', async (_event, provider: Provider, key: string) => {
     await saveCredential(provider, key)
-    return credentialStatus()
+    const selected = currentWorkspace()
+    const statuses = await checkProviders(selected.path)
+    const snapshot = await selected.snapshot()
+    if (provider === snapshot.semanticProvider && snapshot.modules.semanticIndex &&
+      (statuses[provider].state === 'signed-in' || statuses[provider].state === 'key-saved')) scheduleSemanticIndex(selected)
+    return statuses
   })
   ipcMain.handle('module:set', async (_event, id: ModuleId, enabled: boolean) => {
     const selected = currentWorkspace()

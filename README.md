@@ -16,7 +16,7 @@ Suppose Alex tells you their birthday is September 7, while an old card says Sep
 
 You can also compare records that might describe the same person, merge them, or record that they are distinct. A merge can be undone. User-removed pages, documents, entities, tasks, and events go to your computer’s Trash; merge history remains in the workspace. These interactions let you organize information without having to settle every uncertainty when you first encounter it.
 
-The assistant works alongside this process. Ask about a document, inspect the answer's citations, and review suggested additions beneath the reply or in Review. GitHub Copilot and OpenAI Codex are supported. Local editing and text search work without either.
+The assistant works alongside this process. Ask about a document, inspect the answer's citations, and review suggested additions beneath the reply or in Review. It can use your ChatGPT plan, your GitHub Copilot subscription, or a local or self-hosted model through any OpenAI-compatible server, such as Ollama or LM Studio. Local editing and text search work without any of them.
 
 ## Get started
 
@@ -35,9 +35,9 @@ When Serenity opens:
 2. Select **New page** to write, or **Import documents** to bring in source material. Imports are copies.
 3. Configure a supported provider when you want to use the assistant. Its default mode, **Read & propose**, leaves suggested additions for you to review.
 
-Serenity currently opens one workspace at a time. Calendar and Tasks are internal tools; external account sync is not implemented. There is no built-in device sync, local model integration, mobile client, or installable plugin system.
+Serenity currently opens one workspace at a time. Calendar and Tasks are internal tools; external account sync is not implemented. There is no built-in device sync, mobile client, or installable plugin system.
 
-AI scope controls select the context Serenity assembles; they do not yet guarantee that other files are inaccessible to every provider runtime. See [provider access](ARCHITECTURE.md#provider-access) for the current boundary and how background AI differs from chat.
+Providers receive only the context Serenity assembles; they have no tools or file access of their own. AI search and background AI use workspace-wide context, separate from a conversation's scope. See [provider access](ARCHITECTURE.md#provider-access) for the boundary and how background AI differs from chat.
 
 ## Your files
 

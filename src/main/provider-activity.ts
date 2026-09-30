@@ -2,12 +2,14 @@ import { createHash, randomUUID } from 'node:crypto'
 import { rename, unlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import YAML from 'yaml'
-import type { Provider, ProviderActivity } from '../shared/types'
+import type { ProviderActivity } from '../shared/types'
 
 export type ActivityRequest = { operation: ProviderActivity['operation']; refs: string[]; conversationId?: string }
 
+/** Records a provider call's references, size, checksum, timing, and outcome; the prompt text itself is not stored. */
 export async function trackProviderCall<T>(
-  workspacePath: string, provider: Provider, prompt: string, activity: ActivityRequest, run: () => Promise<T>
+  workspacePath: string, provider: string, prompt: string, activity: ActivityRequest, run: () => Promise<T>,
+  describe: (result: T) => Pick<ProviderActivity, 'model'> = () => ({})
 ): Promise<T> {
   const entry: ProviderActivity = {
     id: randomUUID(), provider, operation: activity.operation, refs: activity.refs, conversationId: activity.conversationId,
@@ -23,6 +25,7 @@ export async function trackProviderCall<T>(
   }
   try {
     const result = await run()
+    Object.assign(entry, describe(result))
     entry.status = 'completed'
     entry.finishedAt = new Date().toISOString()
     await update()

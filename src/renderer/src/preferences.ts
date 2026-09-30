@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react'
+import { isProviderId, type ProviderId } from '../../shared/providers'
 
 /**
  * Preferences for how this device's window behaves, kept with the app rather than in any workspace (like the theme).
@@ -11,15 +12,20 @@ export interface Preferences {
   autoHideScrollbars: boolean
   /** ⌘/Ctrl-1…9 switch tabs. */
   numberedTabShortcuts: boolean
+  /** The provider new assistant requests use until another is chosen. */
+  assistantProvider: ProviderId
 }
 
-const defaults: Preferences = { escapeLeavesEditing: true, autoHideScrollbars: true, numberedTabShortcuts: true }
+const defaults: Preferences = { escapeLeavesEditing: true, autoHideScrollbars: true, numberedTabShortcuts: true, assistantProvider: 'copilot' }
 const key = 'serenity.preferences'
 const listeners = new Set<() => void>()
 
 function read(): Preferences {
-  try { return { ...defaults, ...(JSON.parse(localStorage.getItem(key) ?? '{}') as Partial<Preferences>) } }
-  catch { return { ...defaults } }
+  try {
+    const saved = { ...defaults, ...(JSON.parse(localStorage.getItem(key) ?? '{}') as Partial<Preferences>) }
+    // A provider saved by an earlier release may no longer be offered.
+    return isProviderId(saved.assistantProvider) ? saved : { ...saved, assistantProvider: defaults.assistantProvider }
+  } catch { return { ...defaults } }
 }
 
 let current = read()

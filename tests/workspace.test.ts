@@ -690,10 +690,32 @@ test('an unavailable saved provider pauses background AI until the user selects 
     await buildSemanticIndex(workspace, async () => { calls++; return '{"summary":"Private research","terms":["research"]}' })
     assert.equal(calls, 0)
     await assert.rejects(workspace.setModule('semanticIndex', true), /Choose a supported/)
-    const resumed = await workspace.setSemanticProvider('codex')
+    const resumed = await workspace.setSemanticProvider('chatgpt')
     assert.equal(resumed.backgroundProviderNeedsChoice, false)
     assert.equal(resumed.modules.semanticIndex, true)
     assert.equal(resumed.modules.documentAnalysis, true)
+    workspace.close()
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+
+test('a background provider from an earlier release waits for an explicit choice instead of moving to another service', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'serenity-test-'))
+  try {
+    const workspace = new Workspace(directory)
+    await workspace.initialize()
+    await writeFile(join(directory, '.serenity', 'modules.yaml'), YAML.stringify({ calendar: true, tasks: true, semanticIndex: true, documentAnalysis: false }))
+    await writeFile(join(directory, '.serenity', 'semantic-provider.yaml'), YAML.stringify({ provider: 'codex' }))
+    await writeFile(join(directory, '.serenity', 'semantic-index.yaml'), YAML.stringify({ generatedAt: '2026-09-26T00:00:00Z', provider: 'codex', entries: [] }))
+    const paused = await workspace.snapshot()
+    assert.equal(paused.backgroundProviderNeedsChoice, true)
+    assert.equal(paused.modules.semanticIndex, false)
+    assert.ok(paused.errors.some((error) => /OpenAI Codex is no longer offered/.test(error)))
+    assert.equal(paused.semanticIndex?.provider, 'codex', 'an index made by a retired provider is still readable')
+    const resumed = await workspace.setSemanticProvider('openai-compatible')
+    assert.equal(resumed.backgroundProviderNeedsChoice, false)
+    assert.equal(resumed.semanticProvider, 'openai-compatible')
+    assert.ok(!(await readdir(join(directory, '.serenity'))).some((name) => name.startsWith('semantic-provider.yaml.corrupt-')),
+      'a retired provider setting is replaced, not treated as damage')
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

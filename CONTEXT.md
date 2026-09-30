@@ -6,7 +6,8 @@ Use this guide to run, test, and package Serenity. For a technical overview, rea
 
 | Path | Purpose |
 | --- | --- |
-| `src/main/` | Workspace I/O, provider calls, extraction, indexing, credentials, and Electron lifecycle. |
+| `src/main/` | Workspace I/O, extraction, indexing, and Electron lifecycle. |
+| `src/main/ai/` | The model provider interface, each provider's authentication and transport, and credential storage. |
 | `src/preload/` | Typed application bridge. |
 | `src/renderer/` | Editors, resource views, workbench, and assistant interface. |
 | `src/shared/` | Types and pure logic for identity, provenance, workflows, queries, and presentation. |
@@ -47,7 +48,7 @@ These use temporary workspaces and profiles. Smoke tests include both themes and
 | `SERENITY_SMOKE_VISIBLE=1` | Display the test window. |
 | `SERENITY_SMOKE_EXECUTABLE` | Test a packaged executable. |
 | `SERENITY_SMOKE_WINDOW=900x640` | Run a small-window pass. |
-| `SERENITY_SMOKE_PROVIDER=copilot` or `codex` | Opt into an authenticated live turn; uses provider quota. |
+| `SERENITY_SMOKE_PROVIDER=chatgpt`, `copilot`, or `openai-compatible` | Opt into a live turn with a provider already set up in the app profile; hosted providers use quota. |
 
 ## Package
 

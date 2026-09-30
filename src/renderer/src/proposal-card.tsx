@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import type { Proposal, WorkspaceSnapshot } from '../../shared/types'
 import { identityCandidates } from '../../shared/identity'
 import { sourceDocument } from '../../shared/provenance'
+import { providerName } from '../../shared/providers'
 
 export interface ProposalActions {
   onResolve(id: string, accept: boolean): void
@@ -22,7 +23,7 @@ export function ProposalCard({ item, workspace, showSource = true, onResolve, on
   const [attaching, setAttaching] = useState(false)
   const matches = item.kind === 'entity' ? identityCandidates(item.title, item.type, workspace.entities) : []
   return <article className="review-card">
-    <span className="eyebrow">{item.status === 'pending' ? 'Waiting for review' : item.status === 'accepted' ? 'Accepted' : 'Dismissed'} · {item.kind === 'claim' ? 'fact' : item.kind} suggested by {item.provider === 'codex' ? 'Codex' : item.provider === 'copilot' ? 'Copilot' : item.provider}{item.origin === 'ai-inference' ? ', inferred' : ''}</span>
+    <span className="eyebrow">{item.status === 'pending' ? 'Waiting for review' : item.status === 'accepted' ? 'Accepted' : 'Dismissed'} · {item.kind === 'claim' ? 'fact' : item.kind} suggested by {providerName(item.provider)}{item.origin === 'ai-inference' ? ', inferred' : ''}</span>
     <h2>{item.kind === 'claim' ? `${workspace.entities.find((entity) => entity.id === item.subject)?.title ?? 'Unknown entity'} · ${item.key}` : item.title}</h2>
     <strong>{item.kind === 'claim' ? workspace.entities.find((entity) => entity.id === item.value)?.title ?? item.value : item.kind === 'entity' ? `Suggested category: ${item.type}` : item.kind === 'task' ? `Due ${item.due ?? 'not set'}` : `Starts ${item.start}`}</strong>
     {(showSource || (item.kind === 'claim' && item.confidence !== undefined)) && <p>{showSource ? `Source: ${item.source}` : ''}{showSource && item.kind === 'claim' && item.confidence !== undefined ? ' · ' : ''}{item.kind === 'claim' && item.confidence !== undefined ? `AI-estimated confidence: ${Math.round(item.confidence * 100)}%` : ''}</p>}

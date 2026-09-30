@@ -1,9 +1,8 @@
 import type { WorkspaceSnapshot } from './types'
 import { resourceUri } from './resources'
 import { entityRepresentative } from './identity'
+import { providerName } from './providers'
 
-/** How a provider is named to people: Copilot or Codex, or the recorded name capitalized. */
-const providerName = (provider: string): string => provider === 'copilot' ? 'Copilot' : provider === 'codex' ? 'Codex' : `${provider.charAt(0).toUpperCase()}${provider.slice(1)}`
 
 export type ActivityKind = 'claim' | 'merge' | 'resolution' | 'identity' | 'event' | 'task' | 'proposal' | 'message'
 export interface ActivityItem { id: string; at: string; kind: ActivityKind; title: string; detail: string; uri?: string }

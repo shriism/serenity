@@ -4,12 +4,15 @@ Notable user-visible changes are listed newest first. Workspace files remain rea
 
 ## Unreleased
 
-- Collapsed each AI provider's setup until selected, checked existing Copilot/Codex sign-in instead of only saved keys, and added copy confirmation. Calendar Agenda now shows every upcoming event and open due task across month boundaries.
-- Recheck provider sign-in when Settings regains focus, restart an opted-in background index after access is available, and avoid rebuilding the index in response to its own output file.
+- AI providers now share one inference interface, so conversations, search, indexing, and document analysis work the same with each. Supported providers are **ChatGPT** (Sign in with ChatGPT, using your ChatGPT plan through OpenAI's Responses API), **GitHub Copilot** (your existing Copilot subscription), and **OpenAI-compatible** servers, including Ollama, LM Studio, vLLM, and the llama.cpp server, with a configurable address, model, and optional API key.
+- Answers appear as they are written, and each provider's model can be chosen in Settings. Messages and provider activity record the model that answered when the provider reports it.
+- Providers no longer receive tools, file access, or the workspace path; Copilot sessions are deleted after each request.
+- OpenAI Codex is no longer offered. Earlier Codex conversations and suggestions keep their attribution. A workspace that used Codex for background AI pauses it until you choose another provider, and a saved Codex API key is removed; use it with the OpenAI-compatible provider's OpenAI setting instead.
+- Recheck provider status when Settings regains focus, restart an opted-in background index once its provider is available, and avoid rebuilding the index in response to its own output file.
+- Calendar Agenda now shows every upcoming event and open due task across month boundaries.
 - Kept one React root during development reloads so a rendering failure shows one recovery view.
 - Gave Calendar more space, allowed month items to wrap, and added a readable next-30-days list beneath the grid.
 - Moved user-removed workspace records to the operating system Trash and removed the in-app Calendar Trash; preserved merge history inside the workspace.
-- Reworked AI provider settings into separate Copilot and Codex setup sections with clearer credential status.
 
 - Reorganized documentation into a practical introduction, product/design explanation, architecture reference, and development guide. Clarified sourced statements, revisable decisions, AI review, and current implementation limits.
 

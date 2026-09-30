@@ -50,7 +50,18 @@ const api: SerenityAPI = {
   deleteConversation: (id) => ipcRenderer.invoke('conversation:delete', id),
   starConversation: (id, starred) => ipcRenderer.invoke('conversation:star', id, starred),
   providerStatus: () => ipcRenderer.invoke('provider:status'),
+  providerSignIn: (provider, newAccount) => ipcRenderer.invoke('provider:sign-in', provider, newAccount),
+  cancelProviderSignIn: (provider) => ipcRenderer.invoke('provider:cancel-sign-in', provider),
+  providerSignOut: (provider) => ipcRenderer.invoke('provider:sign-out', provider),
   saveCredential: (provider, key) => ipcRenderer.invoke('credential:save', provider, key),
+  providerModels: (provider) => ipcRenderer.invoke('provider:models', provider),
+  providerSettings: () => ipcRenderer.invoke('provider:settings'),
+  updateProviderSettings: (change) => ipcRenderer.invoke('provider:update-settings', change),
+  onConversationProgress: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, text: string): void => callback(text)
+    ipcRenderer.on('conversation:progress', listener)
+    return () => ipcRenderer.removeListener('conversation:progress', listener)
+  },
   setModule: (id, enabled) => ipcRenderer.invoke('module:set', id, enabled),
   saveEvent: (event) => ipcRenderer.invoke('calendar:save', event),
   saveTask: (task) => ipcRenderer.invoke('task:save', task),

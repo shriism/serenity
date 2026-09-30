@@ -35,8 +35,7 @@
     ],
     "asarUnpack": [
       "**/*.node",
-      "node_modules/@github/copilot-sdk-*/**/*",
-      "node_modules/@openai/codex-*/**/*"
+      "node_modules/@github/copilot-sdk-*/**/*"
     ],
     "mac": {
       "icon": "build/icons/app.icns",
@@ -74,7 +73,6 @@
     "@github/copilot-sdk": "^1.0.14",
     "@lezer/highlight": "^1.2.4",
     "@lezer/markdown": "^1.7.2",
-    "@openai/codex-sdk": "^0.156.0",
     "lucide-react": "^1.47.0",
     "mammoth": "^1.12.3",
     "pdf-parse": "^2.4.5",

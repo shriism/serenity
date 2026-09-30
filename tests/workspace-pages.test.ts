@@ -146,7 +146,7 @@ test('correcting damaged module and provider settings keeps their original files
     await writeFile(join(settings, 'modules.yaml'), invalidModules)
     await writeFile(join(settings, 'semantic-provider.yaml'), invalidProvider)
     await workspace.setModule('calendar', false)
-    await workspace.setSemanticProvider('codex')
+    await workspace.setSemanticProvider('chatgpt')
     const names = await readdir(settings)
     const preserved = async (prefix: string): Promise<string> => {
       const archive = names.find((name) => name.startsWith(`${prefix}.corrupt-`))
@@ -156,7 +156,7 @@ test('correcting damaged module and provider settings keeps their original files
     assert.equal(await preserved('modules.yaml'), invalidModules)
     assert.equal(await preserved('semantic-provider.yaml'), invalidProvider)
     assert.equal((await workspace.snapshot()).modules.calendar, false)
-    assert.equal((await workspace.snapshot()).semanticProvider, 'codex')
+    assert.equal((await workspace.snapshot()).semanticProvider, 'chatgpt')
     workspace.close()
   } finally { await rm(directory, { recursive: true, force: true }) }
 })

@@ -52,7 +52,7 @@ Automatic saving reduces review work but places more responsibility on the permi
 
 Conversation settings let you choose whole-workspace context or selected entities and documents. The assistant prioritizes permitted material you have open. Messages record which workspace records Serenity supplied, and citations indicate whether a referenced record was supplied and whether quoted text occurs in it. You can return to the material and assess the answer yourself.
 
-These controls are incomplete as a privacy boundary. Narrowing a conversation's scope does not remove its earlier discussion, and AI search and background operations use separate workspace-wide context. Provider runtime access also differs between integrations. The precise controls and gaps are documented under [provider access](ARCHITECTURE.md#provider-access).
+These controls are incomplete as a privacy boundary. Narrowing a conversation's scope does not remove its earlier discussion, and AI search and background operations use separate workspace-wide context. Providers cannot open workspace files themselves; they see only what Serenity sends. The precise controls and gaps are documented under [provider access](ARCHITECTURE.md#provider-access).
 
 Automatic document analysis and background AI indexing are off by default. Enabling them permits provider calls outside an individual chat. Local text search remains available without them.
 

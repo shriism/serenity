@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { ArrowRight, CalendarDays, FileText, Link2, ListTodo, MessageCircle, Search, Sparkles, X } from 'lucide-react'
 import type { Provider, SearchResult } from '../../shared/types'
+import { providerLabels } from '../../shared/providers'
 import type { CommandContribution } from './commands'
 import { highlighted } from './search-excerpt'
 
@@ -79,7 +80,7 @@ export function CommandPalette(props: Props) {
       <div className="palette-input"><Search size={20}/><input ref={input} value={props.query} onChange={(event) => props.onChange(event.target.value)} onKeyDown={onKeyDown} placeholder={props.mode === 'files' ? 'Find a file in this workspace...' : 'Search your world...'} aria-label={props.mode === 'files' ? 'Find file' : 'Search workspace'}/><button onClick={props.onClose} aria-label="Close search"><X size={17}/></button></div>
       <div className="palette-body">
         {props.mode === 'all' && props.query.trim() && <div className="palette-actions">
-          <button onClick={props.onAISearch} disabled={props.searching}><Sparkles size={16}/>{props.searching ? 'Finding connections…' : `Search meaning with ${props.provider}`}<ArrowRight size={15}/></button>
+          <button onClick={props.onAISearch} disabled={props.searching}><Sparkles size={16}/>{props.searching ? 'Finding connections…' : `Search meaning with ${providerLabels[props.provider]}`}<ArrowRight size={15}/></button>
           {props.savedIndexEnabled && <button onClick={props.onSavedSearch}><Link2 size={16}/>Search saved concepts offline<ArrowRight size={15}/></button>}
           <button onClick={props.onKeepInPane}><Search size={16}/>Keep results in a pane<ArrowRight size={15}/></button>
           {props.onAskAboutResults && <button onClick={props.onAskAboutResults}><MessageCircle size={16}/>Ask about these results<ArrowRight size={15}/></button>}

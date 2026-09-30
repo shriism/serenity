@@ -19,15 +19,7 @@ if (executable) {
   const platform = `${process.platform}-${process.arch}`
   const copilot = join(resources, 'app.asar.unpacked', 'node_modules', `@github/copilot-sdk-${platform}`,
     'prebuilds', platform, process.platform === 'win32' ? 'copilot-runtime.exe' : 'copilot-runtime')
-  const triples: Record<string, string> = {
-    'darwin-arm64': 'aarch64-apple-darwin', 'darwin-x64': 'x86_64-apple-darwin',
-    'linux-arm64': 'aarch64-unknown-linux-musl', 'linux-x64': 'x86_64-unknown-linux-musl',
-    'win32-arm64': 'aarch64-pc-windows-msvc', 'win32-x64': 'x86_64-pc-windows-msvc'
-  }
-  const codex = join(resources, 'app.asar.unpacked', 'node_modules', `@openai/codex-${platform}`,
-    'vendor', triples[platform], 'bin', process.platform === 'win32' ? 'codex.exe' : 'codex')
   assert.ok((await stat(copilot)).isFile(), 'The packaged Copilot runtime must be available')
-  assert.ok((await stat(codex)).isFile(), 'The packaged Codex runtime must be available')
 }
 
 const workspace = await mkdtemp(join(tmpdir(), 'serenity-desktop-smoke-'))
@@ -362,15 +354,21 @@ try {
     return { rows, light, calendarHidden, calendarBack, scrollbarToggle }`)
   assert.ok(settings.rows > 10, 'Settings lists every command with its shortcut')
   assert.deepEqual({ ...settings, rows: true }, { rows: true, light: true, calendarHidden: true, calendarBack: true, scrollbarToggle: true })
-  const providerSetup = await run<string[]>(`click($('.ribbon-btn[aria-label="Settings"]')); await waitFor(() => $('.settings-dialog'));
-    click(byText('.settings-nav button', 'AI providers')); await waitFor(() => $$('.provider-card').length === 2);
+  const providerSetup = await run<{ chatgpt: string; preset: string; saved: string }>(`click($('.ribbon-btn[aria-label="Settings"]')); await waitFor(() => $('.settings-dialog'));
+    click(byText('.settings-nav button', 'AI providers')); await waitFor(() => $$('.provider-card').length === 3);
     if ($$('.provider-card[open]').length) throw Error('Provider setup should start collapsed');
-    click($$('.provider-card summary')[1]); await waitFor(() => $$('.provider-card[open]').length === 1);
-    await waitFor(() => $$('.provider-card-heading span').every((item) => item.textContent !== 'Checking…'), 15000);
-    click(byText('.provider-card[open] .provider-login button', 'Copy command'));
-    await waitFor(() => byText('.provider-card[open] .provider-login button', 'Copied'));
-    return $$('.provider-card[open] .provider-login code').map((item) => item.textContent)`)
-  assert.deepEqual(providerSetup, ['codex login'], 'Only the chosen provider exposes its setup controls')
+    click($$('.provider-card summary')[0]); await waitFor(() => $$('.provider-card[open]').length === 1);
+    const chatgpt = (await waitFor(() => byText('.provider-card[open] button', 'Continue with ChatGPT'), 15000)).textContent;
+    click($$('.provider-card summary')[0]); click($$('.provider-card summary')[2]); await waitFor(() => $('#compatible-preset'));
+    const preset = $('#compatible-preset'); Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value').set.call(preset, 'ollama');
+    preset.dispatchEvent(new Event('change', { bubbles: true })); await sleep(50);
+    const presetURL = $('#compatible-url').value;
+    setValue($('#compatible-url'), 'http://127.0.0.1:9/v1'); await sleep(50); $('#compatible-url').form.requestSubmit();
+    await waitFor(() => $$('.provider-card-heading span')[2].textContent === 'Not reachable', 15000);
+    const saved = (await window.serenity.providerSettings())['openai-compatible'].baseURL;
+    return { chatgpt, preset: presetURL, saved }`)
+  assert.deepEqual(providerSetup, { chatgpt: 'Continue with ChatGPT', preset: 'http://127.0.0.1:11434/v1', saved: 'http://127.0.0.1:9/v1' },
+    'ChatGPT offers its sign-in, and an OpenAI-compatible server is saved and checked')
   await shot('serenity-ai-providers')
   await run(`click($('.dialog-close'))`)
 
@@ -398,7 +396,7 @@ try {
   const restored = await run(`await waitFor(() => $$('.pane').length === 2, 10000); return $$('.pane').length`)
   assert.equal(restored, 2, 'Panes are restored with the workspace')
 
-  if (provider === 'copilot' || provider === 'codex') {
+  if (provider === 'chatgpt' || provider === 'copilot' || provider === 'openai-compatible') {
     const answer = await app.evaluate<{ text: string; citations?: { ref: string; sent: boolean; quoteFound?: boolean }[]; shared: string[] }>(`window.serenity.sendMessage({ text: 'According to the sourced claim about Sam Rivera, what is their birthday? Include the date. Do not propose any changes.', provider: '${provider}', autonomy: 'propose', retained: true, activeRef: 'entity:${entityId}' }).then((snapshot) => { const conversation = snapshot.conversations.at(-1); const last = conversation.messages.at(-1); return { text: last.text, citations: last.citations, shared: conversation.messages[0].sharedContext?.flatMap((entry) => entry.records.map((record) => record.ref)) ?? [] } })`, 120000)
     assert.match(answer.text, /September 7/i)
     assert.ok(answer.shared.includes(`entity:${entityId}`), 'The focused entity is offered as context')

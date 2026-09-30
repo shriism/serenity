@@ -1,6 +1,8 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import type { Autonomy, Conversation, Provider, ReadScope, WorkflowPermissions, WorkspaceSnapshot } from '../../shared/types'
 import { defaultReadScope, defaultWorkflowPermissions } from '../../shared/workflow'
+import { providerLabels } from '../../shared/providers'
+import { preferences, usePreferences } from './preferences'
 
 const freshScope = (): ReadScope => ({ ...defaultReadScope, entityIds: [], documentNames: [] })
 
@@ -19,13 +21,17 @@ export function useAssistant({ workspace, setWorkspace, refresh, setError, conte
   reveal(returnToSidebar: boolean): void
 }) {
   const [conversationId, setConversationId] = useState<string | null>(null)
-  const [provider, setProvider] = useState<Provider>('copilot')
+  const provider = usePreferences().assistantProvider
+  const setProvider = (next: Provider): void => preferences.set({ assistantProvider: next })
   const [autonomy, setAutonomy] = useState<Autonomy>('propose')
   const [retained, setRetained] = useState(true)
   const [permissions, setPermissions] = useState<WorkflowPermissions>({ ...defaultWorkflowPermissions })
   const [readScope, setReadScope] = useState<ReadScope>(freshScope)
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
+  /** The answer so far while a provider streams it. */
+  const [streamingText, setStreamingText] = useState('')
+  useEffect(() => window.serenity.onConversationProgress(setStreamingText), [])
 
   /** Adopts a conversation's settings, or the defaults for a new one. */
   function restoreConversation(item: Conversation | undefined): void {
@@ -55,8 +61,9 @@ export function useAssistant({ workspace, setWorkspace, refresh, setError, conte
   async function sendMessage(event: FormEvent): Promise<void> {
     event.preventDefault()
     if (!message.trim() || busy || !workspace) return
-    if (autonomy === 'ask' && !window.confirm(`Allow ${provider} to read this workspace for this request? No knowledge changes will be saved without separate approval.`)) return
+    if (autonomy === 'ask' && !window.confirm(`Allow ${providerLabels[provider]} to read this workspace for this request? No knowledge changes will be saved without separate approval.`)) return
     setBusy(true)
+    setStreamingText('')
     try {
       const next = await window.serenity.sendMessage({ conversationId: conversationId ?? undefined, text: message, provider, autonomy, retained, permissions, readScope, ...contextRefs() })
       if (!conversationId) setConversationId(next.conversations.find((item) => !workspace.conversations.some((old) => old.id === item.id))?.id ?? null)
@@ -66,7 +73,7 @@ export function useAssistant({ workspace, setWorkspace, refresh, setError, conte
     } catch (cause) {
       await refresh()
       setError(String(cause))
-    } finally { setBusy(false) }
+    } finally { setBusy(false); setStreamingText('') }
   }
 
   async function cancelMessage(): Promise<void> {
@@ -94,7 +101,7 @@ export function useAssistant({ workspace, setWorkspace, refresh, setError, conte
   return {
     conversationId, conversation: workspace?.conversations.find((item) => item.id === conversationId),
     provider, setProvider, autonomy, setAutonomy, retained, setRetained, permissions, setPermissions, readScope, setReadScope,
-    message, setMessage, busy,
+    message, setMessage, busy, streamingText,
     restoreConversation, startConversation, selectConversation, sendMessage, cancelMessage, deleteConversation, saveWorkflowSettings
   }
 }

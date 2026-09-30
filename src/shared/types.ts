@@ -1,6 +1,7 @@
 import type { ModuleId } from './modules'
 import type { SessionLayout } from './layout'
 import type { Citation } from './citations'
+import type { ModelOption, ProviderId, ProviderSettings, ProviderStatus } from './providers'
 
 export interface Entity {
   id: string
@@ -65,14 +66,10 @@ export interface WorkspaceSnapshot {
   archivedEntities: Entity[]
   semanticProvider: Provider
   backgroundProviderNeedsChoice: boolean
-  semanticIndex: { generatedAt: string; count: number; provider: Provider } | null
+  /** `provider` is as recorded; an index made by a provider no longer offered is rebuilt with the selected one. */
+  semanticIndex: { generatedAt: string; count: number; provider: string } | null
   providerActivity: ProviderActivity[]
   errors: string[]
-}
-
-export interface ProviderConnectionStatus {
-  state: 'signed-in' | 'key-saved' | 'signed-out' | 'unavailable'
-  account?: string
 }
 
 export interface WorkbenchConfig {
@@ -112,6 +109,8 @@ export interface ProviderActivity {
   finishedAt?: string
   status: 'running' | 'completed' | 'failed'
   error?: string
+  /** The model that answered, when the provider reports it. */
+  model?: string
 }
 
 export interface MergeRecord {
@@ -163,7 +162,7 @@ export interface TaskItem {
   metadata?: Record<string, unknown>
 }
 
-export type Provider = 'copilot' | 'codex'
+export type Provider = ProviderId
 export type Autonomy = 'ask' | 'propose' | 'autonomous'
 
 export interface WorkflowPermissions {
@@ -186,6 +185,8 @@ export interface Message {
   role: 'user' | 'assistant'
   text: string
   provider?: string
+  /** The model that wrote an assistant message, when the provider reports it. */
+  model?: string
   recordedAt: string
   sharedContext?: SharedContext[]
   /** Records the answer relies on, checked against the context actually sent. */
@@ -304,8 +305,18 @@ export interface SerenityAPI {
   attachEntityProposal(proposalId: string, entityId: string): Promise<WorkspaceSnapshot>
   deleteConversation(id: string): Promise<WorkspaceSnapshot>
   starConversation(id: string, starred: boolean): Promise<WorkspaceSnapshot>
-  providerStatus(): Promise<Record<Provider, ProviderConnectionStatus>>
-  saveCredential(provider: Provider, key: string): Promise<Record<Provider, ProviderConnectionStatus>>
+  providerStatus(): Promise<Record<Provider, ProviderStatus>>
+  /** Starts the provider's own browser sign-in; `newAccount` adds another account instead of reusing the last one. */
+  providerSignIn(provider: Provider, newAccount?: boolean): Promise<Record<Provider, ProviderStatus>>
+  cancelProviderSignIn(provider: Provider): Promise<void>
+  providerSignOut(provider: Provider): Promise<Record<Provider, ProviderStatus>>
+  /** Saves a token or API key for a provider; an empty value removes it. */
+  saveCredential(provider: Provider, key: string): Promise<Record<Provider, ProviderStatus>>
+  providerModels(provider: Provider): Promise<ModelOption[]>
+  providerSettings(): Promise<ProviderSettings>
+  updateProviderSettings(change: { provider: Provider; model?: string | null; baseURL?: string }): Promise<ProviderSettings>
+  /** Receives the assistant's answer as it is written, for the conversation request in progress. */
+  onConversationProgress(callback: (text: string) => void): () => void
   setModule(id: ModuleId, enabled: boolean): Promise<WorkspaceSnapshot>
   saveEvent(event: CalendarEvent): Promise<WorkspaceSnapshot>
   saveTask(task: TaskItem): Promise<WorkspaceSnapshot>

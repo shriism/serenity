@@ -4,10 +4,11 @@ import { fileURLToPath } from 'node:url'
 import { watchWorkspace } from './workspace-watcher'
 import { Workspace } from './workspace'
 import { sendMessage } from './conversation'
-import { saveCredential } from './credentials'
 import { semanticSearch } from './semantic'
 import { buildSemanticIndex, rankSemanticIndex } from './semantic-index'
-import { askProvider, checkProviders } from './providers'
+import { createProviderRegistry } from './ai/electron'
+import { currentProviderRegistry, providerRegistry, setProviderRegistry } from './ai/registry'
+import type { Ask } from './semantic-index'
 import { analyzeChangedDocument } from './document-analysis'
 import { extractDocument } from './documents'
 import { RecentWorkspaces } from './recent-workspaces'
@@ -15,6 +16,7 @@ import { stat } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { Autonomy, CalendarEvent, Claim, Entity, Provider, ReadScope, TaskItem, WorkflowPermissions, WorkbenchSession, WorkspacePage, WorkspaceSnapshot } from '../shared/types'
 import type { ModuleId } from '../shared/modules'
+import type { ProviderId, ProviderStatus } from '../shared/providers'
 
 let window: BrowserWindow | null = null
 let workspace: Workspace | null = null
@@ -70,6 +72,21 @@ function warmSearchIndex(target: Workspace, delay = 1500): void {
   }, delay)
 }
 
+/** The background index reaches models through the same provider interface as conversations. */
+const askForIndex: Ask = (provider, path, request, activity, signal) =>
+  providerRegistry().generate(provider, path, request, activity, { signal }).then((result) => result.text)
+
+/** Current provider statuses; once the workspace's background provider can answer, an opted-in index resumes. */
+async function providerStatuses(statuses?: Record<ProviderId, ProviderStatus>): Promise<Record<ProviderId, ProviderStatus>> {
+  const current = statuses ?? await providerRegistry().statuses()
+  const selected = workspace
+  if (selected) {
+    const snapshot = await selected.snapshot()
+    if (snapshot.modules.semanticIndex && current[snapshot.semanticProvider].state === 'ready') scheduleSemanticIndex(selected)
+  }
+  return current
+}
+
 function scheduleSemanticIndex(target: Workspace): void {
   if (indexTimer) clearTimeout(indexTimer)
   indexTimer = setTimeout(() => {
@@ -79,7 +96,7 @@ function scheduleSemanticIndex(target: Workspace): void {
     indexRunning = true
     const controller = new AbortController()
     indexAbort = controller
-    void withActiveRequest(() => buildSemanticIndex(target, askProvider, controller.signal)).then(() => {
+    void withActiveRequest(() => buildSemanticIndex(target, askForIndex, controller.signal)).then(() => {
       window?.webContents.send('workspace:changed')
     }).catch((error) => {
       if (!controller.signal.aborted) window?.webContents.send('semantic:index-error', String(error))
@@ -397,13 +414,23 @@ app.whenReady().then(async () => {
   ipcMain.handle('workspace:search', (_event, query: string) => currentWorkspace().search(query))
   ipcMain.handle('workspace:semantic-search', (_event, query: string, provider: Provider) => withActiveRequest(() => semanticSearch(currentWorkspace(), query, provider)))
   ipcMain.handle('workspace:cached-semantic-search', (_event, query: string) => rankSemanticIndex(currentWorkspace(), query))
-  ipcMain.handle('conversation:send', async (_event, input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean; permissions?: WorkflowPermissions; readScope?: ReadScope; activeRef?: string; visibleRefs?: string[]; openRefs?: string[] }) => {
+  ipcMain.handle('conversation:send', async (event, input: { conversationId?: string; text: string; provider: Provider; autonomy: Autonomy; retained: boolean; permissions?: WorkflowPermissions; readScope?: ReadScope; activeRef?: string; visibleRefs?: string[]; openRefs?: string[] }) => {
     if (conversationAbort) throw new Error('Another conversation request is still running')
     const controller = new AbortController()
     conversationAbort = controller
-    const timeout = setTimeout(() => controller.abort(), 150000)
-    try { return await withActiveRequest(() => sendMessage(currentWorkspace(), input, controller.signal)) }
-    finally { clearTimeout(timeout); conversationAbort = null }
+    // Local models can be slow to load, so the limit is generous; Stop cancels sooner.
+    const timeout = setTimeout(() => controller.abort(), 10 * 60_000)
+    // Streamed text is sent at most every 60 ms so a fast provider does not flood the window with messages.
+    let latest: string | null = null
+    let progressTimer: ReturnType<typeof setTimeout> | null = null
+    const flush = (): void => { progressTimer = null; if (latest !== null && !event.sender.isDestroyed()) event.sender.send('conversation:progress', latest); latest = null }
+    const progress = (text: string): void => { latest = text; progressTimer ??= setTimeout(flush, 60) }
+    try { return await withActiveRequest(() => sendMessage(currentWorkspace(), input, controller.signal, progress)) }
+    finally {
+      clearTimeout(timeout)
+      if (progressTimer) clearTimeout(progressTimer)
+      conversationAbort = null
+    }
   })
   ipcMain.handle('conversation:cancel', () => {
     if (!conversationAbort) return false
@@ -415,23 +442,30 @@ app.whenReady().then(async () => {
   ipcMain.handle('proposal:attach-entity', (_event, proposalId: string, entityId: string) => currentWorkspace().attachEntityProposal(proposalId, entityId))
   ipcMain.handle('conversation:delete', (_event, id: string) => currentWorkspace().deleteConversation(id))
   ipcMain.handle('conversation:star', (_event, id: string, starred: boolean) => currentWorkspace().starConversation(id, starred))
-  ipcMain.handle('provider:status', async () => {
-    const selected = currentWorkspace()
-    const statuses = await checkProviders(selected.path)
-    const snapshot = await selected.snapshot()
-    const state = statuses[snapshot.semanticProvider].state
-    if (snapshot.modules.semanticIndex && (state === 'signed-in' || state === 'key-saved')) scheduleSemanticIndex(selected)
-    return statuses
+  ipcMain.handle('provider:status', () => providerStatuses())
+  ipcMain.handle('provider:sign-in', async (_event, provider: ProviderId, newAccount?: boolean) => {
+    const selected = providerRegistry().get(provider)
+    if (!selected.signIn) throw new Error('This provider uses its own sign-in; see its setup in Settings.')
+    const status = await selected.signIn({ newAccount: newAccount === true })
+    return providerStatuses({ ...await providerRegistry().statuses(), [provider]: status })
   })
-  ipcMain.handle('credential:save', async (_event, provider: Provider, key: string) => {
-    await saveCredential(provider, key)
-    const selected = currentWorkspace()
-    const statuses = await checkProviders(selected.path)
-    const snapshot = await selected.snapshot()
-    if (provider === snapshot.semanticProvider && snapshot.modules.semanticIndex &&
-      (statuses[provider].state === 'signed-in' || statuses[provider].state === 'key-saved')) scheduleSemanticIndex(selected)
-    return statuses
+  ipcMain.handle('provider:cancel-sign-in', (_event, provider: ProviderId) => { providerRegistry().get(provider).cancelSignIn?.() })
+  ipcMain.handle('provider:sign-out', async (_event, provider: ProviderId) => {
+    const selected = providerRegistry().get(provider)
+    if (!selected.signOut) throw new Error('This provider has no sign-out in Serenity.')
+    const status = await selected.signOut()
+    return { ...await providerRegistry().statuses(), [provider]: status }
   })
+  ipcMain.handle('credential:save', async (_event, provider: ProviderId, key: string) => {
+    const selected = providerRegistry().get(provider)
+    if (!selected.setCredential || typeof key !== 'string') throw new Error('This provider does not use a saved key')
+    const status = await selected.setCredential(key)
+    return providerStatuses({ ...await providerRegistry().statuses(), [provider]: status })
+  })
+  ipcMain.handle('provider:models', (_event, provider: ProviderId) => providerRegistry().get(provider).listModels())
+  ipcMain.handle('provider:settings', () => providerRegistry().settings())
+  ipcMain.handle('provider:update-settings', (_event, change: { provider: ProviderId; model?: string | null; baseURL?: string }) =>
+    providerRegistry().updateSettings(change))
   ipcMain.handle('module:set', async (_event, id: ModuleId, enabled: boolean) => {
     const selected = currentWorkspace()
     const snapshot = await selected.setModule(id, enabled)
@@ -461,6 +495,7 @@ app.whenReady().then(async () => {
   ipcMain.handle('entity:unmerge', (_event, source: string, reason: string) => currentWorkspace().unmergeEntities(source, reason))
   ipcMain.handle('identity:distinct', (_event, left: string, right: string) => currentWorkspace().markDistinctEntities(left, right))
   ipcMain.handle('identity:undo', (_event, id: string) => currentWorkspace().undoIdentityDecision(id))
+  setProviderRegistry(createProviderRegistry())
   recentWorkspaces = new RecentWorkspaces(join(app.getPath('userData'), 'recent-workspaces.json'))
   if (background && process.platform === 'darwin') app.setActivationPolicy('accessory')
   const selected = process.argv.find((argument) => argument.startsWith('--workspace='))?.slice('--workspace='.length)
@@ -475,6 +510,7 @@ app.whenReady().then(async () => {
 
 app.on('will-quit', () => {
   conversationAbort?.abort()
+  void currentProviderRegistry()?.dispose()
   indexAbort?.abort()
   documentAbort?.abort()
   if (indexTimer) clearTimeout(indexTimer)

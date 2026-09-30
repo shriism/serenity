@@ -4,6 +4,7 @@ import type { Stats } from 'node:fs'
 import { basename, extname, isAbsolute, join, relative, sep } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import YAML from 'yaml'
+import { isProviderId } from '../shared/providers'
 import type { Autonomy, CalendarEvent, Claim, ClaimResolution, Conversation, DocumentInfo, Entity, IdentityDecision, MergeRecord, Proposal, Provider, ProviderActivity, ReadScope, SearchResult, TaskItem, WorkflowPermissions, WorkbenchConfig, WorkbenchSession, WorkspacePage, WorkspaceSnapshot } from '../shared/types'
 import { parseResourceUri, workspaceResources } from '../shared/resources'
 import { modules, type ModuleId } from '../shared/modules'
@@ -16,6 +17,9 @@ import { renameWikilinks } from '../shared/wikilinks'
 import { distinctRepresentatives } from '../shared/identity'
 import { validateReadScope, validateWorkflowPermissions } from '../shared/workflow'
 import { canExtractText, extractDocument } from './documents'
+
+/** Providers earlier releases offered; their names still appear in saved settings and history. */
+const retiredProviders: Record<string, string> = { codex: 'OpenAI Codex' }
 
 /** Extra YAML fields as searchable words; records without any add nothing. */
 const metadataText = (metadata: Record<string, unknown> | undefined): string => metadata && Object.keys(metadata).length ? JSON.stringify(metadata) : ''
@@ -397,8 +401,14 @@ export class Workspace {
     }
     try {
       const raw: unknown = YAML.parse(await this.readOwnedText(join(this.path, '.serenity', 'semantic-provider.yaml')))
-      if (!record(raw) || !['copilot', 'codex'].includes(String(raw.provider))) throw new Error('Invalid provider setting')
-      semanticProvider = raw.provider as Provider
+      if (record(raw) && !isProviderId(raw.provider) && typeof raw.provider === 'string' && raw.provider in retiredProviders) {
+        // Background AI sends workspace content, so it waits for an explicit choice rather than moving to another service.
+        backgroundProviderNeedsChoice = true
+        errors.push(`.serenity/semantic-provider.yaml: ${retiredProviders[raw.provider]} is no longer offered. Background AI is paused until you choose a provider in Settings.`)
+      } else {
+        if (!record(raw) || !isProviderId(raw.provider)) throw new Error('Invalid provider setting')
+        semanticProvider = raw.provider
+      }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
         backgroundProviderNeedsChoice = true
@@ -412,11 +422,11 @@ export class Workspace {
     try {
       const raw: unknown = YAML.parse(await this.readOwnedText(join(this.path, '.serenity', 'semantic-index.yaml')))
       if (!record(raw) || !Array.isArray(raw.entries) || typeof raw.generatedAt !== 'string' ||
-        !['copilot', 'codex'].includes(String(raw.provider)) || raw.entries.some((entry: unknown) =>
+        typeof raw.provider !== 'string' || !raw.provider.trim() || raw.entries.some((entry: unknown) =>
           !record(entry) || typeof entry.key !== 'string' || typeof entry.fingerprint !== 'string' ||
           !/^[a-f0-9]{64}$/.test(entry.fingerprint) || typeof entry.summary !== 'string' ||
           !Array.isArray(entry.terms) || entry.terms.some((term: unknown) => typeof term !== 'string'))) throw new Error('Invalid semantic index')
-      semanticIndex = { generatedAt: raw.generatedAt, count: raw.entries.length, provider: raw.provider as Provider }
+      semanticIndex = { generatedAt: raw.generatedAt, count: raw.entries.length, provider: raw.provider }
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') errors.push(`.serenity/semantic-index.yaml: ${String(error)}`)
     }
@@ -1280,8 +1290,8 @@ export class Workspace {
   }
 
   async setSemanticProvider(provider: Provider): Promise<WorkspaceSnapshot> {
-    if (!['copilot', 'codex'].includes(provider)) throw new Error('Unknown provider')
-    await this.archiveInvalidSetting('semantic-provider.yaml', (raw) => record(raw) && ['copilot', 'codex'].includes(String(raw.provider)))
+    if (!isProviderId(provider)) throw new Error('Unknown provider')
+    await this.archiveInvalidSetting('semantic-provider.yaml', (raw) => record(raw) && (isProviderId(raw.provider) || String(raw.provider) in retiredProviders))
     await atomicWrite(join(this.path, '.serenity', 'semantic-provider.yaml'), YAML.stringify({ provider }))
     return this.snapshot()
   }

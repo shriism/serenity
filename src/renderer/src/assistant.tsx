@@ -6,8 +6,8 @@ import { MenuButton, useContextMenu } from './menu'
 import { Dialog } from './dialog'
 import { ResourcePicker } from './resource-picker'
 import { ProposalCard, type ProposalActions } from './proposal-card'
+import { chatGPTUsageURL, providerIds, providerLabels, providerName, providerShortLabels } from '../../shared/providers'
 
-export const providerNames: Record<Provider, string> = { copilot: 'GitHub Copilot', codex: 'OpenAI Codex' }
 const autonomyNames: Record<Autonomy, string> = { ask: 'Ask first', propose: 'Read & propose', autonomous: 'Auto-save permitted' }
 
 /** Stored conversations are ordinary files; show only citations with the expected shape. */
@@ -53,6 +53,8 @@ export interface AssistantState {
   message: string
   setMessage(message: string): void
   busy: boolean
+  /** The answer written so far while the provider streams it. */
+  streamingText: string
   sendMessage(event: FormEvent): Promise<void>
   cancelMessage(): Promise<void>
   deleteConversation(id?: string): Promise<void>
@@ -99,9 +101,9 @@ export function Composer({ assistant, placeholder = 'Ask Serenity…', context, 
       }}/>
     <div className="composer-bar">
       <div className="composer-options">
-        <MenuButton label="Provider" className="chip-btn" items={(['copilot', 'codex'] as const).map((provider) =>
-          ({ id: provider, label: providerNames[provider], checked: assistant.provider === provider, run: () => assistant.setProvider(provider) }))}>
-          {assistant.provider === 'copilot' ? 'Copilot' : 'Codex'}<ChevronDown size={12}/></MenuButton>
+        <MenuButton label="Provider" className="chip-btn" items={providerIds.map((provider) =>
+          ({ id: provider, label: providerLabels[provider], checked: assistant.provider === provider, run: () => assistant.setProvider(provider) }))}>
+          {providerShortLabels[assistant.provider]}<ChevronDown size={12}/></MenuButton>
         <MenuButton label="What the assistant may change" title="What the assistant may change" className="chip-btn" items={(['ask', 'propose', 'autonomous'] as const).map((mode) =>
           ({ id: mode, label: autonomyNames[mode], checked: assistant.autonomy === mode, run: () => assistant.setAutonomy(mode) }))}>
           {autonomyNames[assistant.autonomy]}<ChevronDown size={12}/></MenuButton>
@@ -111,13 +113,18 @@ export function Composer({ assistant, placeholder = 'Ask Serenity…', context, 
       {assistant.busy ? <button type="button" className="send-btn stop" onClick={() => void assistant.cancelMessage()} aria-label="Stop" title="Stop"><Square size={12} fill="currentColor"/></button>
         : <button type="submit" className="send-btn" disabled={!assistant.message.trim()} aria-label="Send message" title="Send (↵)"><ArrowUp size={16}/></button>}
     </div>
+    {assistant.provider === 'chatgpt' && <p className="composer-plan">Using ChatGPT plan · <button type="button" className="text-button"
+      onClick={() => void window.serenity.openExternal(chatGPTUsageURL)}>Manage usage</button></p>}
   </form>
 }
 
-function Thinking({ provider }: { provider: Provider }) {
+function Thinking({ provider, text }: { provider: Provider; text: string }) {
   const [phase, setPhase] = useState(0)
   useEffect(() => { const timer = window.setInterval(() => setPhase((value) => (value + 1) % 3), 3200); return () => window.clearInterval(timer) }, [])
-  return <div className="ai-thinking" role="status" aria-label={`${providerNames[provider]} is responding`}>
+  if (text) return <article className="message assistant streaming" aria-busy="true">
+    <small className="message-author">{providerLabels[provider]}</small><p className="message-text">{text}</p>
+  </article>
+  return <div className="ai-thinking" role="status" aria-label={`${providerLabels[provider]} is responding`}>
     <span className="thinking-mark" aria-hidden="true"><i/><i/><i/></span><span aria-hidden="true">{['Thinking…', 'Finding connections…', 'Putting it together…'][phase]}</span>
   </div>
 }
@@ -148,11 +155,11 @@ export function ConversationView({ assistant, intro, onOpenResource, suggestions
   suggestions?: ReactNode }) {
   const end = useRef<HTMLDivElement>(null)
   const count = assistant.conversation?.messages.length ?? 0
-  useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [count, assistant.busy, assistant.conversationId])
+  useEffect(() => { end.current?.scrollIntoView({ block: 'end' }) }, [count, assistant.busy, assistant.conversationId, assistant.streamingText])
   return <div className="messages">
     {!assistant.conversation && !assistant.busy && intro}
     {assistant.conversation?.messages.map((item) => <article key={item.id} className={`message ${item.role}`}>
-      {item.role === 'assistant' && <small className="message-author">{providerNames[item.provider as Provider] ?? item.provider}</small>}
+      {item.role === 'assistant' && <small className="message-author" title={item.model ? `Model: ${item.model}` : undefined}>{providerName(item.provider)}</small>}
       {item.role === 'assistant' ? <AnswerText message={item} onOpenResource={onOpenResource}/> : <p className="message-text">{item.text}</p>}
       {item.sharedContext?.map((context, index) => <details className="context-inspector" key={index}>
         <summary>{context.records.length} of {context.availableCount} permitted records sent{item.sharedContext!.length > 1 ? ` · pass ${index + 1}` : ''}</summary>
@@ -168,7 +175,7 @@ export function ConversationView({ assistant, intro, onOpenResource, suggestions
       </details>)}
     </article>)}
     {!assistant.busy && suggestions}
-    {assistant.busy && <Thinking provider={assistant.provider}/>}
+    {assistant.busy && <Thinking provider={assistant.provider} text={assistant.streamingText}/>}
     <div ref={end}/>
   </div>
 }

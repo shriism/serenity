@@ -37,7 +37,7 @@ The directory is the source of truth for stored records. SQLite FTS5 in `.sereni
 
 Source attribution is a string. [`provenance.ts`](src/shared/provenance.ts) associates it with an imported document by filename and an optional location suffix. It is not a versioned evidence pointer. Known-field updates in several YAML mutation paths preserve custom fields and comments, but not every write path preserves the original serialization.
 
-Credentials managed by Serenity live outside the workspace in application user data, encrypted through Electron `safeStorage` where supported. Otherwise they remain in session memory. Provider SDK authentication and runtime state may also exist outside the workspace.
+Provider credentials live outside the workspace in application user data: ChatGPT sign-in tokens, a GitHub token, or an API key. They are encrypted through Electron `safeStorage` where supported; otherwise they remain in session memory. Non-secret provider settings (chosen models, a server address, the ChatGPT app registration) are stored beside them in plain JSON. A Copilot sign-in made with GitHub's own tools stays in GitHub's credential store.
 
 ## Statements, current answers, and identity
 
@@ -91,9 +91,17 @@ Citation validation checks supplied references and searches quote text in the co
 
 ## Provider access
 
-[`providers.ts`](src/main/providers.ts) creates fresh provider sessions/threads for calls. Copilot has an empty available-tool list and rejects permission requests. Codex is configured read-only with approvals and tool network access disabled, using the workspace as its working directory. The model request itself still uses the provider service.
+Every model request goes through one interface, [`ModelProvider`](src/main/ai/model-provider.ts): check status, sign in or save a credential, list models, generate text with streaming, and cancel. A request carries Serenity's instructions and the context Serenity assembled, and returns text. Tools, file access, provider-side sessions, and agent loops are not part of the interface. Serenity does its own retrieval, citation checks, proposals, permissions, and persistence, so conversation, search, indexing, and document analysis do not depend on which provider answers. [`registry.ts`](src/main/ai/registry.ts) routes each call and records it in provider activity, including the model that answered when the provider reports it.
 
-Codex receives no selected-file allowlist and its tools are not explicitly removed. The prompt asks it not to use tools or edit files. The context filter therefore does not enforce a provider filesystem read boundary. The two adapters currently offer different controls. No complete read-isolation or provider-side retention guarantee follows from the activity log.
+| Provider | Authentication | Transport |
+| --- | --- | --- |
+| ChatGPT | [Sign in with ChatGPT](https://developers.openai.com/siwc/token-sharing-open-source): OAuth with PKCE and a `127.0.0.1` loopback redirect, one client registration per account, ID tokens verified against OpenAI's published keys, and rotating refresh tokens. Requests need the plan-usage permission. | Public Responses API, streamed, with `store: false`. |
+| GitHub Copilot | The person's existing GitHub sign-in for Copilot, or a GitHub token they provide. | The Copilot SDK, GitHub's supported route to subscription models, used only inside [`copilot.ts`](src/main/ai/copilot.ts). Each session has no tools, MCP servers, agents, skills, custom instructions, or memory, runs in an empty app-owned folder, and is deleted after the request. |
+| OpenAI-compatible | An optional API key. It is sent only over HTTPS or to a loopback address. | `/models` and streamed `/chat/completions` at a configured base URL: Ollama, LM Studio, vLLM, the llama.cpp server, hosted gateways, or OpenAI with an API key. |
+
+No provider receives a workspace path or a way to read files, so what a model sees is what Serenity sends. The activity log records what was sent, not how the service retains it; copies sent to external services are outside Serenity's control. Local runtimes keep requests on the machine or network the person chooses.
+
+A provider is added by implementing `ModelProvider` and registering it with the other providers; the rest of the application needs no change.
 
 AI search and background jobs are workspace operations independent of conversation scope. A coherent privacy boundary across adapters, conversation history, and background jobs remains unfinished. Durable knowledge stays in Serenity files, but copies sent to external services are outside Serenity's control.
 

@@ -68,7 +68,9 @@ export function AIProviderSettings({ onError }: { onError(message: string): void
   const [welcome, setWelcome] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
   const [copilotToken, setCopilotToken] = useState('')
-  const [baseURL, setBaseURL] = useState('')
+  const [baseURL, setBaseURL] = useState<string>(defaultOllamaURL)
+  /** Set once the person edits the address, so settings that load afterwards do not overwrite what they typed. */
+  const urlEdited = useRef(false)
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const request = useRef(0)
   const onErrorRef = useRef(onError)
@@ -84,7 +86,7 @@ export function AIProviderSettings({ onError }: { onError(message: string): void
   }, [reportError])
   useEffect(() => {
     refresh()
-    void window.serenity.providerSettings().then((next) => { setSettings(next); setBaseURL(next.ollama.baseURL ?? defaultOllamaURL) }, (error) => reportError(String(error)))
+    void window.serenity.providerSettings().then((next) => { setSettings(next); if (!urlEdited.current) setBaseURL(next.ollama.baseURL ?? defaultOllamaURL) }, (error) => reportError(String(error)))
     window.addEventListener('focus', refresh)
     return () => { ++request.current; window.removeEventListener('focus', refresh); if (copyTimer.current) clearTimeout(copyTimer.current) }
   }, [refresh, reportError])
@@ -110,7 +112,7 @@ export function AIProviderSettings({ onError }: { onError(message: string): void
       const next = await window.serenity.updateProviderSettings(change)
       setSettings(next)
       onError('')
-      if (change.baseURL !== undefined) { setBaseURL(next.ollama.baseURL ?? defaultOllamaURL); refresh() }
+      if (change.baseURL !== undefined) { urlEdited.current = false; setBaseURL(next.ollama.baseURL ?? defaultOllamaURL); refresh() }
     } catch (error) { onError(String(error)) }
   }
   function saveKey(event: FormEvent, provider: ProviderId, value: string, clear: () => void): void {
@@ -186,7 +188,7 @@ export function AIProviderSettings({ onError }: { onError(message: string): void
       {models('ollama')}
       <form onSubmit={(event) => { event.preventDefault(); void saveSetting({ provider: 'ollama', baseURL: baseURL.trim() === defaultOllamaURL ? '' : baseURL }) }}>
         <label className="field-label" htmlFor="ollama-url">Server address</label>
-        <div className="provider-key-row"><input id="ollama-url" type="url" spellCheck={false} value={baseURL} onChange={(event) => setBaseURL(event.target.value)}
+        <div className="provider-key-row"><input id="ollama-url" type="url" spellCheck={false} value={baseURL} onChange={(event) => { urlEdited.current = true; setBaseURL(event.target.value) }}
           placeholder={defaultOllamaURL}/>
           <button type="submit" className="primary" disabled={busy !== null || !baseURL.trim() || baseURL.trim() === savedURL}>Save</button></div>
         {savedURL !== defaultOllamaURL && <button type="button" className="text-button provider-remove" disabled={busy !== null}

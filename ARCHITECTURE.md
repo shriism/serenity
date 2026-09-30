@@ -37,7 +37,7 @@ The directory is the source of truth for stored records. SQLite FTS5 in `.sereni
 
 Source attribution is a string. [`provenance.ts`](src/shared/provenance.ts) associates it with an imported document by filename and an optional location suffix. It is not a versioned evidence pointer. Known-field updates in several YAML mutation paths preserve custom fields and comments, but not every write path preserves the original serialization.
 
-Provider credentials live outside the workspace in application user data: ChatGPT sign-in tokens, a GitHub token, or an API key. They are encrypted through Electron `safeStorage` where supported; otherwise they remain in session memory. Non-secret provider settings (chosen models, a server address, the ChatGPT app registration) are stored beside them in plain JSON. A Copilot sign-in made with GitHub's own tools stays in GitHub's credential store.
+Provider credentials live outside the workspace in application user data: ChatGPT sign-in tokens or a GitHub token. They are encrypted through Electron `safeStorage` where supported; otherwise they remain in session memory. Non-secret provider settings (chosen models, the Ollama server address, the ChatGPT app registration) are stored beside them in plain JSON. A Copilot sign-in made with GitHub's own tools stays in GitHub's credential store.
 
 ## Statements, current answers, and identity
 
@@ -97,9 +97,9 @@ Every model request goes through one interface, [`ModelProvider`](src/main/ai/mo
 | --- | --- | --- |
 | ChatGPT | [Sign in with ChatGPT](https://developers.openai.com/siwc/token-sharing-open-source): OAuth with PKCE and a `127.0.0.1` loopback redirect, one client registration per account, ID tokens verified against OpenAI's published keys, and rotating refresh tokens. Requests need the plan-usage permission. | Public Responses API, streamed, with `store: false`. |
 | GitHub Copilot | The person's existing GitHub sign-in for Copilot, or a GitHub token they provide. | The Copilot SDK, GitHub's supported route to subscription models, used only inside [`copilot.ts`](src/main/ai/copilot.ts). Each session has no tools, MCP servers, agents, skills, custom instructions, or memory, runs in an empty app-owned folder, and is deleted after the request. |
-| OpenAI-compatible | An optional API key. It is sent only over HTTPS or to a loopback address. | `/models` and streamed `/chat/completions` at a configured base URL: Ollama, LM Studio, vLLM, the llama.cpp server, hosted gateways, or OpenAI with an API key. |
+| Ollama | None; the server is this computer's Ollama unless another address is set. | Ollama's own API: `/api/tags` for installed models and streamed `/api/chat`. Reasoning a model writes in `<think>` tags is left out of the answer. |
 
-No provider receives a workspace path or a way to read files, so what a model sees is what Serenity sends. The activity log records what was sent, not how the service retains it; copies sent to external services are outside Serenity's control. Local runtimes keep requests on the machine or network the person chooses.
+No provider receives a workspace path or a way to read files, so what a model sees is what Serenity sends. The activity log records what was sent, not how the service retains it; copies sent to external services are outside Serenity's control. With Ollama, requests stay on the machine the person chooses.
 
 A provider is added by implementing `ModelProvider` and registering it with the other providers; the rest of the application needs no change.
 

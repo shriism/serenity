@@ -711,9 +711,9 @@ test('a background provider from an earlier release waits for an explicit choice
     assert.equal(paused.modules.semanticIndex, false)
     assert.ok(paused.errors.some((error) => /OpenAI Codex is no longer offered/.test(error)))
     assert.equal(paused.semanticIndex?.provider, 'codex', 'an index made by a retired provider is still readable')
-    const resumed = await workspace.setSemanticProvider('openai-compatible')
+    const resumed = await workspace.setSemanticProvider('ollama')
     assert.equal(resumed.backgroundProviderNeedsChoice, false)
-    assert.equal(resumed.semanticProvider, 'openai-compatible')
+    assert.equal(resumed.semanticProvider, 'ollama')
     assert.ok(!(await readdir(join(directory, '.serenity'))).some((name) => name.startsWith('semantic-provider.yaml.corrupt-')),
       'a retired provider setting is replaced, not treated as damage')
     workspace.close()

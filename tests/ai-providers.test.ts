@@ -7,10 +7,10 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { streamedAnswer } from '../src/shared/streamed-answer'
 import { normalizeBaseURL, providerName } from '../src/shared/providers'
-import { readChatCompletionsStream, readResponsesStream, serverEvents } from '../src/main/ai/streams'
+import { readOllamaStream, readResponsesStream, serverEvents } from '../src/main/ai/streams'
 import { authorizeURL, createPkce, verifyIdToken } from '../src/main/ai/chatgpt-auth'
 import { ChatGPTProvider } from '../src/main/ai/chatgpt'
-import { OpenAICompatibleProvider } from '../src/main/ai/openai-compatible'
+import { OllamaProvider } from '../src/main/ai/ollama'
 import { ProviderRegistry } from '../src/main/ai/registry'
 import { fileProviderStorage, type SecretCipher } from '../src/main/ai/storage'
 import type { ModelProvider } from '../src/main/ai/model-provider'
@@ -69,63 +69,75 @@ test('Responses streams succeed only on response.completed and explain plan-usag
   await assert.rejects(readResponsesStream(streamOf('data: {"type":"response.incomplete","response":{"incomplete_details":{"reason":"max_output_tokens"}}}\n\n'), {}, 'ChatGPT'), /max_output_tokens/)
 })
 
-test('Chat Completions streams collect deltas and tolerate servers that omit [DONE] after finishing', async () => {
-  const chunk = (content: string, finish: string | null = null): string => `data: ${JSON.stringify({ model: 'llama3', choices: [{ delta: { content }, finish_reason: finish }] })}\n\n`
-  assert.deepEqual(await readChatCompletionsStream(streamOf(chunk('Hi'), chunk(' there'), 'data: [DONE]\n\n'), {}, 'Server'), { text: 'Hi there', model: 'llama3' })
-  assert.deepEqual(await readChatCompletionsStream(streamOf(chunk('Hi'), chunk('', 'stop')), {}, 'Server'), { text: 'Hi', model: 'llama3' })
-  await assert.rejects(readChatCompletionsStream(streamOf(chunk('Hi')), {}, 'Server'), /before it was complete/)
-  await assert.rejects(readChatCompletionsStream(streamOf('data: {"error":{"message":"model not found"}}\n\n'), {}, 'Server'), /model not found/)
+test('Ollama streams collect message text, leave out <think> reasoning, and need the final done line', async () => {
+  const line = (content: string, done = false): string => `${JSON.stringify({ model: 'gemma3', message: { role: 'assistant', content }, done })}\n`
+  const deltas: string[] = []
+  assert.deepEqual(await readOllamaStream(streamOf(line('Hi'), line(' there').slice(0, 20), line(' there').slice(20), line('', true)), { onText: (delta) => deltas.push(delta) }, 'Ollama'),
+    { text: 'Hi there', model: 'gemma3' })
+  assert.deepEqual(deltas, ['Hi', ' there'], 'a line split across chunks is read whole')
+  const shown: string[] = []
+  assert.equal((await readOllamaStream(streamOf(line('<thi'), line('nk>Planning…</th'), line('ink>\n{"answer"'), line(':"ok"}'), line('', true)),
+    { onText: (delta) => shown.push(delta) }, 'Ollama')).text, '{"answer":"ok"}')
+  assert.equal(shown.join(''), '{"answer":"ok"}', 'reasoning is never shown as the answer')
+  await assert.rejects(readOllamaStream(streamOf(line('Hi')), {}, 'Ollama'), /before it was complete/)
+  await assert.rejects(readOllamaStream(streamOf('{"error":"model \'x\' not found"}\n'), {}, 'Ollama'), /not found/)
 })
 
 test('base URLs are limited to plain http(s) endpoints, and retired providers keep readable names', () => {
-  assert.equal(normalizeBaseURL(' http://127.0.0.1:11434/v1/ '), 'http://127.0.0.1:11434/v1')
+  assert.equal(normalizeBaseURL(' http://127.0.0.1:11434/v1/ '), 'http://127.0.0.1:11434', 'an OpenAI-style /v1 suffix is dropped')
+  assert.equal(normalizeBaseURL('http://gpu-box.local:11434/api'), 'http://gpu-box.local:11434')
   assert.throws(() => normalizeBaseURL('file:///etc/passwd'), /http/)
-  assert.throws(() => normalizeBaseURL('https://user:secret@example.com/v1'), /API key/)
+  assert.throws(() => normalizeBaseURL('https://user:secret@example.com/v1'), /password/)
   assert.throws(() => normalizeBaseURL('not a url'), /full URL/)
   assert.equal(providerName('codex'), 'Codex')
   assert.equal(providerName('chatgpt'), 'ChatGPT')
 })
 
-test('the OpenAI-compatible provider streams from a configured server, sends a key only when set, and cancels', async () => withDirectory(async (directory) => {
-  const requests: { path: string; auth?: string; body: string }[] = []
+test('the Ollama provider finds this computer\'s Ollama by default, streams answers, and cancels', async () => withDirectory(async (directory) => {
+  const requests: { path: string; body: string }[] = []
+  let installed = [{ name: 'gemma3:latest', model: 'gemma3:latest', details: { parameter_size: '4.3B' } }, { name: 'qwen3:8b', model: 'qwen3:8b', details: {} }]
   let hold: (() => void) | null = null
   const { url, server } = await listen((request, body, response) => {
-    requests.push({ path: request.url!, ...(request.headers.authorization ? { auth: request.headers.authorization } : {}), body })
-    if (request.url === '/v1/models') { response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ data: [{ id: 'llama3' }, { id: 'qwen' }] })); return }
+    requests.push({ path: request.url!, body })
+    if (request.url === '/api/tags') { response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ models: installed })); return }
     const parsed = JSON.parse(body) as { model: string; messages: { content: string }[] }
-    response.writeHead(200, { 'Content-Type': 'text/event-stream' })
-    if (parsed.messages[1].content === 'wait') { response.write(`data: ${JSON.stringify({ choices: [{ delta: { content: 'Thinking' } }] })}\n\n`); hold = () => response.end(); return }
-    response.end(`data: ${JSON.stringify({ model: parsed.model, choices: [{ delta: { content: 'Answer' } }] })}\n\ndata: [DONE]\n\n`)
+    response.writeHead(200, { 'Content-Type': 'application/x-ndjson' })
+    const line = (content: string, done = false): string => `${JSON.stringify({ model: parsed.model, message: { role: 'assistant', content }, done })}\n`
+    if (parsed.messages[1].content === 'wait') { response.write(line('Thinking')); hold = () => response.end(); return }
+    response.end(line('Answer') + line('', true))
   })
   try {
     const storage = fileProviderStorage(directory, cipher)
-    const provider = new OpenAICompatibleProvider(storage)
-    assert.equal((await provider.status()).state, 'not-configured')
-    await storage.updateSettings((settings) => { settings['openai-compatible'].baseURL = `${url}/v1` })
-    assert.deepEqual(await provider.listModels(), [{ id: 'llama3', label: 'llama3' }, { id: 'qwen', label: 'qwen' }])
+    const offline = new OllamaProvider(storage, (async () => { throw new TypeError('fetch failed') }) as typeof fetch)
+    const down = await offline.status()
+    assert.deepEqual({ state: down.state, account: down.account }, { state: 'unavailable', account: '127.0.0.1:11434' }, 'the default address is Ollama\'s own')
+    assert.match(down.detail!, /isn’t running/)
+
+    await storage.updateSettings((settings) => { settings.ollama.baseURL = url })
+    const provider = new OllamaProvider(storage)
+    assert.deepEqual(await provider.listModels(), [{ id: 'gemma3:latest', label: 'gemma3:latest · 4.3B' }, { id: 'qwen3:8b', label: 'qwen3:8b' }])
     assert.equal((await provider.status()).state, 'ready')
     const deltas: string[] = []
     const result = await provider.generate({ instructions: 'Rules', input: 'Question' }, { onText: (delta) => deltas.push(delta) })
-    assert.deepEqual(result, { text: 'Answer', model: 'llama3' }, 'the first listed model is used when none is chosen')
+    assert.deepEqual(result, { text: 'Answer', model: 'gemma3:latest' }, 'the first installed model is used when none is chosen')
     assert.deepEqual(deltas, ['Answer'])
     const sent = JSON.parse(requests.at(-1)!.body)
+    assert.equal(requests.at(-1)!.path, '/api/chat')
     assert.deepEqual(sent.messages, [{ role: 'system', content: 'Rules' }, { role: 'user', content: 'Question' }])
     assert.equal(sent.stream, true)
-    assert.ok(requests.every((item) => !item.auth), 'no key is sent before one is saved')
-    await provider.setCredential('local-key')
-    await provider.generate({ instructions: 'Rules', input: 'Question', model: 'qwen' })
-    assert.equal(requests.at(-1)!.auth, 'Bearer local-key')
-    assert.equal(JSON.parse(requests.at(-1)!.body).model, 'qwen')
-    const stored = await readFile(join(directory, 'provider-credentials.json'), 'utf8')
-    assert.ok(!stored.includes('local-key'), 'the key is stored encrypted')
+    await provider.generate({ instructions: 'Rules', input: 'Question', model: 'qwen3:8b' })
+    assert.equal(JSON.parse(requests.at(-1)!.body).model, 'qwen3:8b')
 
     const controller = new AbortController()
     const pending = provider.generate({ instructions: 'Rules', input: 'wait' }, { signal: controller.signal, onText: () => controller.abort() })
     await assert.rejects(pending, /cancelled/)
     hold?.()
 
-    await storage.updateSettings((settings) => { settings['openai-compatible'].baseURL = 'http://192.0.2.10:8000/v1' })
-    await assert.rejects(provider.generate({ instructions: 'Rules', input: 'Question' }), /https/, 'a key is never sent over plain HTTP to another machine')
+    installed = []
+    const empty = await provider.status()
+    assert.equal(empty.state, 'not-configured')
+    assert.match(empty.detail!, /ollama pull/)
+    await assert.rejects(provider.generate({ instructions: 'Rules', input: 'Question' }), /no models/)
   } finally { server.close(); server.closeAllConnections() }
 }))
 
@@ -256,21 +268,21 @@ test('the registry records which model answered and validates provider settings'
   const workspace = new Workspace(directory)
   await workspace.initialize()
   const storage = fileProviderStorage(join(directory, 'app'), { available: () => false, encrypt: () => { throw new Error('unused') }, decrypt: () => { throw new Error('unused') } })
-  const fake = (id: 'chatgpt' | 'copilot' | 'openai-compatible'): ModelProvider => ({ id, status: async () => ({ state: 'ready' }), listModels: async () => [],
+  const fake = (id: 'chatgpt' | 'copilot' | 'ollama'): ModelProvider => ({ id, status: async () => ({ state: 'ready' }), listModels: async () => [],
     generate: async (request) => ({ text: `${id}: ${request.input}`, model: `${id}-model` }) })
-  const registry = new ProviderRegistry({ chatgpt: fake('chatgpt'), copilot: fake('copilot'), 'openai-compatible': fake('openai-compatible') }, storage)
-  const result = await registry.generate('openai-compatible', directory, { instructions: 'Rules', input: 'Private question' }, { operation: 'conversation', refs: ['entity:x'] })
-  assert.equal(result.text, 'openai-compatible: Private question')
+  const registry = new ProviderRegistry({ chatgpt: fake('chatgpt'), copilot: fake('copilot'), ollama: fake('ollama') }, storage)
+  const result = await registry.generate('ollama', directory, { instructions: 'Rules', input: 'Private question' }, { operation: 'conversation', refs: ['entity:x'] })
+  assert.equal(result.text, 'ollama: Private question')
   const [activity] = (await workspace.snapshot()).providerActivity
-  assert.deepEqual({ provider: activity.provider, model: activity.model, status: activity.status }, { provider: 'openai-compatible', model: 'openai-compatible-model', status: 'completed' })
+  assert.deepEqual({ provider: activity.provider, model: activity.model, status: activity.status }, { provider: 'ollama', model: 'ollama-model', status: 'completed' })
   await assert.rejects(registry.generate('codex' as never, directory, { instructions: '', input: '' }, { operation: 'conversation', refs: [] }), /Unknown AI provider/)
-  await assert.rejects(registry.updateSettings({ provider: 'openai-compatible', baseURL: 'ftp://example.com' }), /http/)
-  await assert.rejects(registry.updateSettings({ provider: 'chatgpt', baseURL: 'http://127.0.0.1:1/v1' }), /Only the OpenAI-compatible/)
-  await registry.updateSettings({ provider: 'openai-compatible', baseURL: 'http://127.0.0.1:11434/v1', model: 'llama3' })
-  const moved = await registry.updateSettings({ provider: 'openai-compatible', baseURL: 'http://127.0.0.1:1234/v1' })
-  assert.deepEqual(moved['openai-compatible'], { baseURL: 'http://127.0.0.1:1234/v1' }, 'a different server starts without the old model choice')
-  await storage.setSecret('openai-compatible', 'session-only')
-  assert.equal(await storage.secret('openai-compatible'), 'session-only')
+  await assert.rejects(registry.updateSettings({ provider: 'ollama', baseURL: 'ftp://example.com' }), /http/)
+  await assert.rejects(registry.updateSettings({ provider: 'chatgpt', baseURL: 'http://127.0.0.1:1' }), /Only Ollama/)
+  await registry.updateSettings({ provider: 'ollama', baseURL: 'http://gpu-box.local:11434', model: 'gemma3' })
+  const moved = await registry.updateSettings({ provider: 'ollama', baseURL: '' })
+  assert.deepEqual(moved.ollama, {}, 'returning to this computer\'s Ollama starts without the other machine\'s model choice')
+  await storage.setSecret('copilot', 'session-only')
+  assert.equal(await storage.secret('copilot'), 'session-only')
   assert.ok(!(await readFile(join(directory, 'app', 'provider-credentials.json'), 'utf8')).includes('session-only'), 'without system encryption a key is kept only in memory')
   workspace.close()
 }))

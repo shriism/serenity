@@ -40,16 +40,16 @@ async function writeJSON(path: string, value: unknown): Promise<void> {
 
 function cleanSettings(raw: Partial<ProviderSettings> | undefined): ProviderSettings {
   const model = (value: unknown): string | undefined => typeof value === 'string' && value.trim() ? value.trim().slice(0, 200) : undefined
-  const compatible = raw?.['openai-compatible']
+  const ollama = raw?.ollama
   let baseURL: string | undefined
-  try { baseURL = typeof compatible?.baseURL === 'string' && compatible.baseURL ? normalizeBaseURL(compatible.baseURL) : undefined } catch { baseURL = undefined }
+  try { baseURL = typeof ollama?.baseURL === 'string' && ollama.baseURL ? normalizeBaseURL(ollama.baseURL) : undefined } catch { baseURL = undefined }
   const chatgptModel = model(raw?.chatgpt?.model)
   const copilotModel = model(raw?.copilot?.model)
-  const compatibleModel = model(compatible?.model)
+  const ollamaModel = model(ollama?.model)
   return {
     chatgpt: chatgptModel ? { model: chatgptModel } : {},
     copilot: copilotModel ? { model: copilotModel } : {},
-    'openai-compatible': { ...(baseURL ? { baseURL } : {}), ...(compatibleModel ? { model: compatibleModel } : {}) }
+    ollama: { ...(baseURL ? { baseURL } : {}), ...(ollamaModel ? { model: ollamaModel } : {}) }
   }
 }
 
@@ -78,6 +78,7 @@ export function fileProviderStorage(directory: string, cipher: SecretCipher): Pr
       const secrets = await readJSON<Record<string, string>>(secretsPath, {})
       // Credentials for providers Serenity no longer offers are dropped rather than left on disk.
       delete secrets.codex
+      delete secrets['openai-compatible']
       if (value && cipher.available()) { secrets[name] = cipher.encrypt(value); session.delete(name) }
       else if (value) { session.set(name, value); delete secrets[name] }
       else { delete secrets[name]; session.delete(name) }

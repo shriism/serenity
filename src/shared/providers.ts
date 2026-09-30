@@ -1,13 +1,13 @@
 /** The model services Serenity can use. Each one only supplies inference; Serenity owns orchestration and workspace access. */
-export const providerIds = ['chatgpt', 'copilot', 'openai-compatible'] as const
+export const providerIds = ['chatgpt', 'copilot', 'ollama'] as const
 export type ProviderId = (typeof providerIds)[number]
 
 export const providerLabels: Record<ProviderId, string> = {
-  chatgpt: 'ChatGPT', copilot: 'GitHub Copilot', 'openai-compatible': 'OpenAI-compatible'
+  chatgpt: 'ChatGPT', copilot: 'GitHub Copilot', ollama: 'Ollama'
 }
 
 /** Short names for compact controls. */
-export const providerShortLabels: Record<ProviderId, string> = { chatgpt: 'ChatGPT', copilot: 'Copilot', 'openai-compatible': 'Custom' }
+export const providerShortLabels: Record<ProviderId, string> = { chatgpt: 'ChatGPT', copilot: 'Copilot', ollama: 'Ollama' }
 
 export function isProviderId(value: unknown): value is ProviderId {
   return typeof value === 'string' && (providerIds as readonly string[]).includes(value)
@@ -38,32 +38,22 @@ export interface ModelOption { id: string; label: string }
 export interface ProviderSettings {
   chatgpt: { model?: string }
   copilot: { model?: string }
-  'openai-compatible': { baseURL?: string; model?: string }
+  ollama: { baseURL?: string; model?: string }
 }
 
-/** Common local and hosted endpoints that speak the OpenAI-compatible API. */
-export const compatiblePresets = [
-  { id: 'ollama', label: 'Ollama', baseURL: 'http://127.0.0.1:11434/v1' },
-  { id: 'lm-studio', label: 'LM Studio', baseURL: 'http://127.0.0.1:1234/v1' },
-  { id: 'vllm', label: 'vLLM', baseURL: 'http://127.0.0.1:8000/v1' },
-  { id: 'llama-cpp', label: 'llama.cpp server', baseURL: 'http://127.0.0.1:8080/v1' },
-  { id: 'openai', label: 'OpenAI API', baseURL: 'https://api.openai.com/v1' }
-] as const
-
-const loopbackHosts = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
-
-export function isLoopbackURL(value: string): boolean {
-  try { return loopbackHosts.has(new URL(value).hostname) } catch { return false }
-}
+/** Where Ollama listens unless it has been configured otherwise. */
+export const defaultOllamaURL = 'http://127.0.0.1:11434'
 
 /** Normalizes a user-entered base URL, refusing anything other than plain http(s) without credentials or a query. */
 export function normalizeBaseURL(value: string): string {
+  if (!value.trim()) throw new Error('Enter the address Ollama is listening on, such as http://127.0.0.1:11434')
   let url: URL
-  try { url = new URL(value.trim()) } catch { throw new Error('Enter a full URL, such as http://127.0.0.1:11434/v1') }
+  try { url = new URL(value.trim()) } catch { throw new Error('Enter a full URL, such as http://127.0.0.1:11434') }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('The base URL must start with http:// or https://')
-  if (url.username || url.password) throw new Error('Put the API key in its own field, not in the URL')
+  if (url.username || url.password) throw new Error('The address cannot include a user name or password')
   if (url.search || url.hash) throw new Error('The base URL cannot include a query or fragment')
-  return url.href.replace(/\/+$/, '')
+  // Ollama's own API sits at the root; addresses copied from OpenAI-style setups end in /v1 or /api.
+  return url.href.replace(/\/+$/, '').replace(/\/(v1|api)$/, '')
 }
 
 /** Where ChatGPT account holders review and limit how apps use their plan. */

@@ -19,7 +19,7 @@ import { validateReadScope, validateWorkflowPermissions } from '../shared/workfl
 import { canExtractText, extractDocument } from './documents'
 
 /** Providers earlier releases offered; their names still appear in saved settings and history. */
-const retiredProviders: Record<string, string> = { codex: 'OpenAI Codex' }
+const retiredProviders: Record<string, string> = { codex: 'OpenAI Codex', 'openai-compatible': 'The OpenAI-compatible provider' }
 
 /** Extra YAML fields as searchable words; records without any add nothing. */
 const metadataText = (metadata: Record<string, unknown> | undefined): string => metadata && Object.keys(metadata).length ? JSON.stringify(metadata) : ''

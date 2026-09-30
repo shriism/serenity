@@ -3,7 +3,7 @@ import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { ChatGPTProvider } from './chatgpt'
 import { CopilotProvider } from './copilot'
-import { OpenAICompatibleProvider } from './openai-compatible'
+import { OllamaProvider } from './ollama'
 import { ProviderRegistry } from './registry'
 import { fileProviderStorage, type SecretCipher } from './storage'
 
@@ -30,6 +30,6 @@ export function createProviderRegistry(): ProviderRegistry {
   return new ProviderRegistry({
     chatgpt: new ChatGPTProvider({ storage, openBrowser: (url) => shell.openExternal(url) }),
     copilot: new CopilotProvider({ storage, runtimePath: copilotRuntime(), workingDirectory: isolated }),
-    'openai-compatible': new OpenAICompatibleProvider(storage)
+    ollama: new OllamaProvider(storage)
   }, storage)
 }

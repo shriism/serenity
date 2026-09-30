@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { Check, ChevronDown } from 'lucide-react'
 import {
-  chatGPTUsageURL, compatiblePresets, providerIds, providerLabels, type ModelOption, type ProviderId, type ProviderSettings, type ProviderStatus
+  chatGPTUsageURL, defaultOllamaURL, providerIds, providerLabels, type ModelOption, type ProviderId, type ProviderSettings, type ProviderStatus
 } from '../../shared/providers'
 import { Dialog } from './dialog'
 
@@ -10,12 +10,12 @@ type Statuses = Record<ProviderId, ProviderStatus>
 function statusLabel(provider: ProviderId, status: ProviderStatus | undefined): string {
   if (!status) return 'Checking…'
   switch (status.state) {
-    case 'ready': return provider === 'openai-compatible' ? `Connected${status.account ? ` · ${status.account}` : ''}`
+    case 'ready': return provider === 'ollama' ? 'Running'
       : status.account ? `Signed in as ${status.account}` : status.credential === 'token' ? 'Token saved' : 'Signed in'
     case 'needs-permission': return 'Plan usage not allowed'
-    case 'signed-out': return provider === 'openai-compatible' ? 'Needs an API key' : 'Not signed in'
-    case 'not-configured': return 'Not set up'
-    default: return provider === 'openai-compatible' ? 'Not reachable' : 'Could not check'
+    case 'signed-out': return 'Not signed in'
+    case 'not-configured': return provider === 'ollama' ? 'No models installed' : 'Not set up'
+    default: return provider === 'ollama' ? 'Not running' : 'Could not check'
   }
 }
 
@@ -26,7 +26,7 @@ function ModelChoice({ provider, status, settings, onChange, onError }: { provid
   const [loading, setLoading] = useState(false)
   const ready = status?.state === 'ready'
   const selected = settings[provider].model ?? ''
-  const baseURL = provider === 'openai-compatible' ? settings['openai-compatible'].baseURL : undefined
+  const baseURL = provider === 'ollama' ? settings.ollama.baseURL : undefined
   useEffect(() => {
     if (!ready) { setModels(null); return }
     let current = true
@@ -42,7 +42,7 @@ function ModelChoice({ provider, status, settings, onChange, onError }: { provid
   return <div className="provider-model">
     <label className="field-label" htmlFor={`${provider}-model`}>Model</label>
     <select id={`${provider}-model`} value={selected} disabled={loading} onChange={(event) => onChange(event.target.value || null)}>
-      <option value="">{loading ? 'Loading models…' : provider === 'copilot' ? 'Copilot default' : 'First available model'}</option>
+      <option value="">{loading ? 'Loading models…' : provider === 'copilot' ? 'Copilot default' : provider === 'ollama' ? 'First installed model' : 'First available model'}</option>
       {!known && <option value={selected}>{selected}</option>}
       {options.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
     </select>
@@ -66,9 +66,8 @@ export function AIProviderSettings({ onError }: { onError(message: string): void
   const [busy, setBusy] = useState<ProviderId | null>(null)
   const [signingIn, setSigningIn] = useState(false)
   const [welcome, setWelcome] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [copied, setCopied] = useState<string | null>(null)
   const [copilotToken, setCopilotToken] = useState('')
-  const [apiKey, setApiKey] = useState('')
   const [baseURL, setBaseURL] = useState('')
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const request = useRef(0)
@@ -85,7 +84,7 @@ export function AIProviderSettings({ onError }: { onError(message: string): void
   }, [reportError])
   useEffect(() => {
     refresh()
-    void window.serenity.providerSettings().then((next) => { setSettings(next); setBaseURL(next['openai-compatible'].baseURL ?? '') }, (error) => reportError(String(error)))
+    void window.serenity.providerSettings().then((next) => { setSettings(next); setBaseURL(next.ollama.baseURL ?? defaultOllamaURL) }, (error) => reportError(String(error)))
     window.addEventListener('focus', refresh)
     return () => { ++request.current; window.removeEventListener('focus', refresh); if (copyTimer.current) clearTimeout(copyTimer.current) }
   }, [refresh, reportError])
@@ -111,25 +110,26 @@ export function AIProviderSettings({ onError }: { onError(message: string): void
       const next = await window.serenity.updateProviderSettings(change)
       setSettings(next)
       onError('')
-      if (change.baseURL !== undefined) { setBaseURL(next['openai-compatible'].baseURL ?? ''); refresh() }
+      if (change.baseURL !== undefined) { setBaseURL(next.ollama.baseURL ?? defaultOllamaURL); refresh() }
     } catch (error) { onError(String(error)) }
   }
   function saveKey(event: FormEvent, provider: ProviderId, value: string, clear: () => void): void {
     event.preventDefault()
     void act(provider, () => window.serenity.saveCredential(provider, value)).then((next) => { if (next) clear() })
   }
-  function copyLogin(command: string): void {
+  function copyCommand(command: string): void {
     window.serenity.copyText(command)
-    setCopied(true)
+    setCopied(command)
     if (copyTimer.current) clearTimeout(copyTimer.current)
-    copyTimer.current = setTimeout(() => { setCopied(false); copyTimer.current = null }, 2000)
+    copyTimer.current = setTimeout(() => { setCopied(null); copyTimer.current = null }, 2000)
   }
   const manageUsage = <button type="button" className="secondary" onClick={() => void window.serenity.openExternal(chatGPTUsageURL)}>Manage usage</button>
   const models = (provider: ProviderId): ReactNode => settings && <ModelChoice provider={provider} status={statuses?.[provider]} settings={settings}
     onChange={(model) => void saveSetting({ provider, model })} onError={reportError}/>
   const chatgpt = statuses?.chatgpt
   const copilot = statuses?.copilot
-  const compatible = statuses?.['openai-compatible']
+  const ollama = statuses?.ollama
+  const savedURL = settings?.ollama.baseURL ?? defaultOllamaURL
 
   return <>
     <div className="provider-intro"><p className="hint">Choose a provider for each conversation in the assistant. Serenity sends only the context it shows you, and reviews every suggested change.</p>
@@ -164,8 +164,8 @@ export function AIProviderSettings({ onError }: { onError(message: string): void
       {copilot?.detail && <p className="hint">{copilot.detail}</p>}
       {copilot?.state === 'ready' && models('copilot')}
       {copilot?.state !== 'ready' && <div className="provider-login"><code>copilot login</code>
-        <button type="button" className="secondary" onClick={() => copyLogin('copilot login')} aria-label={copied ? 'copilot login command copied' : 'Copy copilot login command'}>
-          {copied ? <><Check size={14} aria-hidden="true"/> Copied</> : 'Copy command'}</button></div>}
+        <button type="button" className="secondary" onClick={() => copyCommand('copilot login')} aria-label={copied === 'copilot login' ? 'copilot login command copied' : 'Copy copilot login command'}>
+          {copied === 'copilot login' ? <><Check size={14} aria-hidden="true"/> Copied</> : 'Copy command'}</button></div>}
       <form onSubmit={(event) => saveKey(event, 'copilot', copilotToken, () => setCopilotToken(''))}>
         <label className="field-label" htmlFor="copilot-token">{copilot?.credential === 'token' ? 'Replace the saved GitHub token' : 'Or add a GitHub token'}</label>
         <div className="provider-key-row"><input id="copilot-token" type="password" autoComplete="off" value={copilotToken}
@@ -176,29 +176,21 @@ export function AIProviderSettings({ onError }: { onError(message: string): void
       </form>
     </ProviderCard>
 
-    <ProviderCard provider="openai-compatible" status={compatible}>
-      <p>Connect a local model runtime or any server that offers the OpenAI-compatible API. Workspace context is sent to the server you enter.</p>
-      <form onSubmit={(event) => { event.preventDefault(); void saveSetting({ provider: 'openai-compatible', baseURL }) }}>
-        <label className="field-label" htmlFor="compatible-preset">Server</label>
-        <select id="compatible-preset" value={compatiblePresets.find((item) => item.baseURL === baseURL)?.id ?? ''}
-          onChange={(event) => { const preset = compatiblePresets.find((item) => item.id === event.target.value); if (preset) setBaseURL(preset.baseURL) }}>
-          <option value="">Custom</option>
-          {compatiblePresets.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-        </select>
-        <label className="field-label" htmlFor="compatible-url">Base URL</label>
-        <div className="provider-key-row"><input id="compatible-url" type="url" spellCheck={false} value={baseURL} onChange={(event) => setBaseURL(event.target.value)}
-          placeholder="http://127.0.0.1:11434/v1"/>
-          <button type="submit" className="primary" disabled={busy !== null || baseURL.trim() === (settings?.['openai-compatible'].baseURL ?? '')}>Save</button></div>
-      </form>
-      {compatible?.detail && <p className="hint">{compatible.detail}</p>}
-      {models('openai-compatible')}
-      <form onSubmit={(event) => saveKey(event, 'openai-compatible', apiKey, () => setApiKey(''))}>
-        <label className="field-label" htmlFor="compatible-key">{compatible?.credential === 'api-key' ? 'Replace the saved API key' : 'API key (if the server needs one)'}</label>
-        <div className="provider-key-row"><input id="compatible-key" type="password" autoComplete="off" value={apiKey}
-          onChange={(event) => setApiKey(event.target.value)} placeholder="Local runtimes usually need none"/>
-          <button type="submit" className="primary" disabled={!apiKey.trim() || busy !== null}>Save</button></div>
-        {compatible?.credential === 'api-key' && <button type="button" className="text-button provider-remove" disabled={busy !== null}
-          onClick={() => void act('openai-compatible', () => window.serenity.saveCredential('openai-compatible', ''))}>Remove saved key</button>}
+    <ProviderCard provider="ollama" status={ollama}>
+      <p>Runs models with Ollama on this computer, or on another machine you choose. Workspace context goes only to that Ollama server.</p>
+      {ollama?.state === 'unavailable' && <p className="hint">Ollama isn’t running at {ollama.account ?? savedURL}. <button type="button" className="text-button"
+        onClick={() => void window.serenity.openExternal('https://ollama.com/download')}>Download Ollama</button> or start it, then check again.</p>}
+      {ollama?.state === 'not-configured' && <><p className="hint">Ollama is running but has no models yet. Download one, then check again:</p>
+        <div className="provider-login"><code>ollama pull gemma3</code>
+          <button type="button" className="secondary" onClick={() => copyCommand('ollama pull gemma3')}>{copied === 'ollama pull gemma3' ? <><Check size={14} aria-hidden="true"/> Copied</> : 'Copy command'}</button></div></>}
+      {models('ollama')}
+      <form onSubmit={(event) => { event.preventDefault(); void saveSetting({ provider: 'ollama', baseURL: baseURL.trim() === defaultOllamaURL ? '' : baseURL }) }}>
+        <label className="field-label" htmlFor="ollama-url">Server address</label>
+        <div className="provider-key-row"><input id="ollama-url" type="url" spellCheck={false} value={baseURL} onChange={(event) => setBaseURL(event.target.value)}
+          placeholder={defaultOllamaURL}/>
+          <button type="submit" className="primary" disabled={busy !== null || !baseURL.trim() || baseURL.trim() === savedURL}>Save</button></div>
+        {savedURL !== defaultOllamaURL && <button type="button" className="text-button provider-remove" disabled={busy !== null}
+          onClick={() => void saveSetting({ provider: 'ollama', baseURL: '' })}>Use this computer’s Ollama</button>}
       </form>
     </ProviderCard>
 

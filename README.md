@@ -16,7 +16,7 @@ Suppose Alex tells you their birthday is September 7, while an old card says Sep
 
 You can also compare records that might describe the same person, merge them, or record that they are distinct. A merge can be undone. User-removed pages, documents, entities, tasks, and events go to your computer’s Trash; merge history remains in the workspace. These interactions let you organize information without having to settle every uncertainty when you first encounter it.
 
-The assistant works alongside this process. Ask about a document, inspect the answer's citations, and review suggested additions beneath the reply or in Review. It can use your ChatGPT plan, your GitHub Copilot subscription, or a local or self-hosted model through any OpenAI-compatible server, such as Ollama or LM Studio. Local editing and text search work without any of them.
+The assistant works alongside this process. Ask about a document, inspect the answer's citations, and review suggested additions beneath the reply or in Review. It can use your ChatGPT plan, your GitHub Copilot subscription, or models you run yourself with Ollama. Local editing and text search work without any of them.
 
 ## Get started
 

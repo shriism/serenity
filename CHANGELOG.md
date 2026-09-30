@@ -4,10 +4,10 @@ Notable user-visible changes are listed newest first. Workspace files remain rea
 
 ## Unreleased
 
-- AI providers now share one inference interface, so conversations, search, indexing, and document analysis work the same with each. Supported providers are **ChatGPT** (Sign in with ChatGPT, using your ChatGPT plan through OpenAI's Responses API), **GitHub Copilot** (your existing Copilot subscription), and **OpenAI-compatible** servers, including Ollama, LM Studio, vLLM, and the llama.cpp server, with a configurable address, model, and optional API key.
+- AI providers now share one inference interface, so conversations, search, indexing, and document analysis work the same with each. Supported providers are **ChatGPT** (Sign in with ChatGPT, using your ChatGPT plan through OpenAI's Responses API), **GitHub Copilot** (your existing Copilot subscription), and **Ollama** (models on this computer, or another machine you choose, with no setup when Ollama is running).
 - Answers appear as they are written, and each provider's model can be chosen in Settings. Messages and provider activity record the model that answered when the provider reports it.
 - Providers no longer receive tools, file access, or the workspace path; Copilot sessions are deleted after each request.
-- OpenAI Codex is no longer offered. Earlier Codex conversations and suggestions keep their attribution. A workspace that used Codex for background AI pauses it until you choose another provider, and a saved Codex API key is removed; use it with the OpenAI-compatible provider's OpenAI setting instead.
+- OpenAI Codex is no longer offered. Earlier Codex conversations and suggestions keep their attribution. A workspace that used Codex for background AI pauses it until you choose another provider, and a saved Codex API key is removed.
 - Recheck provider status when Settings regains focus, restart an opted-in background index once its provider is available, and avoid rebuilding the index in response to its own output file.
 - Calendar Agenda now shows every upcoming event and open due task across month boundaries.
 - Kept one React root during development reloads so a rendering failure shows one recovery view.

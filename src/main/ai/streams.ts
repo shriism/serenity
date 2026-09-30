@@ -105,29 +105,61 @@ function outputText(output: unknown): string | undefined {
   return parts.length ? parts.join('') : undefined
 }
 
-/** Collects a streamed Chat Completions answer, as served by OpenAI-compatible runtimes. */
-export async function readChatCompletionsStream(body: ReadableStream<Uint8Array>, options: InferenceOptions, service: string): Promise<{ text: string; model?: string }> {
-  let text = ''
-  let model: string | undefined
-  let finished = false
-  for await (const item of serverEvents(body, options.signal)) {
-    if (item.data === '[DONE]') return { text, ...(model ? { model } : {}) }
-    let chunk: Record<string, unknown>
-    try { chunk = JSON.parse(item.data) as Record<string, unknown> } catch { continue }
-    if (chunk.error) {
-      const error = chunk.error as { message?: unknown; code?: unknown } | string
-      const message = typeof error === 'string' ? error : typeof error.message === 'string' ? error.message : 'The response failed'
-      throw new ProviderError(`${service}: ${message}`, typeof error === 'object' && typeof error.code === 'string' ? error.code : undefined)
+/** Reads a newline-delimited JSON body, one object per line, as Ollama streams its responses. */
+export async function* jsonLines(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<Record<string, unknown>> {
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  const abort = (): void => { void reader.cancel().catch(() => undefined) }
+  signal?.addEventListener('abort', abort, { once: true })
+  try {
+    for (;;) {
+      if (signal?.aborted) throw cancelled()
+      const { value, done } = await reader.read()
+      if (signal?.aborted) throw cancelled()
+      buffer += decoder.decode(value, { stream: !done })
+      const lines = buffer.split('\n')
+      buffer = done ? '' : lines.pop()!
+      for (const line of lines) {
+        if (!line.trim()) continue
+        try { yield JSON.parse(line) as Record<string, unknown> } catch { /* A malformed line carries no usable text. */ }
+      }
+      if (done) return
     }
-    if (typeof chunk.model === 'string') model = chunk.model
-    const choice = Array.isArray(chunk.choices) ? chunk.choices[0] as { delta?: { content?: unknown }; finish_reason?: unknown } | undefined : undefined
-    const delta = choice?.delta?.content
-    if (typeof delta === 'string' && delta) { text += delta; options.onText?.(delta) }
-    if (typeof choice?.finish_reason === 'string') finished = true
+  } finally {
+    signal?.removeEventListener('abort', abort)
+    reader.releaseLock()
   }
-  // Some local servers close the stream after the final chunk without sending [DONE].
-  if (finished) return { text, ...(model ? { model } : {}) }
+}
+
+/**
+ * Collects a streamed Ollama chat answer. Reasoning a model writes inside <think> tags is left out of the answer; only
+ * the final `done` object marks success.
+ */
+export async function readOllamaStream(body: ReadableStream<Uint8Array>, options: InferenceOptions, service: string): Promise<{ text: string; model?: string }> {
+  let raw = ''
+  let shown = 0
+  let model: string | undefined
+  for await (const chunk of jsonLines(body, options.signal)) {
+    if (typeof chunk.error === 'string') throw new ProviderError(`${service}: ${chunk.error}`)
+    if (typeof chunk.model === 'string') model = chunk.model
+    const content = (chunk.message as { content?: unknown } | undefined)?.content
+    if (typeof content === 'string' && content) {
+      raw += content
+      const visible = withoutThinking(raw, chunk.done !== true)
+      if (visible.length > shown) { options.onText?.(visible.slice(shown)); shown = visible.length }
+    }
+    if (chunk.done === true) return { text: withoutThinking(raw, false), ...(model ? { model } : {}) }
+  }
   throw new ProviderError(`${service} ended the response before it was complete.`, 'interrupted')
+}
+
+/** Text after any leading <think>…</think> block; while the block is still open, nothing is visible yet. */
+function withoutThinking(text: string, streaming: boolean): string {
+  const start = text.trimStart()
+  if (!start.startsWith('<think>')) return streaming && '<think>'.startsWith(start) ? '' : text
+  const end = start.indexOf('</think>')
+  return end < 0 ? '' : start.slice(end + '</think>'.length).trimStart()
 }
 
 /** Aborts `fetch` when either the caller cancels or the time limit passes, and says which one happened. */

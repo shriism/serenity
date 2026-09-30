@@ -44,7 +44,7 @@ export class ProviderRegistry {
   async updateSettings(change: ProviderSettingsChange): Promise<ProviderSettings> {
     if (!isProviderId(change.provider)) throw new Error('Unknown AI provider')
     const baseURL = change.baseURL === undefined ? undefined : change.baseURL.trim() ? normalizeBaseURL(change.baseURL) : ''
-    if (baseURL !== undefined && change.provider !== 'openai-compatible') throw new Error('Only the OpenAI-compatible provider has a base URL')
+    if (baseURL !== undefined && change.provider !== 'ollama') throw new Error('Only Ollama has a server address')
     if (change.model !== undefined && change.model !== null && (typeof change.model !== 'string' || change.model.length > 200)) throw new Error('Invalid model')
     return this.storage.updateSettings((settings) => {
       const target = settings[change.provider] as { model?: string; baseURL?: string }

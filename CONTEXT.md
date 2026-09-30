@@ -48,7 +48,7 @@ These use temporary workspaces and profiles. Smoke tests include both themes and
 | `SERENITY_SMOKE_VISIBLE=1` | Display the test window. |
 | `SERENITY_SMOKE_EXECUTABLE` | Test a packaged executable. |
 | `SERENITY_SMOKE_WINDOW=900x640` | Run a small-window pass. |
-| `SERENITY_SMOKE_PROVIDER=chatgpt`, `copilot`, or `openai-compatible` | Opt into a live turn with a provider already set up in the app profile; hosted providers use quota. |
+| `SERENITY_SMOKE_PROVIDER=chatgpt`, `copilot`, or `ollama` | Opt into a live turn with a provider already set up in the app profile; hosted providers use quota. |
 
 ## Package
 

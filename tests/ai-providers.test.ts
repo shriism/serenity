@@ -93,13 +93,23 @@ test('base URLs are limited to plain http(s) endpoints, and retired providers ke
   assert.equal(providerName('chatgpt'), 'ChatGPT')
 })
 
+const parsedModel = (body: string): string | undefined => { try { return (JSON.parse(body) as { model?: string }).model } catch { return undefined } }
+
 test('the Ollama provider finds this computer\'s Ollama by default, streams answers, and cancels', async () => withDirectory(async (directory) => {
   const requests: { path: string; body: string }[] = []
   let installed = [{ name: 'gemma3:latest', model: 'gemma3:latest', details: { parameter_size: '4.3B' } }, { name: 'qwen3:8b', model: 'qwen3:8b', details: {} }]
   let hold: (() => void) | null = null
+  let loaded: { name: string; model: string; context_length: number }[] = []
   const { url, server } = await listen((request, body, response) => {
     requests.push({ path: request.url!, body })
+    if (parsedModel(body) === 'drops') { response.writeHead(200, { 'Content-Type': 'application/x-ndjson' }); response.write('{"message":{"content":"Hal"},"done":false}\n'); setTimeout(() => response.destroy(), 20); return }
     if (request.url === '/api/tags') { response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ models: installed })); return }
+    if (request.url === '/api/ps') { response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ models: loaded })); return }
+    if (request.url === '/api/show') {
+      const thinking = JSON.parse(body).model === 'qwen3:8b'
+      response.writeHead(200, { 'Content-Type': 'application/json' }).end(JSON.stringify({ capabilities: ['completion', ...(thinking ? ['thinking'] : [])] }))
+      return
+    }
     const parsed = JSON.parse(body) as { model: string; messages: { content: string }[] }
     response.writeHead(200, { 'Content-Type': 'application/x-ndjson' })
     const line = (content: string, done = false): string => `${JSON.stringify({ model: parsed.model, message: { role: 'assistant', content }, done })}\n`
@@ -122,11 +132,22 @@ test('the Ollama provider finds this computer\'s Ollama by default, streams answ
     assert.deepEqual(result, { text: 'Answer', model: 'gemma3:latest' }, 'the first installed model is used when none is chosen')
     assert.deepEqual(deltas, ['Answer'])
     const sent = JSON.parse(requests.at(-1)!.body)
+    assert.equal(sent.think, undefined, 'models without a reasoning mode are sent no think setting')
     assert.equal(requests.at(-1)!.path, '/api/chat')
     assert.deepEqual(sent.messages, [{ role: 'system', content: 'Rules' }, { role: 'user', content: 'Question' }])
     assert.equal(sent.stream, true)
     await provider.generate({ instructions: 'Rules', input: 'Question', model: 'qwen3:8b' })
     assert.equal(JSON.parse(requests.at(-1)!.body).model, 'qwen3:8b')
+    assert.equal(JSON.parse(requests.at(-1)!.body).think, false, 'a reasoning model answers directly instead of reasoning out of sight first')
+
+    assert.equal(await provider.contextBudget(), 4915, 'before the model is loaded, a small default window is assumed')
+    loaded = [{ name: 'gemma3:latest', model: 'gemma3:latest', context_length: 32768 }]
+    assert.equal(await provider.contextBudget(), 10000, 'a local model gets far less context than a hosted one')
+    loaded = [{ name: 'gemma3:latest', model: 'gemma3:latest', context_length: 2048 }]
+    assert.equal(await provider.contextBudget(), 2457, 'the budget fits within a small loaded context window')
+
+    await assert.rejects(provider.generate({ instructions: 'Rules', input: 'Question', model: 'drops' }), /stopped before finishing/,
+      'a connection that drops mid-answer is not reported as Ollama being off')
 
     const controller = new AbortController()
     const pending = provider.generate({ instructions: 'Rules', input: 'wait' }, { signal: controller.signal, onText: () => controller.abort() })

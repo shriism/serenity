@@ -6,7 +6,7 @@ import { providerRegistry } from './ai/registry'
 import { Workspace } from './workspace'
 import { extractDocument } from './documents'
 import { identityCandidates } from '../shared/identity'
-import { contextRecords, openContextNote, prepareContext, scopeContextRecords } from './context'
+import { contextRecords, excerptLength, openContextNote, prepareContext, scopeContextRecords } from './context'
 import { rankSemanticIndex } from './semantic-index'
 import { canAutoApply, validateReadScope, validateWorkflowPermissions } from '../shared/workflow'
 import { isDuplicateProposal } from '../shared/deduplicate'
@@ -100,7 +100,9 @@ export async function sendMessage(
   const localMatches = readScope.mode === 'workspace' ? await workspace.search(question) : scopedMatches
   const indexedMatches = readScope.mode === 'workspace' ? await rankSemanticIndex(workspace, question) : []
   const prioritizedRecords = [...allowedOpen.flatMap((ref) => records.filter((record) => record.ref === ref)), ...records.filter((record) => !allowedOpen.includes(record.ref))]
-  const first = prepareContext(prioritizedRecords, question, [...indexedMatches, ...localMatches], allowedOpen)
+  const budget = await providerRegistry().contextBudget(input.provider, signal)
+  const excerpt = excerptLength(budget)
+  const first = prepareContext(prioritizedRecords, question, [...indexedMatches, ...localMatches], allowedOpen, {}, budget)
   message.sharedContext = [{ ...first.shared, readScopeMode: readScope.mode }]
   await workspace.saveConversation(conversation)
   const previousTurns = conversation.messages.slice(0, -1).slice(-15).map(({ role, text, provider }) => ({
@@ -128,12 +130,12 @@ export async function sendMessage(
     const wanted = output.requestedRecords.filter((ref) => {
       if (!records.some((record) => record.ref === ref)) return false
       const sent = first.shared.records.find((record) => record.ref === ref)
-      return !sent || sent.totalCharacters > sent.startCharacter + 9000
+      return !sent || sent.totalCharacters > sent.startCharacter + excerpt
     })
     if (wanted.length) {
       const offsets = Object.fromEntries(first.shared.records.filter((record) => wanted.includes(record.ref)).map((record) =>
-        [record.ref, record.startCharacter + 9000]))
-      const second = prepareContext(records, question, [], wanted, offsets)
+        [record.ref, record.startCharacter + excerpt]))
+      const second = prepareContext(records, question, [], wanted, offsets, budget)
       message.sharedContext.push({ ...second.shared, readScopeMode: readScope.mode })
       await workspace.saveConversation(conversation)
       output = await ask(second.text, `${viewing} Earlier pass considered ${first.shared.records.map((record) => record.ref).join(', ')} and answered: ${output.answer.slice(0, 3000)}`,

@@ -46,6 +46,11 @@ export interface ModelProvider {
   signOut?(): Promise<ProviderStatus>
   /** Stores a token or API key; an empty value removes it. */
   setCredential?(value: string): Promise<ProviderStatus>
+  /**
+   * Characters of workspace context this provider handles well. Hosted models take the default; a local model asks for
+   * less, because it reads the whole prompt on the person's own hardware before it writes anything.
+   */
+  contextBudget?(signal?: AbortSignal): Promise<number>
   /** Releases connections or runtimes the provider keeps between requests. */
   dispose?(): Promise<void>
 }

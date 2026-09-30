@@ -2,6 +2,7 @@ import { isProviderId, normalizeBaseURL, providerIds, providerLabels, type Provi
 import { trackProviderCall, type ActivityRequest } from '../provider-activity'
 import type { InferenceOptions, InferenceRequest, InferenceResult, ModelProvider } from './model-provider'
 import type { ProviderStorage } from './storage'
+import { defaultContextBudget } from '../context'
 
 /** How Serenity's own features reach a model: one call, recorded in the workspace's provider activity. */
 export type Generate = (provider: ProviderId, workspacePath: string, request: InferenceRequest, activity: ActivityRequest,
@@ -37,6 +38,12 @@ export class ProviderRegistry {
     const selected = this.get(provider)
     return trackProviderCall(workspacePath, provider, `${request.instructions}\n\n${request.input}`, activity,
       () => selected.generate(request, options), (result) => result.model ? { model: result.model } : {})
+  }
+
+  /** How much workspace context to assemble for a provider's requests. */
+  async contextBudget(provider: ProviderId, signal?: AbortSignal): Promise<number> {
+    const selected = this.get(provider)
+    return selected.contextBudget ? selected.contextBudget(signal).catch(() => defaultContextBudget) : defaultContextBudget
   }
 
   settings(): Promise<ProviderSettings> { return this.storage.settings() }

@@ -13,7 +13,8 @@ export interface PreparedContext {
   shared: SharedContext
 }
 
-const maxContext = 180000
+/** Characters of workspace context a hosted model is sent by default; providers with less capacity ask for less. */
+export const defaultContextBudget = 180000
 const maxExcerpt = 9000
 
 export function contextRecords(snapshot: WorkspaceSnapshot, documents: { name: string; text: string }[]): ContextRecord[] {
@@ -79,14 +80,26 @@ function evidence(record: ContextRecord, text: string, startCharacter = 0) {
     checksum: createHash('sha256').update(text).digest('hex') }
 }
 
-export function prepareContext(records: ContextRecord[], question: string, matches: SearchResult[], requested: string[] = [], offsets: Record<string, number> = {}): PreparedContext {
+/** The longest excerpt of one record sent within a context budget; a follow-up pass continues after it. */
+export function excerptLength(budget = defaultContextBudget): number { return Math.min(maxExcerpt, Math.floor(budget / 4)) }
+
+export function prepareContext(records: ContextRecord[], question: string, matches: SearchResult[], requested: string[] = [], offsets: Record<string, number> = {},
+  maxContext = defaultContextBudget): PreparedContext {
   const full = JSON.stringify(records)
   if (full.length <= maxContext) {
     return { text: full, shared: { mode: 'full', records: records.map((item) => evidence(item, item.text)),
       availableCount: records.length, catalogShown: records.length, sentCharacters: full.length } }
   }
 
-  const manifest = records.slice(0, 1200).map(({ ref, title }) => ({ ref, title }))
+  // The catalog of other records takes at most a fifth of the budget, so a small budget still leaves room for content.
+  const manifest: { ref: string; title: string }[] = []
+  let catalogSize = 0
+  for (const { ref, title } of records.slice(0, 1200)) {
+    catalogSize += ref.length + title.length + 20
+    if (catalogSize > maxContext / 5) break
+    manifest.push({ ref, title })
+  }
+  const excerptLimit = excerptLength(maxContext)
   const queryTerms = question.toLowerCase().match(/[\p{L}\p{N}]+/gu)?.filter((word) => word.length > 2) ?? []
   const prioritized = [
     ...requested.flatMap((ref) => records.filter((item) => item.ref === ref)),
@@ -106,8 +119,8 @@ export function prepareContext(records: ContextRecord[], question: string, match
     seen.add(record.ref)
     const occurrence = queryTerms.map((word) => record.text.toLowerCase().indexOf(word)).find((index) => index >= 0) ?? 0
     const start = Math.min(Math.max(0, offsets[record.ref] ?? occurrence - 1200), Math.max(0, record.text.length - 1))
-    const end = Math.min(record.text.length, start + maxExcerpt)
-    const excerpt = record.text.length > maxExcerpt ? `[Record excerpt ${start}-${end} of ${record.text.length} characters]\n${record.text.slice(start, end)}` : record.text
+    const end = Math.min(record.text.length, start + excerptLimit)
+    const excerpt = record.text.length > excerptLimit ? `[Record excerpt ${start}-${end} of ${record.text.length} characters]\n${record.text.slice(start, end)}` : record.text
     const candidate = [...selected, { ...record, text: excerpt }]
     if (JSON.stringify({ ...base, selected: candidate }).length > maxContext) break
     selected.push({ ...record, text: excerpt })

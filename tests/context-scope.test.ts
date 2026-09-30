@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Workspace } from '../src/main/workspace'
-import { contextRecords, openContextNote, prepareContext, scopeContextRecords } from '../src/main/context'
+import { contextRecords, excerptLength, openContextNote, prepareContext, scopeContextRecords } from '../src/main/context'
 import { validateReadScope } from '../src/shared/workflow'
 
 test('selected read scope excludes other entities and documents even when search finds them', async () => {
@@ -51,6 +51,20 @@ test('an open permitted document is sent first when the workspace needs retrieva
   assert.equal(prepared.shared.mode, 'retrieved')
   assert.equal(prepared.shared.records[0].ref, 'document:notes.md')
   assert.match(prepared.text, /robotics club/)
+})
+
+test('a small context budget for a local model sends the relevant records within it, not the whole workspace', () => {
+  const records = [
+    ...Array.from({ length: 300 }, (_, index) => ({ ref: `entity:person-${index}`, title: `Person ${index}`, text: JSON.stringify({ body: `Ordinary notes ${index}. `.repeat(20) }) })),
+    { ref: 'entity:sam', title: 'Sam Rivera', text: JSON.stringify({ body: 'Sam Rivera was born on September 7.' }) }
+  ]
+  assert.equal(prepareContext(records, 'When was Sam Rivera born?', []).shared.mode, 'full', 'a hosted model still receives everything that fits')
+  const local = prepareContext(records, 'When was Sam Rivera born?', [], [], {}, 10_000)
+  assert.equal(local.shared.mode, 'retrieved')
+  assert.ok(local.text.length <= 10_000, `sent ${local.text.length} characters`)
+  assert.equal(local.shared.records[0].ref, 'entity:sam', 'the record the question names comes first')
+  assert.ok(local.shared.catalogShown < records.length, 'the catalog of other records is trimmed to leave room for content')
+  assert.equal(excerptLength(10_000), 2500)
 })
 
 test('the provider is told which permitted records are shown side by side', () => {
